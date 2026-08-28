@@ -121,6 +121,18 @@ type MechanicReviewResponse = {
   reviews: MechanicReview[];
 };
 
+type VehicleProfile = {
+  id: number;
+  nickname?: string | null;
+  make: string;
+  model: string;
+  year: number;
+  licensePlate?: string | null;
+  color?: string | null;
+  mileage?: number | null;
+  photoUrls?: string[];
+};
+
 type AppNotification = {
   id: number;
   title: string;
@@ -340,6 +352,7 @@ export default function App() {
   const [requestMechanicSlots, setRequestMechanicSlots] = useState<ScheduleSlot[]>([]);
   const [nearbyMechanics, setNearbyMechanics] = useState<Mechanic[]>([]);
   const [myRequests, setMyRequests] = useState<RequestSummary[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleProfile[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
@@ -538,6 +551,16 @@ export default function App() {
     }
 
     loadMyRequests().catch((error) => setMessage(formatError(error)));
+  }, [user, token]);
+
+  useEffect(() => {
+    if (user?.role !== 'customer' || !token) {
+      setVehicles([]);
+      return;
+    }
+    apiRequest<{ vehicles: VehicleProfile[] }>('/api/vehicles', { token })
+      .then((data) => setVehicles(data.vehicles))
+      .catch((error) => setMessage(formatError(error)));
   }, [user, token]);
 
   useEffect(() => {
@@ -1236,6 +1259,26 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+
+  }
+
+  async function saveCurrentVehicle() {
+    if (!token || user?.role !== 'customer') return;
+    try {
+      const vehicle = await apiRequest<VehicleProfile>('/api/vehicles', {
+        method: 'POST',
+        token,
+        body: {
+          make: requestForm.vehicleMake,
+          model: requestForm.vehicleModel,
+          year: Number(requestForm.vehicleYear),
+        },
+      });
+      setVehicles((current) => [vehicle, ...current]);
+      setMessage('Vehículo guardado en tu perfil');
+    } catch (error) {
+      setMessage(formatError(error));
+    }
   }
 
   async function handleToggleMechanicConnection(next: 'online' | 'offline') {
@@ -1911,6 +1954,32 @@ export default function App() {
               />
               {requestCreateStep === 'vehicle' ? (
                 <View style={styles.stack}>
+                  {user.role === 'customer' && vehicles.length > 0 && (
+                    <View style={styles.publicProfileBox}>
+                      <Text style={styles.publicProfileTitle}>Mis vehículos</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        {vehicles.map((vehicle) => (
+                          <Pressable
+                            key={vehicle.id}
+                            style={styles.calendarChip}
+                            onPress={() =>
+                              setRequestForm({
+                                ...requestForm,
+                                vehicleMake: vehicle.make,
+                                vehicleModel: vehicle.model,
+                                vehicleYear: String(vehicle.year),
+                              })
+                            }
+                          >
+                            <Text style={styles.calendarChipText}>
+                              {vehicle.nickname || `${vehicle.make} ${vehicle.model}`}
+                            </Text>
+                            <Text style={styles.smallText}>{vehicle.year}</Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
                   {user.role === 'admin' && (
                     <Field label="customerId">
                       <Input
@@ -1942,6 +2011,9 @@ export default function App() {
                       onChangeText={(value) => setRequestForm({ ...requestForm, vehicleYear: value })}
                     />
                   </Field>
+                  {user.role === 'customer' && (
+                    <SecondaryButton title="Guardar vehículo para después" onPress={saveCurrentVehicle} busy={busy} />
+                  )}
                   <SecondaryButton title="Continuar" onPress={() => setRequestCreateStep('details')} />
                 </View>
               ) : (
