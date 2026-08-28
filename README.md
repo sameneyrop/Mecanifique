@@ -33,6 +33,18 @@ En producción, la API rechaza el arranque si faltan `SUPABASE_URL`, `SUPABASE_A
 
 El archivo [render.yaml](./render.yaml) deja preparado un servicio Render con Node 20 y reconstrucción explícita de `sqlite3` desde código fuente para evitar incompatibilidades de GLIBC, además de build (incluyendo `devDependencies` necesarias para TypeScript), start, health check y disco persistente para SQLite. Al crear el servicio desde ese archivo todavía debes introducir manualmente las variables secretas de producción. Si el servicio ya existía, activa **Clear build cache & deploy** para descartar binarios nativos antiguos.
 
+Backend desplegado actualmente:
+
+```text
+https://mecanifique.onrender.com
+```
+
+Verificación:
+
+```text
+https://mecanifique.onrender.com/health
+```
+
 ### App Android
 
 ```bash
