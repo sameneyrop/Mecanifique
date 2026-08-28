@@ -3,7 +3,7 @@ services:
     name: mecanifique-api
     runtime: node
     plan: starter
-    buildCommand: npm install --include=dev --build-from-source=sqlite3 && npm run build
+    buildCommand: npm install --include=dev && npm rebuild sqlite3 --build-from-source && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
