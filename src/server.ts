@@ -587,10 +587,6 @@ app.get(
 app.post(
   "/auth/v2/register/customer",
   handleAsync(async (req, res) => {
-    if (applyRateLimit("auth-register-customer-v2", req, res)) {
-      return;
-    }
-
     const payload = customerRegistrationSchema.parse(req.body);
     try {
       const result = await registerCustomerWithSupabase(
@@ -617,7 +613,9 @@ app.post(
           error.message.includes("over_email_send_rate_limit") ||
           error.message.toLowerCase().includes("email rate limit")
         ) {
-          res.status(429).json({ error: "Demasiados intentos. Intenta más tarde." });
+          res.status(429).json({
+            error: "Supabase limitó temporalmente el envío de correos de confirmación. Desactiva la confirmación de email durante las pruebas o configura un proveedor SMTP."
+          });
           return;
         }
         res.status(400).json({ error: error.message });
@@ -635,10 +633,6 @@ app.post(
 app.post(
   "/auth/v2/register/mechanic",
   handleAsync(async (req, res) => {
-    if (applyRateLimit("auth-register-mechanic-v2", req, res)) {
-      return;
-    }
-
     const payload = mechanicRegistrationAuthSchema.parse(req.body);
     try {
       const result = await registerMechanicWithSupabase(
@@ -669,7 +663,9 @@ app.post(
           error.message.includes("over_email_send_rate_limit") ||
           error.message.toLowerCase().includes("email rate limit")
         ) {
-          res.status(429).json({ error: "Demasiados intentos. Intenta más tarde." });
+          res.status(429).json({
+            error: "Supabase limitó temporalmente el envío de correos de confirmación. Desactiva la confirmación de email durante las pruebas o configura un proveedor SMTP."
+          });
           return;
         }
         res.status(400).json({ error: error.message });
