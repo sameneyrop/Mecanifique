@@ -138,6 +138,7 @@ type ServiceRequest = {
   preferredTime: string;
   city: string;
   zone: string;
+  serviceAddress?: string | null;
   status: string;
   mechanicId: number | null;
   mechanicName?: string | null;
@@ -165,6 +166,7 @@ type RequestSummary = {
   preferredTime: string;
   city: string;
   zone: string;
+  serviceAddress?: string | null;
   status: string;
   mechanicId: number | null;
   mechanicName?: string | null;
@@ -376,6 +378,7 @@ export default function App() {
     preferredTime: '',
     city: 'Aguascalientes',
     zone: 'Norte',
+    serviceAddress: '',
     customerId: '',
     requestedMechanicId: '',
     scheduleSlotId: '',
@@ -1167,6 +1170,7 @@ export default function App() {
         preferredTime: requestForm.preferredTime,
         city: requestForm.city,
         zone: requestForm.zone,
+        serviceAddress: requestForm.serviceAddress,
         ...(user.role === 'admin' && requestForm.customerId
           ? { customerId: Number(requestForm.customerId) }
           : {}),
@@ -1986,7 +1990,14 @@ export default function App() {
                       placeholder="Déjalo vacío para solicitar ahora"
                     />
                   </Field>
-                  <Text style={styles.smallText}>La ubicación se obtiene automáticamente al abrir la app.</Text>
+                  <Field label="Dirección del servicio">
+                    <Input
+                      value={requestForm.serviceAddress}
+                      onChangeText={(value) => setRequestForm({ ...requestForm, serviceAddress: value })}
+                      placeholder="Calle, número, colonia y referencias"
+                    />
+                  </Field>
+                  <Text style={styles.smallText}>El mecánico verá esta dirección como destino del servicio.</Text>
                   <Text style={styles.smallText}>Zona por defecto: {requestForm.city} · {requestForm.zone}</Text>
                   <PrimaryButton
                     title={requestForm.preferredTime.trim() ? "Programar solicitud" : "Solicitar mecánico ahora"}
@@ -2763,7 +2774,7 @@ function Segmented({
         return (
           <Pressable
             key={option.key}
-            style={[styles.segment, active && styles.segmentActive]}
+            style={({ pressed }) => [styles.segment, active && styles.segmentActive, pressed && styles.buttonPressed]}
             onPress={() => onChange(option.key)}
           >
             <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{option.label}</Text>
@@ -2785,7 +2796,7 @@ function PrimaryButton({
 }) {
   return (
     <Pressable
-      style={[styles.primaryButton, busy && styles.primaryButtonBusy]}
+      style={({ pressed }) => [styles.primaryButton, busy && styles.primaryButtonBusy, pressed && styles.buttonPressed]}
       hitSlop={8}
       onPress={onPress}
       disabled={busy}
@@ -2809,7 +2820,12 @@ function SecondaryButton({
 }) {
   return (
     <Pressable
-      style={[styles.secondaryButton, compact && styles.secondaryButtonCompact, busy && styles.primaryButtonBusy]}
+      style={({ pressed }) => [
+        styles.secondaryButton,
+        compact && styles.secondaryButtonCompact,
+        busy && styles.primaryButtonBusy,
+        pressed && styles.buttonPressed,
+      ]}
       hitSlop={8}
       onPress={onPress}
       disabled={busy}
@@ -2830,6 +2846,7 @@ function RequestCard({ request }: { request: ServiceRequest }) {
       </Text>
       <Text style={styles.itemText}>Estado: {getServiceRequestStatusLabel(request.status)}</Text>
       <Text style={styles.itemText}>Mecánico: {request.mechanicName || 'sin asignar'}</Text>
+      <Text style={styles.itemText}>Dirección: {request.serviceAddress || `${request.city}, ${request.zone}`}</Text>
       {request.scheduleSlotId && <Text style={styles.smallText}>Turno #{request.scheduleSlotId}</Text>}
       <Text numberOfLines={2} style={styles.smallText}>{request.issueDescription}</Text>
       {latestUpdate && (
@@ -3095,6 +3112,10 @@ const styles = StyleSheet.create({
   },
   primaryButtonBusy: {
     opacity: 0.7,
+  },
+  buttonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.98 }],
   },
   primaryButtonText: {
     color: '#ffffff',

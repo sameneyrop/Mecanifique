@@ -112,6 +112,7 @@ const serviceRequestSchema = z.object({
   preferredTime: z.string().min(3).optional().or(z.literal("")),
   city: z.string().min(2),
   zone: z.string().min(2),
+  serviceAddress: z.string().min(5).optional().or(z.literal("")),
   latitude: z.number().optional(),
   longitude: z.number().optional()
 });
@@ -952,9 +953,9 @@ app.post(
       `
       INSERT INTO service_requests (
         customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
-        preferred_time, city, zone, latitude, longitude, mechanic_id, status, schedule_slot_id
+        preferred_time, city, zone, service_address, latitude, longitude, mechanic_id, status, schedule_slot_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         customerId,
@@ -967,6 +968,7 @@ app.post(
           : payload.preferredTime?.trim() || "Ahora",
         payload.city,
         payload.zone,
+        payload.serviceAddress?.trim() || `${payload.city}, ${payload.zone}`,
         payload.latitude ?? null,
         payload.longitude ?? null,
         requestedMechanicId ?? null,
@@ -2170,6 +2172,7 @@ app.get(
       SELECT sr.id, sr.customer_id AS customerId, sr.vehicle_make AS vehicleMake, sr.vehicle_model AS vehicleModel,
              sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId,
+              sr.service_address AS serviceAddress,
              sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName, c.phone AS customerPhone
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
@@ -2479,7 +2482,7 @@ app.get(
       `
       SELECT sr.id, sr.customer_id AS customerId, sr.vehicle_make AS vehicleMake, sr.vehicle_model AS vehicleModel,
              sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
-             sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt, sr.diagnosis_notes AS diagnosisNotes,
+             sr.city, sr.zone, sr.service_address AS serviceAddress, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt, sr.diagnosis_notes AS diagnosisNotes,
              sr.repair_notes AS repairNotes, sr.estimated_price AS estimatedPrice, sr.final_price AS finalPrice,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt,
              c.full_name AS customerName, c.phone AS customerPhone,

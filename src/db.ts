@@ -99,6 +99,7 @@ export async function initDb(): Promise<void> {
       preferred_time TEXT NOT NULL,
       city TEXT NOT NULL,
       zone TEXT NOT NULL,
+      service_address TEXT,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'assigned', 'in_progress', 'completed', 'cancelled')),
       mechanic_id INTEGER,
       diagnosis_notes TEXT,
@@ -121,6 +122,11 @@ export async function initDb(): Promise<void> {
     "service_requests",
     "longitude",
     "ALTER TABLE service_requests ADD COLUMN longitude REAL"
+  );
+  await ensureColumn(
+    "service_requests",
+    "service_address",
+    "ALTER TABLE service_requests ADD COLUMN service_address TEXT"
   );
   await ensureColumn(
     "service_requests",
