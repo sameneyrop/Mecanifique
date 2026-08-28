@@ -211,6 +211,8 @@ const API_REQUEST_TIMEOUT_MS = 15_000;
 const STATUS_REFRESH_INTERVAL_MS = 10_000;
 const APP_BACKGROUND_IMAGE = require('./assets/blue-bg.png');
 const APP_LOGO_IMAGE = require('./assets/logo.png');
+const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey;
+const isMapConfigured = Boolean(GOOGLE_MAPS_API_KEY);
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -2231,6 +2233,7 @@ export default function App() {
               Refresco automático cada 10 segundos.
             </Text>
             <View style={[styles.mapContainer, currentUser.role === 'mechanic' && incomingRequest ? styles.mapContainerCompact : null]}>
+              {isMapConfigured ? (
               <MapView
                 style={[styles.map, currentUser.role === 'mechanic' && incomingRequest ? styles.mapCompact : null]}
                 initialRegion={getMapRegion()}
@@ -2294,6 +2297,12 @@ export default function App() {
                       />
                     ))}
               </MapView>
+              ) : (
+                <View style={styles.mapUnavailable}>
+                  <Text style={styles.itemText}>Mapa no configurado todavía.</Text>
+                  <Text style={styles.smallText}>Puedes usar la ubicación y las solicitudes mientras se configura Google Maps.</Text>
+                </View>
+              )}
             </View>
             {currentUser.role !== 'mechanic' && (
               nearbyMechanics.length === 0 ? (
@@ -3128,6 +3137,13 @@ const styles = StyleSheet.create({
   },
   mapCompact: {
     height: 130,
+  },
+  mapUnavailable: {
+    minHeight: 170,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#eef5ff',
   },
   item: {
     padding: 10,
