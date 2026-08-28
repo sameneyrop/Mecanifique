@@ -1,48 +1,35 @@
-# Mecanifique MVP
+# Mecanifique
 
-Backend inicial + app Android para una plataforma tipo "Doctoralia para mecánicos on demand", arrancando con servicios **programados**.
+Plataforma móvil para conectar clientes con mecánicos verificados, solicitar
+servicios, seguir el avance y gestionar pagos.
 
-## Stack
+## Estado actual
 
-- Node.js + TypeScript
-- Express
-- SQLite (`data/mecanifique.db`)
-- Zod para validación de payloads
-- **Supabase Auth** (nuevo - autenticación JWT escalable)
+- Backend Node.js + TypeScript + Express desplegado en
+  `https://mecanifique.onrender.com`.
+- App Android con Expo.
+- Autenticación Supabase por email y Google OAuth.
+- Solicitudes inmediatas y programadas, disponibilidad de mecánicos, ubicación,
+  dirección del servicio, chat básico, estados de avance y reseñas.
+- Modo seguro del mapa cuando todavía no existe una clave de Google Maps.
 
-## Cómo correr
+## Ejecutar localmente
 
-### API backend
+### Backend
 
 ```bash
 npm install
 npm run dev
 ```
 
-Servidor por defecto en `http://localhost:4000`.
+El servidor usa `http://localhost:4000`. Copia `.env.example` a `.env` y
+configura `SUPABASE_URL`, `SUPABASE_ANON_KEY` y los redirects.
 
-**Nota importante:** Para usar **Supabase Auth** (endpoints v2), necesitas:
-1. Crear una cuenta gratuita en [https://supabase.com](https://supabase.com)
-2. Copiar `SUPABASE_URL` y `SUPABASE_ANON_KEY` a un archivo `.env`
+Para validar:
 
-Ver [SUPABASE_AUTH_SETUP.md](./SUPABASE_AUTH_SETUP.md) para más detalles.
-
-Para producción, configura `NODE_ENV=production`, define `CORS_ORIGINS` con los orígenes web permitidos y nunca uses las credenciales de ejemplo del administrador.
-
-En producción, la API rechaza el arranque si faltan `SUPABASE_URL`, `SUPABASE_ANON_KEY` o `CORS_ORIGINS`, y no permite `localhost` ni `*` en CORS. Usa un archivo `.env` fuera del repositorio y rota cualquier clave que haya sido compartida accidentalmente.
-
-El archivo [render.yaml](./render.yaml) deja preparado un servicio Render con Node 20 y reconstrucción explícita de `sqlite3` desde código fuente para evitar incompatibilidades de GLIBC, además de build (incluyendo `devDependencies` necesarias para TypeScript), start, health check y disco persistente para SQLite. Al crear el servicio desde ese archivo todavía debes introducir manualmente las variables secretas de producción. Si el servicio ya existía, activa **Clear build cache & deploy** para descartar binarios nativos antiguos.
-
-Backend desplegado actualmente:
-
-```text
-https://mecanifique.onrender.com
-```
-
-Verificación:
-
-```text
-https://mecanifique.onrender.com/health
+```bash
+npm run build
+npm test
 ```
 
 ### App Android
@@ -50,151 +37,101 @@ https://mecanifique.onrender.com/health
 ```bash
 cd mobile
 npm install
-npm run android
+npx expo start
 ```
 
-Si usas un dispositivo físico, define la URL del backend:
+Para crear un APK instalable:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://TU_IP_LOCAL:4000
-```
-
-El repositorio incluye [mobile/eas.json](./mobile/eas.json) con perfiles `development`, `preview` (APK instalable) y `production` (AAB para Google Play). Instala EAS CLI, inicia sesión y configura la variable `EXPO_PUBLIC_API_BASE_URL` en EAS antes de compilar:
-
-```bash
-cd mobile
-npm install
 npm install --global eas-cli
 eas login
-eas env:create --name EXPO_PUBLIC_API_BASE_URL --value https://api.tu-dominio.com --environment production
 eas build --platform android --profile preview
 ```
 
-Para publicar en Google Play usa `eas build --platform android --profile production`. Verifica permisos de ubicación y notificaciones en un dispositivo físico antes de publicar.
+La URL móvil de producción está definida en `mobile/eas.json`.
 
-En emulador Android, el backend local por defecto es `http://10.0.2.2:4000`.
+## Google OAuth
 
-La app puede pedir permiso de ubicación para mostrar mecánicos cercanos por GPS y visualizar pines en mapa con refresco automático.
+En Google Cloud crea un cliente OAuth de tipo **Web application**. En Supabase,
+abre **Authentication → Providers → Google** y coloca:
 
-`http://localhost:4000/` sigue mostrando un dashboard web de soporte para pruebas internas.
+- **Client IDs:** Client ID OAuth Web de Google.
+- **Client Secret:** Client Secret del mismo cliente.
+- **Skip nonce checks:** desactivado.
+- **Allow users without an email:** desactivado.
 
-## Tutorial rápido de uso (app Android)
+En Google Cloud registra como URI de redirección la **Callback URL for OAuth**
+que muestra Supabase (normalmente `https://<project-ref>.supabase.co/auth/v1/callback`).
 
-La app está separada por secciones en la barra inferior:
+En Supabase → **Authentication → URL Configuration → Redirect URLs** agrega:
 
-- **INI**: resumen y propósito de la plataforma.
-- **SOL**: gestión de solicitudes (ver, crear y consultar detalle por ID).
-- **MEC**: búsqueda de mecánicos por ciudad/zona.
-- **MAP**: mecánicos cercanos por GPS y mapa con pines.
-- **CFG**: acciones operativas para admin/mecánico.
-
-### Flujo tipo Uber para mecánicos
-
-1. El mecánico inicia sesión.
-2. En **INI** usa el botón grande de conexión (**CONECTARME / DESCONECTARME**).
-3. Mientras esté conectado puede recibir solicitudes.
-4. Clientes pueden ir a **MEC**, abrir un perfil y usar **Solicitar ayuda de este mecánico** aunque aparezca ocupado.
-5. En **CFG** puedes crear turnos reales por fecha/hora y luego usarlos desde la solicitud.
-
-Estados de una solicitud on-demand:
-
-`pending` → `assigned` → `en_route` → `on_site` → `diagnosing` → `repairing` → `completed`
-
-`awaiting_parts` puede ocurrir después del diagnóstico o durante la reparación. El cliente o admin puede cancelar mientras la solicitud no esté cerrada; las solicitudes `completed` y `cancelled` no admiten más transiciones.
-
-### Flujo recomendado (primera prueba)
-
-1. Inicia sesión como `admin` (`admin / admin1234`) o crea cuentas de cliente/mecánico.
-2. En **MEC**, valida que existan mecánicos activos.
-3. En **SOL**, crea una solicitud con datos del vehículo y ubicación.
-4. En **MAP**, usa ubicación para ver cercanos y validar pines.
-5. En **CFG** (admin), asigna mecánico y actualiza su estado/disponibilidad.
-6. En **SOL**, consulta la solicitud por ID y revisa su progreso.
-
-## Endpoints iniciales
-
-### Salud
-
-- `GET /health`
-
-### Mecánicos
-
-- `POST /mechanics`
-- `GET /mechanics?city=Aguascalientes&zone=Norte&available=true`
-- `PATCH /mechanics/:id/status`
-- `PATCH /mechanics/:id/availability`
-
-### Auth (antiguo - SQLite)
-
-- `POST /auth/register/customer`
-- `POST /auth/register/mechanic`
-- `POST /auth/login`
-- `POST /auth/admin/login`
-- `GET /auth/me`
-
-### Auth v2 (nuevo - Supabase, recomendado)
-
-**Requiere configuración de Supabase** (ver [SUPABASE_AUTH_SETUP.md](./SUPABASE_AUTH_SETUP.md))
-
-- `POST /auth/v2/register/customer`
-- `POST /auth/v2/register/mechanic`
-- `POST /auth/v2/login`
-- `GET /auth/v2/me`
-
-### API con roles
-
-- `POST /api/service-requests`
-- `GET /api/service-requests/mine`
-- `POST /api/service-requests/:id/assign`
-- `POST /api/service-requests/:id/respond` (mecánico acepta/rechaza hold)
-- `POST /api/service-requests/:id/cancel` (cliente/admin cancela)
-- `PATCH /api/service-requests/:id/status`
-- `POST /api/service-requests/:id/updates`
-- `GET /api/mechanics/incoming-request`
-- `PATCH /api/mechanics/:id/status`
-- `PATCH /api/mechanics/:id/availability`
-- `PATCH /api/mechanics/:id/online`
-- `POST /api/mechanics/:id/schedule-slots`
-- `GET /mechanics/:id/schedule-slots`
-
-### Clientes
-
-- `POST /customers`
-
-### Solicitudes de servicio
-
-- `POST /service-requests`
-- `POST /service-requests/:id/assign` (asignación manual o automática por zona/rating)
-- `PATCH /service-requests/:id/status`
-- `POST /service-requests/:id/updates`
-- `GET /service-requests/:id`
-
-## Flujo recomendado de MVP
-
-1. Registrar mecánicos.
-2. Activarlos manualmente (`status = active`) como parte de tu validación presencial.
-3. Conectar mecánicos disponibles desde la app.
-4. Registrar cliente.
-5. Crear una solicitud inmediata; el sistema la ofrece al mejor mecánico activo, conectado y disponible de la zona.
-6. Opcionalmente elegir una visita programada o un mecánico específico.
-7. Registrar updates de avance y cerrar servicio.
-
-## Acceso admin de desarrollo
-
-Por defecto, en local se crea un admin de desarrollo:
-
-- `login`: `admin`
-- `password`: `admin1234`
-
-Si quieres cambiarlo:
-
-- `ADMIN_LOGIN`
-- `ADMIN_PASSWORD`
-
-## Ejemplo rápido con curl
-
-```bash
-curl -X POST http://localhost:4000/mechanics ^
-  -H "Content-Type: application/json" ^
-  -d "{\"fullName\":\"Juan Perez\",\"phone\":\"4491234567\",\"city\":\"Aguascalientes\",\"zone\":\"Norte\",\"yearsExperience\":8,\"specialties\":[\"Electrico\",\"Motor\"]}"
+```text
+https://mecanifique.onrender.com/auth/callback
+mecanifique://auth/callback
 ```
+
+La app abre `GET /auth/v2/google`, recibe el token en el callback móvil y crea
+o inicia la sesión del cliente.
+
+## Pruebas de registro
+
+El límite local de registros fue retirado para facilitar las pruebas. Supabase
+puede seguir limitando el envío de correos. Para pruebas rápidas se puede
+desactivar temporalmente **Confirm email** en **Authentication → Providers →
+Email**. Para producción se debe configurar SMTP propio y conservar límites
+antiabuso.
+
+## Roadmap de seguridad y producto
+
+Las siguientes iniciativas están registradas en el todo list de la sesión:
+
+1. Verificación SMS obligatoria para clientes y mecánicos.
+2. Verificación de identidad con INE y selfie para todos.
+3. Para mecánicos: INE frontal/trasera, selfie con prueba de vida, carta de
+   antecedentes no penales y comprobante de domicilio.
+4. Estados de revisión, cifrado, retención limitada, consentimiento, auditoría
+   y revisión humana. La IA solo debe asistir en la detección de inconsistencias,
+   no aprobar automáticamente de forma irreversible.
+5. Pagos con Stripe Connect u otro proveedor compatible con México: cobro del
+   cliente, comisión, autorización, captura, reembolso y liquidación.
+6. Refacciones con cotización, aprobación del cliente, adelanto o método
+   controlado para el mecánico, ticket y conciliación.
+7. Métodos de pago tokenizados para clientes y cuentas de cobro/CLABE mediante
+   onboarding bancario del proveedor.
+8. Saldo, comisiones, pagos fallidos y liquidaciones semanales para mecánicos.
+9. Seguimiento GPS con consentimiento durante el servicio, incluyendo el viaje
+   a la refaccionaria y el regreso; se detiene al cerrar la solicitud.
+10. Información previa clara: vehículo, falla, fotos, dirección aproximada,
+    identidad, calificación, especialidades y ETA.
+11. Reseñas posteriores al servicio, promedios, cantidad de servicios,
+    moderación y perfiles públicos.
+12. Flujo accesible con botones grandes, pocos pasos, lenguaje sencillo y
+    confirmaciones para personas mayores.
+13. Perfiles de vehículos con marca, modelo, año, placas parcialmente ocultas y
+    fotos para que ambas partes identifiquen correctamente el auto y la persona.
+
+## Flujos previstos
+
+### Cliente
+
+Pedir ayuda → elegir vehículo → describir falla y subir fotos → confirmar
+dirección → revisar mecánico y precio → autorizar pago → seguir servicio →
+aprobar refacciones → calificar.
+
+### Mecánico
+
+Activarse → revisar solicitud y vehículo → aceptar → navegar → actualizar estado
+→ cotizar/comprar refacción → completar trabajo → recibir liquidación.
+
+## Seguridad y privacidad
+
+Los documentos oficiales, selfies, teléfonos, métodos de pago y ubicaciones
+requieren cifrado, acceso mínimo, registro de auditoría, consentimiento
+explícito, política de privacidad y eliminación conforme a la legislación
+aplicable. No se deben guardar números completos de tarjetas en Mecanifique.
+
+## Documentación relacionada
+
+- [Configuración de Supabase y Google OAuth](./SUPABASE_AUTH_SETUP.md)
+- [Configuración de Render](./render.yaml)
+- [Configuración EAS móvil](./mobile/eas.json)
