@@ -1,5 +1,10 @@
 {
   "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "8f7dfcc2-55e4-4206-90fe-1ed70c6a0216"
+      }
+    },
     "name": "Mecanifique",
     "slug": "mecanifique",
     "version": "1.0.0",
@@ -10,6 +15,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.sameneyro.mecanifique",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
