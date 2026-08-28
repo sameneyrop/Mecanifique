@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mecanifique MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Mecanifique</p>
+          <h1>Dashboard MVP</h1>
+          <p class="muted">Login, alta de mecánicos, solicitudes y asignación.</p>
+        </div>
+        <div class="auth-chip" id="authChip">Sin sesión</div>
+      </header>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Sesión</h2>
+          <form id="loginForm" class="stack">
+            <input name="login" placeholder="Teléfono o login" required />
+            <input name="password" type="password" placeholder="Contraseña" required />
+            <button type="submit">Iniciar sesión</button>
+          </form>
+          <div class="row">
+            <button data-mode="customer-register" class="ghost">Registrar cliente</button>
+            <button data-mode="mechanic-register" class="ghost">Registrar mecánico</button>
+            <button id="logoutBtn" class="ghost">Salir</button>
+          </div>
+          <pre id="authOutput" class="output"></pre>
+        </article>
+
+        <article class="card">
+          <h2>Crear solicitud</h2>
+          <form id="requestForm" class="stack">
+            <input name="customerId" type="number" placeholder="customerId (si eres admin)" />
+            <input name="vehicleMake" placeholder="Marca" required />
+            <input name="vehicleModel" placeholder="Modelo" required />
+            <input name="vehicleYear" type="number" placeholder="Año" required />
+            <textarea name="issueDescription" placeholder="Descripción del problema" required></textarea>
+            <input name="preferredTime" placeholder="Fecha/hora preferida" required />
+            <div class="row">
+              <input name="city" placeholder="Ciudad" required />
+              <input name="zone" placeholder="Zona" required />
+            </div>
+            <button type="submit">Crear solicitud</button>
+          </form>
+          <pre id="requestOutput" class="output"></pre>
+        </article>
+
+        <article class="card">
+          <h2>Mecánicos</h2>
+          <form id="mechanicsFilter" class="row">
+            <input name="city" placeholder="Ciudad" />
+            <input name="zone" placeholder="Zona" />
+            <button type="submit">Buscar</button>
+          </form>
+          <div id="mechanicsList" class="list"></div>
+        </article>
+
+        <article class="card">
+          <h2>Solicitud por ID</h2>
+          <form id="requestLookup" class="row">
+            <input name="id" type="number" placeholder="ID de solicitud" required />
+            <button type="submit">Cargar</button>
+          </form>
+          <div id="requestDetails" class="stack"></div>
+        </article>
+
+        <article class="card">
+          <h2>Acciones admin / mecánico</h2>
+          <form id="assignForm" class="row">
+            <input name="requestId" type="number" placeholder="Solicitud ID" required />
+            <input name="mechanicId" type="number" placeholder="Mecánico ID (opcional)" />
+            <button type="submit">Asignar</button>
+          </form>
+          <form id="statusForm" class="row">
+            <input name="mechanicId" type="number" placeholder="Mecánico ID" required />
+            <select name="status">
+              <option value="pending_verification">pending_verification</option>
+              <option value="active">active</option>
+              <option value="suspended">suspended</option>
+            </select>
+            <button type="submit">Cambiar estado</button>
+          </form>
+          <form id="availabilityForm" class="row">
+            <input name="mechanicId" type="number" placeholder="Mi mechanicId" required />
+            <select name="isAvailable">
+              <option value="true">Disponible</option>
+              <option value="false">No disponible</option>
+            </select>
+            <button type="submit">Actualizar disponibilidad</button>
+          </form>
+          <form id="updateForm" class="stack">
+            <input name="requestId" type="number" placeholder="Solicitud ID" required />
+            <textarea name="message" placeholder="Update para el cliente" required></textarea>
+            <button type="submit">Publicar update</button>
+          </form>
+          <pre id="actionOutput" class="output"></pre>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>
