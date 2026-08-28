@@ -25,6 +25,8 @@ declare module "express-serve-static-core" {
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
+const emailRedirectTo =
+  process.env.SUPABASE_REDIRECT_URL || "https://mecanifique.onrender.com/auth/callback";
 const supabaseRequestTimeoutMs = 15_000;
 const verifiedTokenCache = new Map<string, { user: SupabaseAuthUser; expiresAt: number }>();
 const tokenCacheTtlMs = 60_000;
@@ -134,6 +136,7 @@ export async function registerCustomerWithSupabase(
       body: JSON.stringify({
         email,
         password,
+        email_redirect_to: emailRedirectTo,
         user_metadata: {
           full_name: fullName,
           phone,
@@ -215,6 +218,7 @@ export async function registerMechanicWithSupabase(
       body: JSON.stringify({
         email,
         password,
+        email_redirect_to: emailRedirectTo,
         user_metadata: {
           full_name: fullName,
           phone,

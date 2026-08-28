@@ -69,6 +69,16 @@ app.use((req, res, next) => {
 app.use(optionalAuth);
 app.use(supabaseAuthMiddleware);
 app.use(express.static(path.resolve(process.cwd(), "public")));
+app.get("/auth/callback", (_req, res) => {
+  res.type("html").send(`<!doctype html>
+<html lang="es">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mecanifique</title></head>
+  <body style="font-family:system-ui,sans-serif;padding:2rem;max-width:42rem;margin:auto">
+    <h1>Correo confirmado</h1>
+    <p>Tu correo fue confirmado correctamente. Regresa a la app Mecanifique e inicia sesión.</p>
+  </body>
+</html>`);
+});
 
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
