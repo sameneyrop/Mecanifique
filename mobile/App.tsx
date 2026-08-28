@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import {
@@ -225,6 +227,7 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+WebBrowser.maybeCompleteAuthSession();
 
 const ONBOARDING_STEPS = [
   {
@@ -1151,6 +1154,43 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+
+  }
+
+  async function handleGoogleLogin() {
+    setBusy(true);
+    setMessage('Abriendo Google...');
+    try {
+      const redirectUri = Linking.createURL('auth/callback');
+      const { url: authUrl } = await apiRequest<{ url: string }>(
+        `/auth/v2/google?redirectTo=${encodeURIComponent(redirectUri)}`,
+      );
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+      if (result.type !== 'success' || !result.url) {
+        setMessage('Inicio con Google cancelado');
+        return;
+      }
+
+      const hash = result.url.split('#')[1] || '';
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get('access_token');
+      if (!accessToken) {
+        throw new Error('Google no devolvió una sesión válida');
+      }
+
+      const me = await apiRequest<{ user: AuthUser }>('/auth/v2/me', { token: accessToken });
+      setToken(accessToken);
+      setUser(me.user);
+      setLocationAutoRequested(false);
+      setCurrentScreen('home');
+      await persistSession(accessToken, me.user);
+      await loadMyRequests(accessToken);
+      setMessage(`Sesión iniciada como ${me.user.role}`);
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleCreateRequest() {
@@ -1634,6 +1674,13 @@ export default function App() {
                 onPress={handleAuthSubmit}
                 busy={busy}
               />
+              {authMode === 'login' && (
+                <SecondaryButton
+                  title="Continuar con Google"
+                  onPress={handleGoogleLogin}
+                  busy={busy}
+                />
+              )}
             </Card>
             <SecondaryButton title="Ver introducción" onPress={showOnboardingAgain} />
             <View style={styles.statusPill}>

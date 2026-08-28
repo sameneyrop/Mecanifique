@@ -37,6 +37,8 @@ Crea un archivo `.env` en la raíz del proyecto:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_REDIRECT_URL=https://mecanifique.onrender.com/auth/callback
+SUPABASE_MOBILE_REDIRECT_URL=mecanifique://auth/callback
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 PORT=4000
@@ -148,6 +150,22 @@ Authorization: Bearer <accessToken>
 }
 ```
 
+### Login con Google
+
+La app usa `GET /auth/v2/google` para abrir el flujo OAuth y volver a
+`mecanifique://auth/callback`.
+
+Configuración necesaria:
+
+1. En Google Cloud Console crea credenciales OAuth de tipo **Web application**.
+2. En Supabase ve a **Authentication** → **Providers** → **Google**, activa el
+   proveedor y copia allí el Client ID y Client Secret.
+3. En Supabase ve a **Authentication** → **URL Configuration** y añade:
+   - `https://mecanifique.onrender.com/auth/callback`
+   - `mecanifique://auth/callback`
+4. En la APK, pulsa **Continuar con Google**. La cuenta se crea o inicia sesión
+   automáticamente como cliente.
+
 ## Endpoints antiguos (aún funcionales)
 
 La autenticación anterior sigue funcionando:
@@ -172,7 +190,7 @@ Puedes usar cualquiera de las dos versiones. Recomendamos migrar gradualmente a 
 ## Próximos pasos
 
 - [ ] Configurar templates de email en Supabase
-- [ ] Agregar OAuth (Google, Facebook)
+- [x] Agregar OAuth (Google)
 - [ ] Migrar tabla `users` a Supabase Postgres
 - [ ] Implementar email verification requerida antes de usar
 - [ ] Agregar password reset flow en la app

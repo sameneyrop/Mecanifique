@@ -30,6 +30,7 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 const isProduction = process.env.NODE_ENV === "production";
+const supabaseUrl = process.env.SUPABASE_URL || "";
 
 if (!Number.isInteger(port) || port <= 0 || port > 65535) {
   throw new Error("PORT debe ser un número entero entre 1 y 65535");
@@ -713,6 +714,21 @@ app.post(
       }
       throw error;
     }
+  })
+);
+
+app.get(
+  "/auth/v2/google",
+  handleAsync(async (req, res) => {
+    if (!supabaseUrl) {
+      res.status(503).json({ error: "La autenticación con Google no está configurada" });
+      return;
+    }
+    const redirectTo = process.env.SUPABASE_MOBILE_REDIRECT_URL || "mecanifique://auth/callback";
+    const authorizeUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
+    authorizeUrl.searchParams.set("provider", "google");
+    authorizeUrl.searchParams.set("redirect_to", redirectTo);
+    res.json({ url: authorizeUrl.toString() });
   })
 );
 

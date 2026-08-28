@@ -3,6 +3,7 @@ const appJson = require('./app.json');
 module.exports = ({ config }) => ({
   ...config,
   ...appJson.expo,
+  scheme: 'mecanifique',
   android: {
     ...appJson.expo.android,
     config: {
@@ -11,4 +12,5 @@ module.exports = ({ config }) => ({
       },
     },
   },
+  plugins: [...(appJson.expo.plugins || []), 'expo-web-browser'],
 });
