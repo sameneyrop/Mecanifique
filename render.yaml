@@ -3,10 +3,13 @@ services:
     name: mecanifique-api
     runtime: node
     plan: starter
-    buildCommand: npm install --include=dev && npm run build
+    buildCommand: npm install --include=dev --build-from-source=sqlite3 && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 20.19.0
     disk:
       name: mecanifique-data
       mountPath: /opt/render/project/src/data
