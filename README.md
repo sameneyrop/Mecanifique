@@ -31,7 +31,7 @@ Para producción, configura `NODE_ENV=production`, define `CORS_ORIGINS` con los
 
 En producción, la API rechaza el arranque si faltan `SUPABASE_URL`, `SUPABASE_ANON_KEY` o `CORS_ORIGINS`, y no permite `localhost` ni `*` en CORS. Usa un archivo `.env` fuera del repositorio y rota cualquier clave que haya sido compartida accidentalmente.
 
-El archivo [render.yaml](./render.yaml) deja preparado un servicio Render con build, start, health check y disco persistente para SQLite. Al crear el servicio desde ese archivo todavía debes introducir manualmente las variables secretas de producción.
+El archivo [render.yaml](./render.yaml) deja preparado un servicio Render con build (incluyendo `devDependencies` necesarias para TypeScript), start, health check y disco persistente para SQLite. Al crear el servicio desde ese archivo todavía debes introducir manualmente las variables secretas de producción.
 
 ### App Android
 
