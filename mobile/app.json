@@ -37,7 +37,8 @@
           "icon": "./assets/icon.png",
           "color": "#0072B2"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "web": {
       "favicon": "./assets/favicon.png"
