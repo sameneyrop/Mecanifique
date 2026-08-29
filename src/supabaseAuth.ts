@@ -51,18 +51,33 @@ async function ensureLocalUser(supabaseUser: {
 
   const metadata = supabaseUser.user_metadata || {};
   const email = supabaseUser.email || "";
-  const role = metadata.role === "mechanic" ? "mechanic" : "customer";
+  const role: "customer" | "mechanic" | "admin" =
+    metadata.role === "mechanic" ? "mechanic" : metadata.role === "admin" ? "admin" : "customer";
   const fullName = String(metadata.full_name || email);
   const phone = String(metadata.phone || "");
 
-  if (role === "mechanic") {
+  if (role === "admin") {
+    await run(
+      `
+      INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash)
+      VALUES ('admin', ?, ?, ?, ?, ?)
+      `,
+      [
+        email,
+        supabaseUser.id,
+        fullName,
+        crypto.randomBytes(16).toString("hex"),
+        crypto.randomBytes(32).toString("hex")
+      ]
+    );
+  } else if (role === "mechanic") {
     const mechanic = await run(
       `
       INSERT INTO mechanics (
         full_name, phone, city, zone, years_experience, specialties,
         status, is_available, is_online, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 1, 0, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 0, 0, datetime('now'))
       `,
       [
         fullName,
@@ -253,7 +268,7 @@ export async function registerMechanicWithSupabase(
         full_name, phone, city, zone, years_experience, specialties,
         status, is_available, is_online, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 1, 0, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 0, 0, datetime('now'))
       `,
       [
         fullName,
