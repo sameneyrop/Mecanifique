@@ -4,16 +4,7 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { all, get, initDb, run } from "./db";
-import {
-  createSession,
-  loginUser,
-  optionalAuth,
-  registerCustomerUser,
-  registerMechanicUser,
-  requireAuth,
-  requireRole,
-  seedDevAdmin
-} from "./auth";
+import { requireAuth, requireRole } from "./auth";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -67,7 +58,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use(optionalAuth);
 app.use(supabaseAuthMiddleware);
 app.use(express.static(path.resolve(process.cwd(), "public")));
 app.get("/auth/callback", (_req, res) => {
@@ -144,11 +134,6 @@ const customerRegistrationSchema = z.object({
 
 const mechanicRegistrationAuthSchema = mechanicRegistrationSchema.extend({
   email: z.string().email(),
-  password: z.string().min(8)
-});
-
-const loginSchemaV1 = z.object({
-  login: z.string().min(3),
   password: z.string().min(8)
 });
 
@@ -521,100 +506,9 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "mecanifique-api" });
 });
 
-app.post(
-  "/auth/register/customer",
-  handleAsync(async (req, res) => {
-    if (applyRateLimit("auth-register-customer", req, res)) {
-      return;
-    }
-
-    const payload = customerRegistrationSchema.parse(req.body);
-    try {
-      const user = await registerCustomerUser(payload);
-      const token = await createSession(user.id);
-      res.status(201).json({ user, token });
-    } catch (error) {
-      if (error instanceof Error && error.message === "ACCOUNT_EXISTS") {
-        res.status(409).json({ error: "Ya existe una cuenta con ese teléfono" });
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-app.post(
-  "/auth/register/mechanic",
-  handleAsync(async (req, res) => {
-    if (applyRateLimit("auth-register-mechanic", req, res)) {
-      return;
-    }
-
-    const payload = mechanicRegistrationAuthSchema.parse(req.body);
-    try {
-      const user = await registerMechanicUser(payload);
-      const token = await createSession(user.id);
-      res.status(201).json({ user, token });
-    } catch (error) {
-      if (error instanceof Error && error.message === "ACCOUNT_EXISTS") {
-        res.status(409).json({ error: "Ya existe una cuenta con ese teléfono" });
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-app.post(
-  "/auth/login",
-  handleAsync(async (req, res) => {
-    if (applyRateLimit("auth-login", req, res)) {
-      return;
-    }
-
-    const payload = loginSchemaV1.parse(req.body);
-    try {
-      const result = await loginUser(payload);
-      res.status(200).json(result);
-    } catch (error) {
-      if (error instanceof Error && error.message === "INVALID_CREDENTIALS") {
-        res.status(401).json({ error: "Credenciales inválidas" });
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
-
-app.post(
-  "/auth/admin/login",
-  handleAsync(async (req, res) => {
-    if (applyRateLimit("auth-admin-login", req, res)) {
-      return;
-    }
-
-    const payload = loginSchemaV1.parse(req.body);
-    try {
-      const result = await loginUser(payload);
-      if (result.user.role !== "admin") {
-        res.status(403).json({ error: "El usuario no es administrador" });
-        return;
-      }
-
-      res.status(200).json(result);
-    } catch (error) {
-      if (error instanceof Error && error.message === "INVALID_CREDENTIALS") {
-        res.status(401).json({ error: "Credenciales inválidas" });
-        return;
-      }
-
-      throw error;
-    }
-  })
-);
+// Login, registro y sesión de admin viven en Supabase (/auth/v2/*).
+// El sistema propio de contraseñas locales se eliminó: nunca lo usaba
+// la app móvil y solo agregaba superficie de ataque sin beneficio real.
 
 app.get(
   "/auth/me",
@@ -3043,7 +2937,6 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 initDb()
-  .then(() => seedDevAdmin())
   .then(() => {
     app.listen(port, () => {
       console.log(`Mecanifique API escuchando en http://localhost:${port}`);
