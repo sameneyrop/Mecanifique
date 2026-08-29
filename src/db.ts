@@ -271,6 +271,38 @@ export async function initDb(): Promise<void> {
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS identity_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL UNIQUE,
+      role TEXT NOT NULL CHECK(role IN ('customer', 'mechanic')),
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft', 'submitted', 'under_review', 'approved', 'rejected')),
+      consent_at TEXT NOT NULL,
+      submitted_at TEXT,
+      reviewed_at TEXT,
+      reviewed_by_user_id INTEGER,
+      reviewer_note TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(reviewed_by_user_id) REFERENCES users(id)
+    );
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS identity_verification_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      verification_id INTEGER NOT NULL,
+      document_type TEXT NOT NULL
+        CHECK(document_type IN ('ine_front', 'ine_back', 'selfie', 'proof_of_address', 'criminal_record')),
+      storage_key TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(verification_id, document_type),
+      FOREIGN KEY(verification_id) REFERENCES identity_verifications(id) ON DELETE CASCADE
+    );
+  `);
 }
 
 async function ensureColumn(table: string, columnName: string, alterSql: string): Promise<void> {

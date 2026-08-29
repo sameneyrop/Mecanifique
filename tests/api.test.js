@@ -1,7 +1,18 @@
+process.env.MECANIFIQUE_AUTO_START = "false";
+
+const { startServer } = require("../src/server.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const baseUrl = process.env.API_BASE_URL || "http://localhost:4000";
+
+async function ensureServer() {
+  if (!global.__mecanifiqueServerStarted) {
+    global.__mecanifiqueServerStarted = true;
+    global.__mecanifiqueServer = await startServer();
+  }
+  return global.__mecanifiqueServer;
+}
 
 async function request(path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -15,6 +26,19 @@ async function request(path, options = {}) {
   const body = await response.json();
   return { response, body };
 }
+
+test.before(async () => {
+  await ensureServer();
+});
+
+test.after(async () => {
+  if (!global.__mecanifiqueServer) {
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    global.__mecanifiqueServer.close((error) => (error ? reject(error) : resolve()));
+  });
+});
 
 test("health responde correctamente", async () => {
   const { response, body } = await request("/health");

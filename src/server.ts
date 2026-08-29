@@ -1,7 +1,9 @@
 import "dotenv/config";
 import cors from "cors";
+import http from "node:http";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
+import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { all, get, initDb, run } from "./db";
 import { requireAuth, requireRole } from "./auth";
@@ -15,9 +17,12 @@ import {
   registerMechanicWithSupabase,
   loginWithSupabase
 } from "./supabaseAuth";
+import { getSupabaseDbHealth } from "./supabaseDb";
 
 const app = express();
 const port = Number(process.env.PORT ?? "4000");
+const httpServer = http.createServer(app);
+const realtimeChannels = new Map<string, Set<WebSocket>>();
 const allowedOrigins = (process.env.CORS_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
@@ -71,6 +76,80 @@ app.get("/auth/callback", (_req, res) => {
     <p>Tu correo fue confirmado correctamente. Regresa a la app Mecanifique e inicia sesión.</p>
   </body>
 </html>`);
+});
+
+app.get("/supabase/health", handleAsync(async (_req, res) => {
+ const health = await getSupabaseDbHealth();
+ if (!health.configured || !health.connected) {
+   res.status(503).json(health);
+   return;
+ }
+ res.status(200).json(health);
+}));
+
+app.get("/realtime/health", (_req, res) => {
+ res.status(200).json({
+   ok: true,
+   connectedClients: Array.from(realtimeChannels.values()).reduce((total, sockets) => total + sockets.size, 0),
+   channels: Array.from(realtimeChannels.keys())
+ });
+});
+
+const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+wss.on("connection", (socket) => {
+ socket.on("message", (rawMessage) => {
+   try {
+     const text = typeof rawMessage === "string" ? rawMessage : rawMessage.toString("utf8");
+     const message = JSON.parse(text);
+
+     if (message?.type === "ping") {
+       socket.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+       return;
+     }
+
+     if (message?.type === "subscribe" && typeof message.channel === "string") {
+       const channel = message.channel.trim();
+       if (!channel) {
+         socket.send(JSON.stringify({ type: "error", message: "channel requerido" }));
+         return;
+       }
+
+       let channelSockets = realtimeChannels.get(channel);
+       if (!channelSockets) {
+         channelSockets = new Set<WebSocket>();
+         realtimeChannels.set(channel, channelSockets);
+       }
+       channelSockets.add(socket);
+       socket.send(JSON.stringify({ type: "subscribed", channel }));
+       return;
+     }
+
+     if (message?.type === "unsubscribe" && typeof message.channel === "string") {
+       const channel = message.channel.trim();
+       const channelSockets = realtimeChannels.get(channel);
+       if (channelSockets) {
+         channelSockets.delete(socket);
+         if (channelSockets.size === 0) {
+           realtimeChannels.delete(channel);
+         }
+       }
+     }
+   } catch {
+     socket.send(JSON.stringify({ type: "error", message: "Mensaje WebSocket inválido" }));
+   }
+ });
+
+ socket.on("close", () => {
+   for (const channelSockets of realtimeChannels.values()) {
+     channelSockets.delete(socket);
+   }
+   for (const [channel, channelSockets] of Array.from(realtimeChannels.entries())) {
+     if (channelSockets.size === 0) {
+       realtimeChannels.delete(channel);
+     }
+   }
+ });
 });
 
 app.use((_req, res, next) => {
@@ -145,6 +224,11 @@ const onlineSchema = z.object({
   isOnline: z.boolean()
 });
 
+const mechanicLocationSchema = z.object({
+  latitude: z.number().gte(-90).lte(90),
+  longitude: z.number().gte(-180).lte(180)
+});
+
 const mechanicStatusSchema = z.object({
   status: z.enum(["pending_verification", "active", "suspended"])
 });
@@ -215,6 +299,28 @@ const mechanicReviewSchema = z.object({
 
 const pushTokenSchema = z.object({
   pushToken: z.string().min(10)
+});
+
+const identityDocumentTypeSchema = z.enum([
+  "ine_front",
+  "ine_back",
+  "selfie",
+  "proof_of_address",
+  "criminal_record"
+]);
+
+const identityVerificationSchema = z.object({
+  consent: z.literal(true)
+});
+
+const identityDocumentSchema = z.object({
+  documentType: identityDocumentTypeSchema,
+  storageKey: z.string().trim().min(3).max(500).regex(/^[A-Za-z0-9_./-]+$/)
+});
+
+const identityReviewSchema = z.object({
+  status: z.enum(["under_review", "approved", "rejected"]),
+  reviewerNote: z.string().trim().max(1_000).optional()
 });
 
 type MechanicRow = {
@@ -359,19 +465,59 @@ async function sendExpoPushNotifications(
   }
 }
 
+function sendRealtimeEvent(channel: string, event: string, payload: Record<string, unknown> = {}): void {
+  const sockets = realtimeChannels.get(channel);
+  if (!sockets || sockets.size === 0) {
+    return;
+  }
+
+  const envelope = {
+    type: "event",
+    channel,
+    event,
+    payload
+  };
+
+  for (const socket of sockets) {
+    if (socket.readyState !== socket.OPEN) {
+      sockets.delete(socket);
+      continue;
+    }
+
+    socket.send(JSON.stringify(envelope));
+  }
+}
+
+function notifyUser(userId: number, event: string, payload: Record<string, unknown> = {}): void {
+  sendRealtimeEvent(`user:${userId}`, event, payload);
+}
+
+function notifyRequest(requestId: number, event: string, payload: Record<string, unknown> = {}): void {
+  sendRealtimeEvent(`service-request:${requestId}`, event, payload);
+}
+
 async function createNotification(
   userId: number,
   title: string,
   body: string,
   data: Record<string, string | number | boolean | null> = {}
 ): Promise<void> {
-  await run(
+  const result = await run(
     `
     INSERT INTO notifications (user_id, title, body, data_json)
     VALUES (?, ?, ?, ?)
     `,
     [userId, title, body, JSON.stringify(data)]
   );
+
+  notifyUser(userId, "notification", {
+    id: result.lastID,
+    title,
+    body,
+    data,
+    createdAt: new Date().toISOString()
+  });
+
   void sendExpoPushNotifications(userId, title, body, data).catch((error) => {
     console.error("Expo push notification failed:", error);
   });
@@ -467,6 +613,168 @@ app.get(
 // Perfiles de vehículos del cliente (metadata únicamente; las fotos son
 // URLs externas, nunca binarios). Rutas completas en routes/vehicles.ts.
 app.use("/api", vehiclesRouter);
+
+// ============================================================================
+// IDENTITY VERIFICATION (document binaries remain in private object storage)
+// ============================================================================
+function requiredIdentityDocuments(role: "customer" | "mechanic"): string[] {
+  const customerDocuments = ["ine_front", "ine_back", "selfie"];
+  return role === "mechanic"
+    ? [...customerDocuments, "proof_of_address", "criminal_record"]
+    : customerDocuments;
+}
+
+app.get("/api/identity-verification", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role === "admin") {
+    res.status(403).json({ error: "Esta verificación solo aplica a clientes y mecánicos" });
+    return;
+  }
+
+  const verification = await get<{
+    id: number; status: string; submittedAt: string | null; reviewerNote: string | null;
+  }>(
+    `SELECT id, status, submitted_at AS submittedAt, reviewer_note AS reviewerNote
+     FROM identity_verifications WHERE user_id = ?`,
+    [user.id]
+  );
+  const documents = verification
+    ? await all<{ documentType: string }>(
+      "SELECT document_type AS documentType FROM identity_verification_documents WHERE verification_id = ?",
+      [verification.id]
+    )
+    : [];
+
+  res.json({
+    verification: verification
+      ? { status: verification.status, submittedAt: verification.submittedAt, reviewerNote: verification.reviewerNote }
+      : null,
+    requiredDocuments: requiredIdentityDocuments(user.role),
+    submittedDocuments: documents.map((document) => document.documentType)
+  });
+}));
+
+app.post("/api/identity-verification", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role === "admin") {
+    res.status(403).json({ error: "Esta verificación solo aplica a clientes y mecánicos" });
+    return;
+  }
+  identityVerificationSchema.parse(req.body);
+
+  await run(
+    `INSERT INTO identity_verifications (user_id, role, consent_at)
+     VALUES (?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id) DO NOTHING`,
+    [user.id, user.role]
+  );
+  res.status(201).json({ message: "Consentimiento registrado" });
+}));
+
+app.put("/api/identity-verification/documents", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role === "admin") {
+    res.status(403).json({ error: "Esta verificación solo aplica a clientes y mecánicos" });
+    return;
+  }
+  const payload = identityDocumentSchema.parse(req.body);
+  if (!requiredIdentityDocuments(user.role).includes(payload.documentType)) {
+    res.status(400).json({ error: "Este documento no es requerido para tu tipo de cuenta" });
+    return;
+  }
+
+  const verification = await get<{ id: number; status: string }>(
+    "SELECT id, status FROM identity_verifications WHERE user_id = ?",
+    [user.id]
+  );
+  if (!verification) {
+    res.status(409).json({ error: "Primero debes aceptar el consentimiento de verificación" });
+    return;
+  }
+  if (verification.status === "approved") {
+    res.status(409).json({ error: "Tu identidad ya fue aprobada" });
+    return;
+  }
+
+  await run(
+    `INSERT INTO identity_verification_documents (verification_id, document_type, storage_key)
+     VALUES (?, ?, ?)
+     ON CONFLICT(verification_id, document_type)
+     DO UPDATE SET storage_key = excluded.storage_key, created_at = CURRENT_TIMESTAMP`,
+    [verification.id, payload.documentType, payload.storageKey]
+  );
+  res.status(200).json({ message: "Documento registrado para revisión" });
+}));
+
+app.post("/api/identity-verification/submit", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role === "admin") {
+    res.status(403).json({ error: "Esta verificación solo aplica a clientes y mecánicos" });
+    return;
+  }
+  const verification = await get<{ id: number }>(
+    "SELECT id FROM identity_verifications WHERE user_id = ?",
+    [user.id]
+  );
+  if (!verification) {
+    res.status(409).json({ error: "Primero debes aceptar el consentimiento de verificación" });
+    return;
+  }
+  const documents = await all<{ documentType: string }>(
+    "SELECT document_type AS documentType FROM identity_verification_documents WHERE verification_id = ?",
+    [verification.id]
+  );
+  const requiredDocuments = requiredIdentityDocuments(user.role);
+  const missingDocuments = requiredDocuments.filter(
+    (documentType) => !documents.some((document) => document.documentType === documentType)
+  );
+  if (missingDocuments.length > 0) {
+    res.status(400).json({ error: "Faltan documentos requeridos", missingDocuments });
+    return;
+  }
+  await run(
+    `UPDATE identity_verifications
+     SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP, reviewer_note = NULL, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [verification.id]
+  );
+  res.status(200).json({ message: "Verificación enviada para revisión" });
+}));
+
+app.get("/api/admin/identity-verifications", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
+  const verifications = await all<{
+    id: number; userId: number; role: string; status: string; fullName: string; login: string;
+    submittedAt: string | null; reviewerNote: string | null;
+  }>(
+    `SELECT iv.id, iv.user_id AS userId, iv.role, iv.status, u.full_name AS fullName, u.login,
+            iv.submitted_at AS submittedAt, iv.reviewer_note AS reviewerNote
+     FROM identity_verifications iv
+     JOIN users u ON u.id = iv.user_id
+     ORDER BY CASE iv.status WHEN 'submitted' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END, iv.updated_at ASC`
+  );
+  res.json({ verifications });
+}));
+
+app.patch("/api/admin/identity-verifications/:id", requireAuth, requireRole("admin"), handleAsync(async (req, res) => {
+  const verificationId = Number(req.params.id);
+  if (!Number.isInteger(verificationId) || verificationId <= 0) {
+    res.status(400).json({ error: "verificationId inválido" });
+    return;
+  }
+  const payload = identityReviewSchema.parse(req.body);
+  const result = await run(
+    `UPDATE identity_verifications
+     SET status = ?, reviewer_note = ?, reviewed_at = CURRENT_TIMESTAMP,
+         reviewed_by_user_id = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [payload.status, payload.reviewerNote ?? null, req.auth?.user.id ?? null, verificationId]
+  );
+  if (result.changes === 0) {
+    res.status(404).json({ error: "Verificación no encontrada" });
+    return;
+  }
+  res.status(200).json({ message: "Estado de verificación actualizado" });
+}));
 
 // ============================================================================
 // SUPABASE AUTH ENDPOINTS (NEW - parallel to existing auth)
@@ -608,12 +916,25 @@ app.post(
 app.get(
   "/auth/v2/google",
   handleAsync(async (req, res) => {
-    if (!supabaseUrl) {
+    const activeSupabaseUrl = process.env.SUPABASE_URL || supabaseUrl;
+    if (!activeSupabaseUrl) {
       res.status(503).json({ error: "La autenticación con Google no está configurada" });
       return;
     }
-    const redirectTo = process.env.SUPABASE_MOBILE_REDIRECT_URL || "mecanifique://auth/callback";
-    const authorizeUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
+
+    const requestedRedirect = typeof req.query.redirectTo === "string"
+      ? req.query.redirectTo
+      : typeof req.query.redirect_to === "string"
+        ? req.query.redirect_to
+        : process.env.SUPABASE_MOBILE_REDIRECT_URL || "mecanifique://auth/callback";
+
+    const redirectTo = requestedRedirect.trim();
+    if (!redirectTo) {
+      res.status(400).json({ error: "redirectTo requerido para el flujo de Google OAuth" });
+      return;
+    }
+
+    const authorizeUrl = new URL(`${activeSupabaseUrl}/auth/v1/authorize`);
     authorizeUrl.searchParams.set("provider", "google");
     authorizeUrl.searchParams.set("redirect_to", redirectTo);
     res.json({ url: authorizeUrl.toString() });
@@ -1577,6 +1898,34 @@ app.patch(
   })
 );
 
+app.patch(
+  "/api/mechanics/:id/location",
+  requireAuth,
+  requireRole("mechanic", "admin"),
+  handleAsync(async (req, res) => {
+    const mechanicId = Number(req.params.id);
+    const payload = mechanicLocationSchema.parse(req.body);
+    if (!Number.isInteger(mechanicId) || mechanicId <= 0) {
+      res.status(400).json({ error: "mechanicId inválido" });
+      return;
+    }
+    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== mechanicId) {
+      res.status(403).json({ error: "Solo puedes actualizar tu propia ubicación" });
+      return;
+    }
+
+    const updated = await run(
+      "UPDATE mechanics SET latitude = ?, longitude = ? WHERE id = ?",
+      [payload.latitude, payload.longitude, mechanicId]
+    );
+    if (updated.changes === 0) {
+      res.status(404).json({ error: "Mecánico no encontrado" });
+      return;
+    }
+    res.status(200).json({ ok: true });
+  })
+);
+
 app.post(
   "/api/mechanics/:id/schedule-slots",
   requireAuth,
@@ -1745,12 +2094,13 @@ app.post(
 
     const serviceRequest = await get<{
       id: number;
+      customerId: number;
       city: string;
       zone: string;
       status: string;
     }>(
       `
-      SELECT id, city, zone, status
+      SELECT id, customer_id AS customerId, city, zone, status
       FROM service_requests
       WHERE id = ?
       `,
@@ -1836,6 +2186,16 @@ app.post(
       `,
       [requestId, `Mecánico ${mechanicId} asignado`]
     );
+
+    const customerUserId = await getUserIdByCustomerId(serviceRequest.customerId);
+    const mechanicUserId = await getUserIdByMechanicId(mechanicId);
+    if (customerUserId) {
+      notifyUser(customerUserId, "request-assigned", { requestId, mechanicId });
+    }
+    if (mechanicUserId) {
+      notifyUser(mechanicUserId, "request-assigned", { requestId, mechanicId });
+    }
+    notifyRequest(requestId, "request-assigned", { requestId, mechanicId });
 
     res.status(200).json({ ok: true, mechanicId });
   })
@@ -1928,6 +2288,21 @@ app.patch(
       );
     }
 
+    notifyRequest(requestId, "status-updated", {
+      requestId,
+      status: payload.status,
+      diagnosisNotes: payload.diagnosisNotes ?? null,
+      repairNotes: payload.repairNotes ?? null,
+      estimatedPrice: payload.estimatedPrice ?? null,
+      finalPrice: payload.finalPrice ?? null
+    });
+    if (statusCustomerUserId) {
+      notifyUser(statusCustomerUserId, "status-updated", { requestId, status: payload.status });
+    }
+    if (statusMechanicUserId) {
+      notifyUser(statusMechanicUserId, "status-updated", { requestId, status: payload.status });
+    }
+
     res.status(200).json({ ok: true });
   })
 );
@@ -1993,6 +2368,18 @@ app.post(
         `Publicaste un update en la solicitud #${requestId}`,
         { requestId, updateId: result.lastID }
       );
+    }
+
+    notifyRequest(requestId, "update-posted", {
+      requestId,
+      updateId: result.lastID,
+      update: created
+    });
+    if (updateCustomerUserId) {
+      notifyUser(updateCustomerUserId, "update-posted", { requestId, updateId: result.lastID });
+    }
+    if (updateMechanicUserId) {
+      notifyUser(updateMechanicUserId, "update-posted", { requestId, updateId: result.lastID });
     }
 
     res.status(201).json(created);
@@ -2770,13 +3157,29 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: "Error interno del servidor" });
 });
 
-initDb()
-  .then(() => {
-    app.listen(port, () => {
+export async function startServer(): Promise<typeof httpServer> {
+  await initDb();
+
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error) => {
+      httpServer.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      httpServer.off("error", onError);
       console.log(`Mecanifique API escuchando en http://localhost:${port}`);
-    });
-  })
-  .catch((error) => {
+      resolve(httpServer);
+    };
+
+    httpServer.once("error", onError);
+    httpServer.once("listening", onListening);
+    httpServer.listen(port);
+  });
+}
+
+if (process.env.MECANIFIQUE_AUTO_START !== "false") {
+  startServer().catch((error) => {
     console.error("No se pudo inicializar la base de datos", error);
     process.exit(1);
   });
+}

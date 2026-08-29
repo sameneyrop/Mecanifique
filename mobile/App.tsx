@@ -356,6 +356,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
+  const [selectedActionRequest, setSelectedActionRequest] = useState<ServiceRequest | RequestSummary | null>(null);
   const [requestMessages, setRequestMessages] = useState<RequestMessage[]>([]);
   const [messageDraft, setMessageDraft] = useState('');
   const [incomingRequest, setIncomingRequest] = useState<ServiceRequest | null>(null);
@@ -497,6 +498,13 @@ export default function App() {
     }
     return requestMechanicSlots.filter((slot) => slot.slotDate === selectedRequestScheduleDate);
   }, [requestMechanicSlots, selectedRequestScheduleDate]);
+  const liveLocationRequest = useMemo(
+    () =>
+      user?.role === 'mechanic'
+        ? myRequests.find((request) => request.status !== 'completed' && request.status !== 'cancelled')
+        : undefined,
+    [myRequests, user?.role],
+  );
 
   useEffect(() => {
     async function restoreSession() {
@@ -701,6 +709,54 @@ export default function App() {
       });
     }
   }, [mechanics, user]);
+
+  useEffect(() => {
+    if (
+      user?.role !== 'mechanic' ||
+      !user.mechanicId ||
+      mechanicConnection !== 'online' ||
+      !liveLocationRequest ||
+      !token
+    ) {
+      return;
+    }
+
+    let subscription: Location.LocationSubscription | undefined;
+    let cancelled = false;
+
+    Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 15_000,
+        distanceInterval: 50,
+      },
+      (location) => {
+        if (cancelled) {
+          return;
+        }
+        const { latitude, longitude } = location.coords;
+        setCurrentLocation({ latitude, longitude });
+        apiRequest(`/api/mechanics/${user.mechanicId}/location`, {
+          method: 'PATCH',
+          token,
+          body: { latitude, longitude },
+        }).catch((error) => setMessage(`No se pudo actualizar tu ubicación: ${formatError(error)}`));
+      },
+    )
+      .then((nextSubscription) => {
+        if (cancelled) {
+          nextSubscription.remove();
+          return;
+        }
+        subscription = nextSubscription;
+      })
+      .catch((error) => setMessage(`No se pudo iniciar ubicación en vivo: ${formatError(error)}`));
+
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+  }, [liveLocationRequest, mechanicConnection, token, user?.mechanicId, user?.role]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -1259,7 +1315,15 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
 
+  function openRequestActions(request: ServiceRequest | RequestSummary) {
+    setSelectedActionRequest(request);
+    setRequestLookupId(String(request.id));
+    setServiceStatusForm((current) => ({ ...current, requestId: String(request.id) }));
+    setUpdateForm((current) => ({ ...current, requestId: String(request.id) }));
+    setCurrentScreen('actions');
+    setActionsView('requestStatus');
   }
 
   async function saveCurrentVehicle() {
@@ -1326,9 +1390,12 @@ export default function App() {
       if (action === 'accept') {
         const fullRequest = await apiRequest<ServiceRequest>(`/service-requests/${incomingRequest.id}`, { token });
         setSelectedRequest(fullRequest);
+        setSelectedActionRequest(fullRequest);
         setRequestLookupId(String(fullRequest.id));
-        setRequestsView('detail');
-        setCurrentScreen('requests');
+        setServiceStatusForm((current) => ({ ...current, requestId: String(fullRequest.id) }));
+        setUpdateForm((current) => ({ ...current, requestId: String(fullRequest.id) }));
+        setCurrentScreen('actions');
+        setActionsView('requestStatus');
       }
     } catch (error) {
       setMessage(formatError(error));
@@ -1849,7 +1916,14 @@ export default function App() {
           )}
 
           {currentScreen === 'home' && user.role === 'mechanic' && (
-            <Card title="Modo conductor mecánico" subtitle="Conéctate para recibir solicitudes.">
+            <Card
+              title="Modo conductor mecánico"
+              subtitle={
+                liveLocationRequest
+                  ? `Compartiendo ubicación durante la solicitud #${liveLocationRequest.id}.`
+                  : 'Tu ubicación solo se comparte mientras tienes un servicio activo.'
+              }
+            >
               <Pressable
                 style={[styles.connectionButton, mechanicConnection === 'online' ? styles.connectionOn : styles.connectionOff]}
                 onPress={() => handleToggleMechanicConnection(mechanicConnection === 'online' ? 'offline' : 'online')}
@@ -1921,6 +1995,12 @@ export default function App() {
                           }
                         }}
                       />
+                      {(user.role === 'mechanic' || user.role === 'admin') && (
+                        <PrimaryButton
+                          title="Gestionar esta solicitud"
+                          onPress={() => openRequestActions(request)}
+                        />
+                      )}
                       {(user.role === 'customer' || user.role === 'admin') && request.status !== 'completed' && request.status !== 'cancelled' && (
                         <SecondaryButton title="Cancelar solicitud" busy={busy} onPress={() => handleCancelRequest(request.id)} />
                       )}
@@ -2538,6 +2618,18 @@ export default function App() {
           {currentScreen === 'actions' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
           <Card title="Acciones">
             <View style={styles.stack}>
+              {selectedActionRequest && (
+                <View style={styles.publicProfileBox}>
+                  <Text style={styles.publicProfileTitle}>Solicitud seleccionada #{selectedActionRequest.id}</Text>
+                  <Text style={styles.smallText}>
+                    {selectedActionRequest.vehicleMake} {selectedActionRequest.vehicleModel} {selectedActionRequest.vehicleYear} · {getServiceRequestStatusLabel(selectedActionRequest.status)}
+                  </Text>
+                  <Text numberOfLines={2} style={styles.smallText}>{selectedActionRequest.issueDescription}</Text>
+                  {selectedActionRequest.serviceAddress ? (
+                    <Text numberOfLines={2} style={styles.smallText}>Destino: {selectedActionRequest.serviceAddress}</Text>
+                  ) : null}
+                </View>
+              )}
               <Segmented
                 value={actionsView}
                 options={actionOptions}
