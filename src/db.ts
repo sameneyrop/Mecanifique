@@ -291,6 +291,12 @@ export async function initDb(): Promise<void> {
     );
   `);
 
+  await ensureColumn(
+    "identity_verifications",
+    "didit_session_id",
+    "ALTER TABLE identity_verifications ADD COLUMN didit_session_id TEXT"
+  );
+
   await run(`
     CREATE TABLE IF NOT EXISTS identity_verification_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

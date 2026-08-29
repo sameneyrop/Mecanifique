@@ -11,6 +11,7 @@ create table if not exists public.identity_verifications (
   reviewed_at timestamptz,
   reviewed_by_user_id bigint references public.users(id),
   reviewer_note text,
+  didit_session_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

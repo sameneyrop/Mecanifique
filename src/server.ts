@@ -18,6 +18,7 @@ import {
   loginWithSupabase
 } from "./supabaseAuth";
 import { getSupabaseDbHealth } from "./supabaseDb";
+import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
 
 const app = express();
 const port = Number(process.env.PORT ?? "4000");
@@ -51,6 +52,74 @@ if (isProduction) {
 app.use(cors({
   origin: allowedOrigins.length > 0 ? allowedOrigins : isProduction ? false : true
 }));
+
+// Este webhook se registra ANTES de express.json() a propósito: la firma
+// HMAC de Didit se valida contra el body crudo (texto), no contra el objeto
+// ya parseado. Si estuviera después del parser JSON global, la firma nunca
+// calzaría.
+app.post(
+  "/api/webhooks/didit",
+  express.text({ type: "*/*" }),
+  handleAsync(async (req, res) => {
+    const signature = req.header("x-signature") || req.header("x-didit-signature");
+    const rawBody = req.body as string;
+
+    if (!verifyDiditWebhookSignature(rawBody, signature)) {
+      res.status(401).json({ error: "Firma inválida" });
+      return;
+    }
+
+    const payload = JSON.parse(rawBody) as DiditWebhookPayload;
+    const userId = Number(payload.vendor_data);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      res.status(400).json({ error: "vendor_data inválido" });
+      return;
+    }
+
+    const statusMap: Record<DiditWebhookPayload["status"], string | null> = {
+      Approved: "approved",
+      Declined: "rejected",
+      "In Review": "under_review",
+      Abandoned: null,
+      Expired: null
+    };
+    const nextStatus = statusMap[payload.status];
+    if (!nextStatus) {
+      // Abandoned/Expired: no cambiamos el status local, el usuario puede
+      // reintentar generando una nueva sesión.
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    const verification = await get<{ id: number }>(
+      "SELECT id FROM identity_verifications WHERE user_id = ? AND didit_session_id = ?",
+      [userId, payload.session_id]
+    );
+    if (!verification) {
+      // Sesión no reconocida (o ya no coincide). No es un error del cliente
+      // de Didit, así que respondemos 200 para que no reintente indefinidamente.
+      res.status(200).json({ ok: true, warning: "session not matched" });
+      return;
+    }
+
+    await run(
+      `UPDATE identity_verifications
+       SET status = ?, reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [nextStatus, verification.id]
+    );
+
+    if (nextStatus === "approved") {
+      await run(
+        "UPDATE mechanics SET status = 'active' WHERE id = (SELECT mechanic_id FROM users WHERE id = ?)",
+        [userId]
+      );
+    }
+
+    res.status(200).json({ ok: true });
+  })
+);
+
 app.use(express.json({ limit: "1mb" }));
 app.use((req, res, next) => {
   const startedAt = Date.now();
@@ -669,6 +738,45 @@ app.post("/api/identity-verification", requireAuth, handleAsync(async (req, res)
     [user.id, user.role]
   );
   res.status(201).json({ message: "Consentimiento registrado" });
+}));
+
+// Crea (o reutiliza) una sesión de verificación en Didit y le devuelve al
+// móvil la URL hospedada donde el usuario sube su INE y se toma la selfie.
+// Requiere que ya exista consentimiento registrado (POST anterior).
+app.post("/api/identity-verification/didit-session", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role === "admin") {
+    res.status(403).json({ error: "Esta verificación solo aplica a clientes y mecánicos" });
+    return;
+  }
+
+  const verification = await get<{ id: number; status: string; diditSessionId: string | null }>(
+    "SELECT id, status, didit_session_id AS diditSessionId FROM identity_verifications WHERE user_id = ?",
+    [user.id]
+  );
+  if (!verification) {
+    res.status(409).json({ error: "Primero debes registrar tu consentimiento" });
+    return;
+  }
+  if (verification.status === "approved") {
+    res.status(409).json({ error: "Tu identidad ya está verificada" });
+    return;
+  }
+
+  try {
+    const session = await createDiditSession(user.id);
+    await run(
+      "UPDATE identity_verifications SET didit_session_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [session.session_id, verification.id]
+    );
+    res.json({ url: session.url });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DIDIT_NOT_CONFIGURED") {
+      res.status(503).json({ error: "La verificación de identidad no está disponible en este momento" });
+      return;
+    }
+    throw error;
+  }
 }));
 
 app.put("/api/identity-verification/documents", requireAuth, handleAsync(async (req, res) => {
