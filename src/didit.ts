@@ -41,7 +41,7 @@ export type DiditSession = {
  * vendorData amarra la sesión a tu propio userId, para poder identificar
  * a quién corresponde cuando llegue el webhook con el resultado.
  */
-export async function createDiditSession(userId: number): Promise<DiditSession> {
+export async function createDiditSession(userId: number, callbackUrl: string): Promise<DiditSession> {
   const config = getDiditConfig();
   if (!config) {
     throw new Error("DIDIT_NOT_CONFIGURED");
@@ -55,7 +55,8 @@ export async function createDiditSession(userId: number): Promise<DiditSession> 
     },
     body: JSON.stringify({
       workflow_id: config.workflowId,
-      vendor_data: String(userId)
+      vendor_data: String(userId),
+      callback: callbackUrl
     })
   });
 

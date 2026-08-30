@@ -194,6 +194,12 @@ type RequestSummary = {
   customerPhone?: string | null;
 };
 
+type IdentityVerificationStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
+
+type IdentityVerificationState = {
+  status: IdentityVerificationStatus | null;
+};
+
 type ScheduleSlot = {
   id: number;
   mechanicId: number;
@@ -353,6 +359,8 @@ export default function App() {
   const [nearbyMechanics, setNearbyMechanics] = useState<Mechanic[]>([]);
   const [myRequests, setMyRequests] = useState<RequestSummary[]>([]);
   const [vehicles, setVehicles] = useState<VehicleProfile[]>([]);
+  const [identityState, setIdentityState] = useState<IdentityVerificationState>({ status: null });
+  const [identityBusy, setIdentityBusy] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
@@ -569,6 +577,22 @@ export default function App() {
     apiRequest<{ vehicles: VehicleProfile[] }>('/api/vehicles', { token })
       .then((data) => setVehicles(data.vehicles))
       .catch((error) => setMessage(formatError(error)));
+  }, [user, token]);
+
+  useEffect(() => {
+    if (!user || !token || user.role === 'admin') {
+      setIdentityState({ status: null });
+      return;
+    }
+    apiRequest<{ verification: { status: IdentityVerificationStatus } | null }>(
+      '/api/identity-verification',
+      { token },
+    )
+      .then((data) => setIdentityState({ status: data.verification?.status ?? 'draft' }))
+      .catch(() => {
+        // Silencioso: si falla, la tarjeta simplemente no se muestra con
+        // datos; no interrumpimos el resto de la app por esto.
+      });
   }, [user, token]);
 
   useEffect(() => {
@@ -1272,6 +1296,55 @@ export default function App() {
     }
   }
 
+  async function handleStartIdentityVerification() {
+    if (!token) {
+      setMessage('Debes iniciar sesión primero');
+      return;
+    }
+
+    setIdentityBusy(true);
+    setMessage('Preparando verificación...');
+    try {
+      await apiRequest('/api/identity-verification', {
+        method: 'POST',
+        token,
+        body: { consent: true },
+      });
+
+      const callbackUrl = Linking.createURL('identity-callback');
+      const session = await apiRequest<{ url: string }>(
+        '/api/identity-verification/didit-session',
+        {
+          method: 'POST',
+          token,
+          body: { callbackUrl },
+        },
+      );
+
+      setMessage('Abriendo verificación...');
+      const result = await WebBrowser.openAuthSessionAsync(session.url, callbackUrl);
+
+      if (result.type !== 'success') {
+        setMessage('Verificación cancelada');
+      } else {
+        setMessage('Verificación enviada, esperando resultado...');
+      }
+
+      // El estado real y definitivo lo confirma el webhook del backend, que
+      // puede tardar unos segundos en llegar. Refrescamos aquí para mostrar
+      // lo que haya quedado guardado hasta este momento.
+      const refreshed = await apiRequest<{ verification: { status: IdentityVerificationStatus } | null }>(
+        '/api/identity-verification',
+        { token },
+      );
+      setIdentityState({ status: refreshed.verification?.status ?? 'draft' });
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setIdentityBusy(false);
+    }
+  }
+
   async function handleCreateRequest() {
     if (!user) return;
 
@@ -1877,6 +1950,35 @@ export default function App() {
                   </View>
                 ))}
               </View>
+            </Card>
+          )}
+
+          {currentScreen === 'home' && identityState.status && identityState.status !== 'approved' && (
+            <Card
+              title="Verificación de identidad"
+              subtitle={
+                identityState.status === 'draft'
+                  ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
+                  : identityState.status === 'rejected'
+                    ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
+                    : 'Tu verificación está en revisión.'
+              }
+            >
+              {identityState.status !== 'submitted' && identityState.status !== 'under_review' && (
+                <Pressable
+                  style={styles.primaryButton}
+                  disabled={identityBusy}
+                  onPress={handleStartIdentityVerification}
+                >
+                  {identityBusy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>
+                      {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
+                    </Text>
+                  )}
+                </Pressable>
+              )}
             </Card>
           )}
 

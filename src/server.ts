@@ -743,12 +743,20 @@ app.post("/api/identity-verification", requireAuth, handleAsync(async (req, res)
 // Crea (o reutiliza) una sesión de verificación en Didit y le devuelve al
 // móvil la URL hospedada donde el usuario sube su INE y se toma la selfie.
 // Requiere que ya exista consentimiento registrado (POST anterior).
+const diditSessionRequestSchema = z.object({
+  callbackUrl: z.string().url().refine(
+    (url) => url.startsWith("mecanifique://") || url.startsWith("https://mecanifique.onrender.com"),
+    "callbackUrl debe ser un deep link de la app o del dominio de Mecanifique"
+  )
+});
+
 app.post("/api/identity-verification/didit-session", requireAuth, handleAsync(async (req, res) => {
   const user = req.auth?.user;
   if (!user || user.role === "admin") {
     res.status(403).json({ error: "Esta verificación solo aplica a clientes y mecánicos" });
     return;
   }
+  const { callbackUrl } = diditSessionRequestSchema.parse(req.body);
 
   const verification = await get<{ id: number; status: string; diditSessionId: string | null }>(
     "SELECT id, status, didit_session_id AS diditSessionId FROM identity_verifications WHERE user_id = ?",
@@ -764,7 +772,7 @@ app.post("/api/identity-verification/didit-session", requireAuth, handleAsync(as
   }
 
   try {
-    const session = await createDiditSession(user.id);
+    const session = await createDiditSession(user.id, callbackUrl);
     await run(
       "UPDATE identity_verifications SET didit_session_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [session.session_id, verification.id]
