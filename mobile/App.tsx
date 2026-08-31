@@ -26,7 +26,7 @@ import {
 type Role = 'customer' | 'mechanic' | 'admin';
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicStatus = 'pending_verification' | 'active' | 'suspended';
-type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions';
+type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account';
 type RequestsView = 'list' | 'create' | 'detail';
 type ActionsView = 'assign' | 'status' | 'requestStatus' | 'availability' | 'update' | 'schedule';
 type MechanicSignupStep = 'account' | 'work';
@@ -1916,70 +1916,13 @@ export default function App() {
             <Text numberOfLines={2} style={styles.statusPillText}>{message}</Text>
           </View>
 
-          <View style={styles.sessionHeader}>
-            <View style={styles.notificationSummary}>
+          {currentScreen === 'home' && unreadNotifications > 0 && (
+            <Pressable style={styles.notificationBanner} onPress={() => setCurrentScreen('account')}>
               <Ionicons name="notifications-outline" size={18} color="#1f3551" />
               <Text style={styles.sessionText}>
-                {unreadNotifications > 0 ? `${unreadNotifications} notificaciones sin leer` : 'Sin notificaciones nuevas'}
+                {unreadNotifications} notificaciones sin leer — ver en Cuenta
               </Text>
-            </View>
-            <SecondaryButton
-              title="Refrescar"
-              compact
-              onPress={async () => {
-                try {
-                  await loadNotifications();
-                } catch (error) {
-                  setMessage(formatError(error));
-                }
-              }}
-            />
-          </View>
-
-          {notifications.length > 0 && (
-            <Card title="Notificaciones" subtitle="Últimos avisos de la plataforma">
-              <View style={styles.stack}>
-                {notifications.slice(0, 3).map((notification) => (
-                  <View key={notification.id} style={[styles.notificationItem, notification.readAt && styles.notificationItemRead]}>
-                    <Text style={styles.itemTitle}>{notification.title}</Text>
-                    <Text style={styles.itemText}>{notification.body}</Text>
-                    <Text style={styles.smallText}>{notification.createdAt}</Text>
-                    {!notification.readAt && (
-                      <SecondaryButton title="Marcar leída" compact onPress={() => handleMarkNotificationRead(notification.id)} />
-                    )}
-                  </View>
-                ))}
-              </View>
-            </Card>
-          )}
-
-          {currentScreen === 'home' && identityState.status && identityState.status !== 'approved' && (
-            <Card
-              title="Verificación de identidad"
-              subtitle={
-                identityState.status === 'draft'
-                  ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
-                  : identityState.status === 'rejected'
-                    ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
-                    : 'Tu verificación está en revisión.'
-              }
-            >
-              {identityState.status !== 'submitted' && identityState.status !== 'under_review' && (
-                <Pressable
-                  style={styles.primaryButton}
-                  disabled={identityBusy}
-                  onPress={handleStartIdentityVerification}
-                >
-                  {identityBusy ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>
-                      {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
-                    </Text>
-                  )}
-                </Pressable>
-              )}
-            </Card>
+            </Pressable>
           )}
 
           {currentScreen === 'home' && user.role !== 'mechanic' && mechanics.length > 0 && (
@@ -2035,6 +1978,85 @@ export default function App() {
                 </Text>
               </Pressable>
             </Card>
+          )}
+
+          {currentScreen === 'account' && (
+            <>
+              <Card
+                title="Verificación de identidad"
+                subtitle={
+                  identityState.status === 'approved'
+                    ? 'Tu identidad ya está verificada.'
+                    : identityState.status === 'draft' || !identityState.status
+                      ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
+                      : identityState.status === 'rejected'
+                        ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
+                        : 'Tu verificación está en revisión.'
+                }
+              >
+                {identityState.status !== 'approved' &&
+                  identityState.status !== 'submitted' &&
+                  identityState.status !== 'under_review' && (
+                    <>
+                      <Text style={styles.identityHint}>
+                        Usa la cámara en vivo para tus fotos — no subas imágenes desde tu galería, esa opción puede fallar.
+                      </Text>
+                      <Pressable
+                        style={styles.primaryButton}
+                        disabled={identityBusy}
+                        onPress={handleStartIdentityVerification}
+                      >
+                        {identityBusy ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.primaryButtonText}>
+                            {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
+                          </Text>
+                        )}
+                      </Pressable>
+                    </>
+                  )}
+              </Card>
+
+              <Card title="Notificaciones" subtitle="Últimos avisos de la plataforma">
+                <View style={styles.stack}>
+                  <SecondaryButton
+                    title="Refrescar"
+                    compact
+                    onPress={async () => {
+                      try {
+                        await loadNotifications();
+                      } catch (error) {
+                        setMessage(formatError(error));
+                      }
+                    }}
+                  />
+                  {notifications.length === 0 && (
+                    <Text style={styles.smallText}>Sin notificaciones por ahora.</Text>
+                  )}
+                  {notifications.map((notification) => (
+                    <View key={notification.id} style={[styles.notificationItem, notification.readAt && styles.notificationItemRead]}>
+                      <Text style={styles.itemTitle}>{notification.title}</Text>
+                      <Text style={styles.itemText}>{notification.body}</Text>
+                      <Text style={styles.smallText}>{notification.createdAt}</Text>
+                      {!notification.readAt && (
+                        <SecondaryButton title="Marcar leída" compact onPress={() => handleMarkNotificationRead(notification.id)} />
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </Card>
+
+              <Card title={user.fullName} subtitle={user.role}>
+                <SecondaryButton
+                  title="Cerrar sesión"
+                  onPress={async () => {
+                    await clearSession();
+                    setMessage('Sesión cerrada');
+                  }}
+                />
+              </Card>
+            </>
           )}
 
           {currentScreen === 'requests' && (
@@ -3014,12 +3036,19 @@ export default function App() {
             <Ionicons name="map-outline" size={22} color="#ffffff" />
           </Pressable>
           <Pressable
-            style={[styles.bottomNavButton, currentScreen === 'actions' && styles.bottomNavButtonActive]}
-            onPress={() => setCurrentScreen('actions')}
+            style={[
+              styles.bottomNavButton,
+              (currentScreen === 'actions' || currentScreen === 'account') && styles.bottomNavButtonActive,
+            ]}
+            onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
             accessibilityRole="button"
-            accessibilityLabel="Acciones"
+            accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color="#ffffff" />
+            <Ionicons
+              name={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
+              size={22}
+              color="#ffffff"
+            />
           </Pressable>
         </View>
       </View>
@@ -3348,6 +3377,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  notificationBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff8e0',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
   sessionText: {
     flex: 1,
     color: '#1f3551',
@@ -3375,6 +3413,11 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     color: '#2f4664',
     fontSize: 13,
+  },
+  identityHint: {
+    color: '#7a5b00',
+    fontSize: 12,
+    marginBottom: 8,
   },
   stack: {
     gap: 8,
