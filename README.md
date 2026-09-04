@@ -76,6 +76,56 @@ estar completas sin una cuenta, credenciales o decisión operativa:
 | Pagos | Cuenta de Stripe Connect u otro PSP compatible con México, requisitos fiscales y política de reembolsos. |
 | CLABE y liquidaciones | Onboarding bancario del proveedor de pagos y calendario comercial de dispersión. |
 
+## Modelo de pagos y apartado (decidido, pendiente de construir)
+
+Sin capital para financiar un fondo de refacciones prepagado, se decidió este
+modelo de "apartado + ajuste":
+
+1. Cada mecánico define su propia tarifa de mano de obra en su perfil. De ahí
+   se deriva su **apartado mínimo** (aún falta decidir la fórmula exacta:
+   ¿igual a la mano de obra base, o un porcentaje de ella?).
+2. El cliente paga/autoriza el apartado al crear la solicitud con un mecánico
+   específico.
+3. El mecánico diagnostica en sitio:
+   - Costo real = apartado → se cobra el apartado completo.
+   - Costo real > apartado → el mecánico registra el monto extra en la app;
+     el cliente recibe notificación con el desglose y **debe aceptar
+     explícitamente** antes de que el mecánico compre refacciones o
+     continúe. Si el cliente rechaza, el mecánico decide si termina ahí
+     (cobrando solo el apartado) o se retira.
+   - Costo real < apartado → se **reembolsa la diferencia** al cliente (no
+     se queda el mecánico con el excedente, por reputación/confianza).
+
+### Implicación técnica
+Este modelo requiere **pre-autorización con captura manual/parcial y
+reembolso parcial** en el procesador de pagos — no es un cobro simple de una
+sola vez. En Stripe esto corresponde a `PaymentIntent` con
+`capture_method: manual`, seguido de una captura por el monto final (que
+puede ser menor al autorizado) o un `refund` parcial si aplica. Confirmar
+que el procesador elegido para México soporte este flujo antes de
+comprometerse a él.
+
+## Riesgos operativos identificados (sin resolver aún en código)
+
+- **Fuga a trato directo ("te lo hago por fuera para evitar la comisión de
+  la app")**: mitigaciones consideradas — pago debe completarse dentro de la
+  app antes de marcar servicio como iniciado/completado; comisión que baja
+  con volumen/antigüedad del mecánico; valor real a cambio de la comisión
+  (seguro, más clientes, protección legal); histórico de reseñas como
+  candado (se pierde si el mecánico se sale del sistema); detección de
+  patrones de cancelación sospechosos. Ninguna de estas elimina el problema
+  por completo, solo lo reduce.
+- **Seguridad del mecánico frente al cliente** (no solo verificar al
+  mecánico): falta considerar ubicación compartida en tiempo real y/o botón
+  de pánico.
+- **Responsabilidad si el mecánico daña el vehículo**: verificar identidad
+  no es lo mismo que garantizar calidad de trabajo. Falta definir si existe
+  seguro, fondo de garantía, o el usuario asume el riesgo.
+- **Proceso de disputas** ("el trabajo no quedó bien" después de pagado): no
+  definido todavía.
+- **Mecánicos que aceptan más solicitudes de las que pueden atender**: falta
+  límite de solicitudes simultáneas o penalización por cancelación tardía.
+
 ## Roadmap pendiente
 
 1. Verificación telefónica por SMS para todos los usuarios.

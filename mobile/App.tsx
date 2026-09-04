@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { colors } from './colors';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
@@ -463,6 +464,7 @@ export default function App() {
   const [actionsView, setActionsView] = useState<ActionsView>('assign');
   const [requestCursor, setRequestCursor] = useState(0);
   const [mechanicCursor, setMechanicCursor] = useState(0);
+  const [mechanicReviewsExpanded, setMechanicReviewsExpanded] = useState(false);
   const [selectedScheduleDate, setSelectedScheduleDate] = useState('');
   const [selectedRequestScheduleDate, setSelectedRequestScheduleDate] = useState('');
   const locationLabel = currentLocation
@@ -1681,10 +1683,10 @@ export default function App() {
                 alwaysBounceVertical
                 keyboardShouldPersistTaps="handled"
               >
-                <LinearGradient colors={['#ffffff', '#f4f8ff']} style={styles.shell}>
+                <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
                   <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
                   <View style={styles.onboardingIconWrap}>
-                    <Ionicons name={step.icon} size={42} color="#2b6cb0" />
+                    <Ionicons name={step.icon} size={42} color={colors.primary} />
                   </View>
                   <Text style={styles.title}>{step.title}</Text>
                   <Text style={styles.subtitle}>{step.body}</Text>
@@ -1729,7 +1731,7 @@ export default function App() {
               alwaysBounceVertical
               keyboardShouldPersistTaps="handled"
             >
-            <LinearGradient colors={['#ffffff', '#f4f8ff']} style={styles.shell}>
+            <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
             <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
             <Text style={styles.title}>Inicia sesión</Text>
             <Text style={styles.subtitle}>Accede para ver mapa, solicitudes y mecánicos.</Text>
@@ -1888,11 +1890,18 @@ export default function App() {
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical
         >
-        <LinearGradient colors={['#ffffff', '#f4f8ff']} style={styles.shell}>
+        <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
           <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
           <Text style={styles.title}>{currentScreen === 'home' ? 'Encuentra tu mecánico' : 'Panel de servicio'}</Text>
           {currentScreen === 'home' && (
-            <Text style={styles.subtitle}>Servicio programado y mecánicos cercanos.</Text>
+            <>
+              <Text style={styles.heroSubtitle}>Mecánicos verificados, cuando quieras y donde quieras.</Text>
+              {user.role !== 'mechanic' && (
+                <Pressable style={styles.heroButton} onPress={() => setCurrentScreen('mechanics')}>
+                  <Text style={styles.heroButtonText}>Buscar mecánicos</Text>
+                </Pressable>
+              )}
+            </>
           )}
 
           <View style={styles.locationPill}>
@@ -1918,7 +1927,7 @@ export default function App() {
 
           {currentScreen === 'home' && unreadNotifications > 0 && (
             <Pressable style={styles.notificationBanner} onPress={() => setCurrentScreen('account')}>
-              <Ionicons name="notifications-outline" size={18} color="#1f3551" />
+              <Ionicons name="notifications-outline" size={18} color={colors.textDark} />
               <Text style={styles.sessionText}>
                 {unreadNotifications} notificaciones sin leer — ver en Cuenta
               </Text>
@@ -1934,25 +1943,66 @@ export default function App() {
                     <Text style={styles.locationText}>{mechanic.city} {mechanic.zone}</Text>
                   </View>
                   <View style={styles.profileCard}>
-                    <View style={styles.avatarCircle}>
-                      <Ionicons name="person" size={28} color="#5c7eb7" />
-                    </View>
+                    {mechanic.coverPhotoUrl ? (
+                      <Image
+                        source={{ uri: mechanic.coverPhotoUrl }}
+                        style={styles.avatarCircle}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.avatarCircle}>
+                        <Ionicons name="person" size={28} color={colors.textSecondary} />
+                      </View>
+                    )}
                     <View style={styles.profileBody}>
                       <Text style={styles.profileName}>{mechanic.fullName}</Text>
                       <Text style={styles.profileMeta}>{mechanic.specialties.join(', ')}</Text>
-                      <Text style={styles.profileMeta}>⭐ {mechanic.rating.toFixed(1)} · {mechanic.reviewCount || 0} reseñas</Text>
+                      <View style={styles.starsRow}>
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Ionicons
+                            key={star}
+                            name={star <= Math.round(mechanic.rating) ? 'star' : 'star-outline'}
+                            size={16}
+                            color={colors.accent}
+                          />
+                        ))}
+                        <Text style={styles.profileMeta}> {mechanic.reviewCount || 0} reseñas</Text>
+                      </View>
                     </View>
                   </View>
                   <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>Comentarios</Text>
+                    <Text style={styles.publicProfileTitle}>
+                      Comentarios {selectedMechanicReviews.length > 0 ? `(${selectedMechanicReviews.length})` : ''}
+                    </Text>
                     {selectedMechanicReviews.length === 0 ? (
                       <Text style={styles.smallText}>Aún no hay comentarios.</Text>
                     ) : (
-                      selectedMechanicReviews.slice(0, 1).map((review) => (
-                        <Text key={review.id} numberOfLines={4} style={styles.smallText}>
-                          {review.customerName}: {review.comment}
-                        </Text>
-                      ))
+                      <Pressable onPress={() => setMechanicReviewsExpanded((prev) => !prev)}>
+                        {(mechanicReviewsExpanded
+                          ? selectedMechanicReviews
+                          : selectedMechanicReviews.slice(0, 1)
+                        ).map((review) => (
+                          <Text
+                            key={review.id}
+                            numberOfLines={mechanicReviewsExpanded ? undefined : 3}
+                            style={styles.smallText}
+                          >
+                            {review.customerName}: {review.comment}
+                          </Text>
+                        ))}
+                        {selectedMechanicReviews.length > 1 && (
+                          <View style={styles.expandRow}>
+                            <Text style={styles.expandLabel}>
+                              {mechanicReviewsExpanded ? 'Ver menos' : 'Ver más'}
+                            </Text>
+                            <Ionicons
+                              name={mechanicReviewsExpanded ? 'chevron-up' : 'chevron-down'}
+                              size={14}
+                              color={colors.primary}
+                            />
+                          </View>
+                        )}
+                      </Pressable>
                     )}
                   </View>
                 </View>
@@ -1982,41 +2032,11 @@ export default function App() {
 
           {currentScreen === 'account' && (
             <>
-              <Card
-                title="Verificación de identidad"
-                subtitle={
-                  identityState.status === 'approved'
-                    ? 'Tu identidad ya está verificada.'
-                    : identityState.status === 'draft' || !identityState.status
-                      ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
-                      : identityState.status === 'rejected'
-                        ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
-                        : 'Tu verificación está en revisión.'
-                }
-              >
-                {identityState.status !== 'approved' &&
-                  identityState.status !== 'submitted' &&
-                  identityState.status !== 'under_review' && (
-                    <>
-                      <Text style={styles.identityHint}>
-                        Usa la cámara en vivo para tus fotos — no subas imágenes desde tu galería, esa opción puede fallar.
-                      </Text>
-                      <Pressable
-                        style={styles.primaryButton}
-                        disabled={identityBusy}
-                        onPress={handleStartIdentityVerification}
-                      >
-                        {identityBusy ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={styles.primaryButtonText}>
-                            {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
-                          </Text>
-                        )}
-                      </Pressable>
-                    </>
-                  )}
-              </Card>
+              <IdentityVerificationCard
+                identityState={identityState}
+                identityBusy={identityBusy}
+                onStart={handleStartIdentityVerification}
+              />
 
               <Card title="Notificaciones" subtitle="Últimos avisos de la plataforma">
                 <View style={styles.stack}>
@@ -2740,7 +2760,15 @@ export default function App() {
           )}
 
           {currentScreen === 'actions' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
-          <Card title="Acciones">
+          <>
+            {currentUser.role === 'mechanic' && (
+              <IdentityVerificationCard
+                identityState={identityState}
+                identityBusy={identityBusy}
+                onStart={handleStartIdentityVerification}
+              />
+            )}
+            <Card title="Acciones">
             <View style={styles.stack}>
               {selectedActionRequest && (
                 <View style={styles.publicProfileBox}>
@@ -2991,6 +3019,7 @@ export default function App() {
               )}
             </View>
           </Card>
+          </>
           )}
 
         </LinearGradient>
@@ -3007,7 +3036,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Solicitudes"
           >
-            <Ionicons name="car-outline" size={22} color="#ffffff" />
+            <Ionicons name="car-outline" size={22} color={colors.white} />
           </Pressable>
           {currentUser && currentUser.role !== 'mechanic' && (
             <Pressable
@@ -3016,7 +3045,7 @@ export default function App() {
               accessibilityRole="button"
               accessibilityLabel="Mecánicos"
             >
-              <Ionicons name="construct-outline" size={22} color="#ffffff" />
+              <Ionicons name="construct-outline" size={22} color={colors.white} />
             </Pressable>
           )}
           <Pressable
@@ -3025,7 +3054,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Inicio"
           >
-            <Ionicons name="home-outline" size={22} color="#ffffff" />
+            <Ionicons name="home-outline" size={22} color={colors.white} />
           </Pressable>
           <Pressable
             style={[styles.bottomNavButton, currentScreen === 'map' && styles.bottomNavButtonActive]}
@@ -3033,7 +3062,7 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Mapa"
           >
-            <Ionicons name="map-outline" size={22} color="#ffffff" />
+            <Ionicons name="map-outline" size={22} color={colors.white} />
           </Pressable>
           <Pressable
             style={[
@@ -3047,13 +3076,57 @@ export default function App() {
             <Ionicons
               name={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
               size={22}
-              color="#ffffff"
+              color={colors.white}
             />
           </Pressable>
         </View>
       </View>
       </SafeAreaView>
     </ImageBackground>
+  );
+}
+
+function IdentityVerificationCard({
+  identityState,
+  identityBusy,
+  onStart,
+}: {
+  identityState: IdentityVerificationState;
+  identityBusy: boolean;
+  onStart: () => void;
+}) {
+  return (
+    <Card
+      title="Verificación de identidad"
+      subtitle={
+        identityState.status === 'approved'
+          ? 'Tu identidad ya está verificada.'
+          : identityState.status === 'draft' || !identityState.status
+            ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
+            : identityState.status === 'rejected'
+              ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
+              : 'Tu verificación está en revisión.'
+      }
+    >
+      {identityState.status !== 'approved' &&
+        identityState.status !== 'submitted' &&
+        identityState.status !== 'under_review' && (
+          <>
+            <Text style={styles.identityHint}>
+              Usa la cámara en vivo para tus fotos — no subas imágenes desde tu galería, esa opción puede fallar.
+            </Text>
+            <Pressable style={styles.primaryButton} disabled={identityBusy} onPress={onStart}>
+              {identityBusy ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.primaryButtonText}>
+                  {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
+                </Text>
+              )}
+            </Pressable>
+          </>
+        )}
+    </Card>
   );
 }
 
@@ -3097,7 +3170,7 @@ function Field({
 }
 
 function Input(props: ComponentProps<typeof TextInput>) {
-  return <TextInput placeholderTextColor="#94a3b8" style={styles.input} {...props} />;
+  return <TextInput placeholderTextColor={colors.textSecondary} style={styles.input} {...props} />;
 }
 
 function Segmented({
@@ -3144,7 +3217,7 @@ function PrimaryButton({
       disabled={busy}
       accessibilityState={{ busy, disabled: busy }}
     >
-      {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryButtonText}>{title}</Text>}
+      {busy ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>{title}</Text>}
     </Pressable>
   );
 }
@@ -3231,17 +3304,17 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#dbeafe',
-    backgroundColor: '#ffffff',
+    borderColor: colors.primaryLighter,
+    backgroundColor: colors.white,
     width: '100%',
-    shadowColor: '#063b63',
+    shadowColor: colors.primaryDark,
     shadowOpacity: 0.12,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 5,
   },
   kicker: {
-    color: '#0b6fb4',
+    color: colors.primary,
     fontWeight: '700',
     textAlign: 'center',
     fontSize: 28,
@@ -3255,7 +3328,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#123b5d',
+    color: colors.textDark,
     textAlign: 'center',
   },
   onboardingIconWrap: {
@@ -3263,17 +3336,38 @@ const styles = StyleSheet.create({
     width: 84,
     height: 84,
     borderRadius: 42,
-    backgroundColor: '#e8f0fd',
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   subtitle: {
-    color: '#4b6280',
+    color: colors.textSecondary,
     marginTop: 2,
     textAlign: 'center',
     fontSize: 13,
+  },
+  heroSubtitle: {
+    color: colors.textSecondary,
+    marginTop: 6,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '500',
+    paddingHorizontal: 12,
+  },
+  heroButton: {
+    backgroundColor: colors.primary,
+    borderRadius: 999,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignSelf: 'center',
+    marginTop: 14,
+  },
+  heroButtonText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 16,
   },
   onboardingDots: {
     flexDirection: 'row',
@@ -3284,14 +3378,14 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#bfd0ea',
+    backgroundColor: colors.primaryLight,
   },
   onboardingDotActive: {
-    backgroundColor: '#4f7fc3',
+    backgroundColor: colors.primary,
     width: 22,
   },
   locationPill: {
-    backgroundColor: '#b9d5f7',
+    backgroundColor: colors.primaryLight,
     borderRadius: 999,
     paddingVertical: 11,
     paddingHorizontal: 14,
@@ -3303,7 +3397,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   locationText: {
-    color: '#2f4664',
+    color: colors.textDark,
     fontSize: 15,
     fontWeight: '500',
     flexShrink: 1,
@@ -3314,10 +3408,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     borderRadius: 18,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: '#dbe7f6',
-    shadowColor: '#163b5a',
+    borderColor: colors.primaryLight,
+    shadowColor: colors.textDark,
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -3327,7 +3421,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#8badde',
+    backgroundColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3341,11 +3435,27 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textDark,
   },
   profileMeta: {
-    color: '#334155',
+    color: colors.textDark,
     fontSize: 14,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  expandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  expandLabel: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
   },
   connectionButton: {
     borderRadius: 18,
@@ -3360,7 +3470,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   connectionButtonText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 0.6,
@@ -3381,14 +3491,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#fff8e0',
+    backgroundColor: colors.warningBg,
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 14,
   },
   sessionText: {
     flex: 1,
-    color: '#1f3551',
+    color: colors.textDark,
     fontWeight: '700',
     fontSize: 14,
   },
@@ -3396,10 +3506,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 12,
     gap: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: '#dbe7f6',
-    shadowColor: '#163b5a',
+    borderColor: colors.primaryLight,
+    shadowColor: colors.textDark,
     shadowOpacity: 0.06,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
@@ -3408,14 +3518,14 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#1f3551',
+    color: colors.textDark,
   },
   cardSubtitle: {
-    color: '#2f4664',
+    color: colors.textDark,
     fontSize: 13,
   },
   identityHint: {
-    color: '#7a5b00',
+    color: colors.primaryDark,
     fontSize: 12,
     marginBottom: 8,
   },
@@ -3433,17 +3543,17 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#1f3551',
+    color: colors.textDark,
     marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#0f172a',
-    backgroundColor: '#e8f0fd',
+    color: colors.textDark,
+    backgroundColor: colors.primaryLighter,
     minHeight: 44,
   },
   segmented: {
@@ -3461,29 +3571,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#8ea9d2',
-    backgroundColor: '#e8f0fd',
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.primaryLighter,
   },
   segmentActive: {
-    backgroundColor: '#4f7fc3',
-    borderColor: '#4f7fc3',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   segmentText: {
-    color: '#334155',
+    color: colors.textDark,
     fontWeight: '700',
     textAlign: 'center',
     fontSize: 14,
   },
   segmentTextActive: {
-    color: '#ffffff',
+    color: colors.white,
   },
   primaryButton: {
-    backgroundColor: '#087ac1',
+    backgroundColor: colors.primary,
     borderRadius: 999,
     paddingVertical: 14,
     paddingHorizontal: 16,
     alignItems: 'center',
-    shadowColor: '#075985',
+    shadowColor: colors.primaryDark,
     shadowOpacity: 0.2,
     shadowRadius: 7,
     shadowOffset: { width: 0, height: 4 },
@@ -3497,18 +3607,18 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }],
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: colors.white,
     fontWeight: '800',
   },
   secondaryButton: {
-    backgroundColor: '#dbeafe',
+    backgroundColor: colors.primaryLighter,
     borderRadius: 999,
     paddingVertical: 13,
     paddingHorizontal: 16,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#0f172a',
+    color: colors.textDark,
     fontWeight: '700',
   },
   secondaryButtonCompact: {
@@ -3526,7 +3636,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
   },
   mapContainerCompact: {
     borderRadius: 14,
@@ -3543,14 +3653,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: '#eef5ff',
+    backgroundColor: colors.primaryLighter,
   },
   item: {
     padding: 10,
     borderRadius: 16,
-    backgroundColor: '#d9e7fb',
+    backgroundColor: colors.primaryLight,
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
     gap: 6,
   },
   chatBubble: {
@@ -3560,28 +3670,28 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   chatBubbleCustomer: {
-    backgroundColor: '#edf4ff',
-    borderColor: '#c8d9f5',
+    backgroundColor: colors.primaryLighter,
+    borderColor: colors.primaryLighter,
   },
   chatBubbleMechanic: {
     backgroundColor: '#d9f3e4',
     borderColor: '#92d6ad',
   },
   chatBubbleAdmin: {
-    backgroundColor: '#fff0d9',
-    borderColor: '#efc27d',
+    backgroundColor: colors.warningBg,
+    borderColor: colors.accent,
   },
   chatSender: {
-    color: '#1f3551',
+    color: colors.textDark,
     fontSize: 12,
     fontWeight: '800',
   },
   notificationItem: {
     padding: 10,
     borderRadius: 14,
-    backgroundColor: '#edf4ff',
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
     gap: 6,
   },
   notificationItemRead: {
@@ -3590,25 +3700,25 @@ const styles = StyleSheet.create({
   itemTitle: {
     fontWeight: '800',
     fontSize: 15,
-    color: '#0f172a',
+    color: colors.textDark,
   },
   itemText: {
-    color: '#334155',
+    color: colors.textDark,
   },
   smallText: {
-    color: '#475569',
+    color: colors.textSecondary,
     fontSize: 11,
   },
   publicProfileBox: {
     gap: 4,
     padding: 10,
     borderRadius: 14,
-    backgroundColor: '#edf4ff',
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: '#c8d9f5',
+    borderColor: colors.primaryLighter,
   },
   publicProfileTitle: {
-    color: '#1f3551',
+    color: colors.textDark,
     fontWeight: '800',
     fontSize: 13,
   },
@@ -3617,7 +3727,7 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 12,
     marginBottom: 8,
-    backgroundColor: '#c8d9f5',
+    backgroundColor: colors.primaryLighter,
   },
   galleryRow: {
     flexDirection: 'row',
@@ -3628,18 +3738,18 @@ const styles = StyleSheet.create({
     width: 92,
     height: 92,
     borderRadius: 12,
-    backgroundColor: '#c8d9f5',
+    backgroundColor: colors.primaryLighter,
   },
   reviewCard: {
     padding: 10,
     borderRadius: 12,
-    backgroundColor: '#f7fbff',
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: '#d1e0f6',
+    borderColor: colors.primaryLight,
     gap: 4,
   },
   reviewTitle: {
-    color: '#1f3551',
+    color: colors.textDark,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -3654,57 +3764,57 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: '#e8f0fd',
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   calendarChipActive: {
-    backgroundColor: '#4f7fc3',
-    borderColor: '#4f7fc3',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   calendarChipText: {
-    color: '#334155',
+    color: colors.textDark,
     fontSize: 10,
     fontWeight: '700',
   },
   calendarChipTextActive: {
-    color: '#ffffff',
+    color: colors.white,
   },
   slotRow: {
     gap: 6,
     paddingVertical: 6,
     borderTopWidth: 1,
-    borderTopColor: '#d5e2f5',
+    borderTopColor: colors.primaryLight,
   },
   slotCard: {
     padding: 10,
     borderRadius: 14,
-    backgroundColor: '#edf4ff',
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: '#c8d9f5',
+    borderColor: colors.primaryLighter,
     gap: 4,
   },
   slotCardActive: {
-    borderColor: '#4f7fc3',
-    backgroundColor: '#d9e7fb',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
   statusPill: {
-    backgroundColor: '#d9e7fb',
+    backgroundColor: colors.primaryLight,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#8ea9d2',
+    borderColor: colors.primaryLight,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   statusPillText: {
-    color: '#1f3551',
+    color: colors.textDark,
     fontSize: 12,
     fontWeight: '600',
   },
   badge: {
-    color: '#1f3551',
+    color: colors.textDark,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -3714,7 +3824,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   bottomNav: {
-    backgroundColor: '#b9d5f7',
+    backgroundColor: colors.primaryLight,
     borderRadius: 999,
     paddingVertical: 8,
     paddingHorizontal: 18,
@@ -3723,7 +3833,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bottomNavItem: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.4,
@@ -3736,6 +3846,6 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   bottomNavButtonActive: {
-    backgroundColor: '#4f7fc3',
+    backgroundColor: colors.primary,
   },
 });
