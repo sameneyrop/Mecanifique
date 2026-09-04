@@ -357,7 +357,10 @@ const mechanicScheduleSlotSchema = z.object({
 const mechanicPublicProfileSchema = z.object({
   bio: z.string().max(500).optional(),
   coverPhotoUrl: z.string().url().optional().or(z.literal("")),
-  galleryUrls: z.array(z.string().url()).max(6).optional()
+  galleryUrls: z.array(z.string().url()).max(6).optional(),
+  laborRate: z.number().positive().max(50000).optional()
+  // Tarifa fija de mano de obra en MXN. También sirve como apartado mínimo
+  // por defecto — ver el modelo de pagos en README.md.
 });
 
 const mechanicReviewSchema = z.object({
@@ -1574,7 +1577,7 @@ app.post(
       `
       SELECT id, full_name AS fullName, phone, city, zone, years_experience AS yearsExperience,
              specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
-             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, created_at AS createdAt
+             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
       FROM mechanics
       WHERE id = ?
       `,
@@ -1614,7 +1617,7 @@ app.get(
     let sql = `
       SELECT id, full_name AS fullName, phone, city, zone, years_experience AS yearsExperience,
              specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
-             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, created_at AS createdAt
+             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
       FROM mechanics
       WHERE status = 'active'
     `;
@@ -1762,10 +1765,10 @@ app.patch(
     const updated = await run(
       `
       UPDATE mechanics
-      SET bio = ?, cover_photo_url = ?, gallery_json = ?
+      SET bio = ?, cover_photo_url = ?, gallery_json = ?, labor_rate = COALESCE(?, labor_rate)
       WHERE id = ?
       `,
-      [payload.bio ?? null, payload.coverPhotoUrl || null, galleryJson, mechanicId]
+      [payload.bio ?? null, payload.coverPhotoUrl || null, galleryJson, payload.laborRate ?? null, mechanicId]
     );
 
     if (updated.changes === 0) {

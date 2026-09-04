@@ -78,6 +78,13 @@ export async function initDb(): Promise<void> {
   await ensureColumn("mechanics", "cover_photo_url", "ALTER TABLE mechanics ADD COLUMN cover_photo_url TEXT");
   await ensureColumn("mechanics", "gallery_json", "ALTER TABLE mechanics ADD COLUMN gallery_json TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("mechanics", "review_count", "ALTER TABLE mechanics ADD COLUMN review_count INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn(
+    "mechanics",
+    "labor_rate",
+    "ALTER TABLE mechanics ADD COLUMN labor_rate REAL"
+  ); // Tarifa fija de mano de obra en MXN, definida por el propio mecánico.
+     // También funciona como su apartado mínimo por defecto — ver el
+     // modelo de pagos documentado en README.md.
 
   await run(`
     CREATE TABLE IF NOT EXISTS customers (
@@ -158,6 +165,31 @@ export async function initDb(): Promise<void> {
     "schedule_slot_id",
     "ALTER TABLE service_requests ADD COLUMN schedule_slot_id INTEGER"
   );
+  // --- Modelo de pagos: apartado + ajuste (ver README.md) ---
+  await ensureColumn(
+    "service_requests",
+    "deposit_amount",
+    "ALTER TABLE service_requests ADD COLUMN deposit_amount REAL"
+  ); // Monto del apartado, copiado de mechanics.labor_rate al crear la
+     // solicitud (así, si el mecánico cambia su tarifa después, no afecta
+     // solicitudes ya en curso).
+  await ensureColumn(
+    "service_requests",
+    "extra_amount",
+    "ALTER TABLE service_requests ADD COLUMN extra_amount REAL"
+  ); // Monto adicional propuesto por el mecánico tras diagnosticar, cuando
+     // el costo real supera el apartado. NULL si no aplica.
+  await ensureColumn(
+    "service_requests",
+    "extra_status",
+    "ALTER TABLE service_requests ADD COLUMN extra_status TEXT CHECK(extra_status IN ('pending', 'accepted', 'rejected'))"
+  ); // Estado de aceptación del cliente sobre extra_amount. El mecánico no
+     // debe comprar refacciones ni continuar hasta que sea 'accepted'.
+  await ensureColumn(
+    "service_requests",
+    "refund_amount",
+    "ALTER TABLE service_requests ADD COLUMN refund_amount REAL"
+  ); // Si el costo real fue MENOR al apartado, la diferencia a devolver.
   await migrateRequestStatusConstraint();
 
   await run(`
@@ -309,6 +341,27 @@ export async function initDb(): Promise<void> {
       FOREIGN KEY(verification_id) REFERENCES identity_verifications(id) ON DELETE CASCADE
     );
   `);
+
+  // Historial de cada movimiento de dinero real de una solicitud: la
+  // autorización del apartado, su captura, el cargo extra si aplica, y
+  // cualquier reembolso. Una fila por evento, no por solicitud — así se
+  // puede auditar exactamente qué pasó y cuándo, incluso si algo falla a
+  // medio camino con el procesador de pagos.
+  await run(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('deposit_authorization', 'deposit_capture', 'extra_charge', 'refund')),
+      amount REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'succeeded', 'failed', 'cancelled')),
+      provider TEXT,
+      provider_reference TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id)
+    );
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_payments_service_request ON payments(service_request_id)");
 }
 
 async function ensureColumn(table: string, columnName: string, alterSql: string): Promise<void> {
@@ -352,6 +405,11 @@ async function migrateRequestStatusConstraint(): Promise<void> {
       longitude REAL,
       hold_expires_at TEXT,
       schedule_slot_id INTEGER,
+      service_address TEXT,
+      deposit_amount REAL,
+      extra_amount REAL,
+      extra_status TEXT CHECK(extra_status IN ('pending', 'accepted', 'rejected')),
+      refund_amount REAL,
       FOREIGN KEY(customer_id) REFERENCES customers(id),
       FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
     );
@@ -369,5 +427,11 @@ async function migrateRequestStatusConstraint(): Promise<void> {
       hold_expires_at, schedule_slot_id
     FROM service_requests_legacy
   `);
+  // service_address, deposit_amount, extra_amount, extra_status y
+  // refund_amount NO se copian aquí a propósito: la tabla legacy nunca las
+  // tuvo (este migrate corre antes que los ensureColumn de más arriba en
+  // bases de datos nuevas), así que forzar su copia rompería el INSERT con
+  // "no such column". Quedan en NULL, que es el valor correcto para
+  // solicitudes que nunca pasaron por el flujo de pagos de todos modos.
   await run("DROP TABLE service_requests_legacy");
 }

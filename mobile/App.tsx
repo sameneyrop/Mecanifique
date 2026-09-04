@@ -87,6 +87,7 @@ type Mechanic = {
   coverPhotoUrl?: string | null;
   gallery?: string[];
   reviewCount?: number;
+  laborRate?: number | null;
 };
 
 type RequestUpdate = {
@@ -449,6 +450,7 @@ export default function App() {
     bio: '',
     coverPhotoUrl: '',
     galleryUrls: '',
+    laborRate: '',
   });
   const [reviewForm, setReviewForm] = useState({
     rating: '5',
@@ -732,6 +734,7 @@ export default function App() {
         bio: myMechanic.bio || '',
         coverPhotoUrl: myMechanic.coverPhotoUrl || '',
         galleryUrls: myMechanic.gallery ? myMechanic.gallery.join(', ') : '',
+        laborRate: myMechanic.laborRate != null ? String(myMechanic.laborRate) : '',
       });
     }
   }, [mechanics, user]);
@@ -993,6 +996,7 @@ export default function App() {
           bio: publicProfileForm.bio || undefined,
           coverPhotoUrl: publicProfileForm.coverPhotoUrl || '',
           galleryUrls,
+          laborRate: publicProfileForm.laborRate ? Number(publicProfileForm.laborRate) : undefined,
         },
       });
       await loadMechanics();
@@ -2886,6 +2890,17 @@ export default function App() {
                         value={publicProfileForm.coverPhotoUrl}
                         onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, coverPhotoUrl: value })}
                       />
+                    </Field>
+                    <Field label="Tarifa de mano de obra (MXN)">
+                      <Input
+                        value={publicProfileForm.laborRate}
+                        keyboardType="numeric"
+                        placeholder="Ej. 400"
+                        onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value.replace(/[^0-9.]/g, '') })}
+                      />
+                      <Text style={styles.smallText}>
+                        También es tu apartado mínimo por servicio — el cliente lo paga al solicitarte.
+                      </Text>
                     </Field>
                     <Field label="Galería (URLs separadas por coma)">
                       <Input
