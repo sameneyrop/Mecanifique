@@ -45,6 +45,16 @@ async function ensureLocalUser(supabaseUser: {
      FROM users WHERE supabase_user_id = ?`,
     [supabaseUser.id]
   );
+  console.log(
+    "[DIAG ensureLocalUser]",
+    JSON.stringify({
+      supabaseUserId: supabaseUser.id,
+      email: supabaseUser.email,
+      metadataRole: supabaseUser.user_metadata?.role,
+      existingFound: Boolean(existing),
+      existingRole: existing?.role,
+    })
+  );
   if (existing) {
     return existing;
   }
@@ -247,6 +257,17 @@ export async function registerMechanicWithSupabase(
     });
 
     const data = await response.json();
+
+    console.log(
+      "[DIAG registerMechanic]",
+      JSON.stringify({
+        email,
+        responseOk: response.ok,
+        hasUser: Boolean(data.user),
+        userId: data.user?.id,
+        hasSession: Boolean(data.session ?? data.access_token),
+      })
+    );
 
     if (!response.ok) {
       throw new Error(`Signup failed: ${getSupabaseError(data, "No fue posible crear la cuenta")}`);
