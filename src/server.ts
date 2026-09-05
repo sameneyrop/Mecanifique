@@ -395,6 +395,22 @@ const identityReviewSchema = z.object({
   reviewerNote: z.string().trim().max(1_000).optional()
 });
 
+const disputeCreateSchema = z.object({
+  serviceRequestId: z.number().int().positive(),
+  category: z.enum(["incomplete_work", "incorrect_charge", "vehicle_damage", "other"]),
+  description: z.string().trim().min(10).max(1_000)
+});
+
+const disputeResolveSchema = z.object({
+  status: z.enum(["under_review", "resolved"]),
+  resolutionNote: z.string().trim().max(1_000).optional(),
+  refundAmount: z.number().positive().optional()
+  // Si se manda refundAmount, se crea un registro en `payments` (kind:
+  // 'refund') y se liga a la disputa vía refund_payment_id. La captura
+  // real contra el procesador de pagos queda pendiente de la integración
+  // de Stripe — por ahora esto solo deja el registro contable.
+});
+
 type MechanicRow = {
   id: number;
   fullName: string;
@@ -858,6 +874,102 @@ app.post("/api/identity-verification/submit", requireAuth, handleAsync(async (re
     [verification.id]
   );
   res.status(200).json({ message: "Verificación enviada para revisión" });
+}));
+
+// Cliente reporta un problema con un servicio ya realizado (completado o no).
+app.post("/api/disputes", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role !== "customer" || !user.customerId) {
+    res.status(403).json({ error: "Solo los clientes pueden reportar disputas" });
+    return;
+  }
+  const payload = disputeCreateSchema.parse(req.body);
+
+  const request = await get<{ id: number; customerId: number }>(
+    "SELECT id, customer_id AS customerId FROM service_requests WHERE id = ?",
+    [payload.serviceRequestId]
+  );
+  if (!request) {
+    res.status(404).json({ error: "Solicitud no encontrada" });
+    return;
+  }
+  if (request.customerId !== user.customerId) {
+    res.status(403).json({ error: "Esta solicitud no te pertenece" });
+    return;
+  }
+
+  const result = await run(
+    `INSERT INTO disputes (service_request_id, customer_id, category, description)
+     VALUES (?, ?, ?, ?)`,
+    [payload.serviceRequestId, user.customerId, payload.category, payload.description]
+  );
+  res.status(201).json({ id: result.lastID, message: "Disputa reportada, un administrador la revisará." });
+}));
+
+// Cliente consulta el estado de sus propias disputas.
+app.get("/api/disputes/mine", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user || user.role !== "customer" || !user.customerId) {
+    res.status(403).json({ error: "Solo los clientes tienen disputas propias" });
+    return;
+  }
+  const disputes = await all<any>(
+    `SELECT id, service_request_id AS serviceRequestId, category, description, status,
+            resolution_note AS resolutionNote, created_at AS createdAt, resolved_at AS resolvedAt
+     FROM disputes WHERE customer_id = ? ORDER BY created_at DESC`,
+    [user.customerId]
+  );
+  res.json({ disputes });
+}));
+
+app.get("/api/admin/disputes", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
+  const disputes = await all<any>(
+    `SELECT d.id, d.service_request_id AS serviceRequestId, d.category, d.description, d.status,
+            d.resolution_note AS resolutionNote, d.created_at AS createdAt, d.resolved_at AS resolvedAt,
+            c.full_name AS customerName
+     FROM disputes d
+     JOIN customers c ON c.id = d.customer_id
+     ORDER BY CASE d.status WHEN 'reported' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END, d.created_at ASC`
+  );
+  res.json({ disputes });
+}));
+
+app.patch("/api/admin/disputes/:id", requireAuth, requireRole("admin"), handleAsync(async (req, res) => {
+  const disputeId = Number(req.params.id);
+  if (!Number.isInteger(disputeId) || disputeId <= 0) {
+    res.status(400).json({ error: "disputeId inválido" });
+    return;
+  }
+  const payload = disputeResolveSchema.parse(req.body);
+
+  const dispute = await get<{ id: number; serviceRequestId: number }>(
+    "SELECT id, service_request_id AS serviceRequestId FROM disputes WHERE id = ?",
+    [disputeId]
+  );
+  if (!dispute) {
+    res.status(404).json({ error: "Disputa no encontrada" });
+    return;
+  }
+
+  let refundPaymentId: number | null = null;
+  if (payload.refundAmount) {
+    const payment = await run(
+      `INSERT INTO payments (service_request_id, kind, amount, status)
+       VALUES (?, 'refund', ?, 'pending')`,
+      [dispute.serviceRequestId, payload.refundAmount]
+    );
+    refundPaymentId = payment.lastID;
+  }
+
+  await run(
+    `UPDATE disputes
+     SET status = ?, resolution_note = ?, refund_payment_id = COALESCE(?, refund_payment_id),
+         resolved_by_user_id = ?, resolved_at = CASE WHEN ? = 'resolved' THEN CURRENT_TIMESTAMP ELSE resolved_at END,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [payload.status, payload.resolutionNote ?? null, refundPaymentId, req.auth?.user.id ?? null, payload.status, disputeId]
+  );
+  res.status(200).json({ message: "Disputa actualizada", refundPaymentId });
 }));
 
 app.get("/api/admin/identity-verifications", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {

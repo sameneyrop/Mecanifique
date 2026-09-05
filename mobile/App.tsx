@@ -203,6 +203,21 @@ type IdentityVerificationState = {
   status: IdentityVerificationStatus | null;
 };
 
+type DisputeCategory = 'incomplete_work' | 'incorrect_charge' | 'vehicle_damage' | 'other';
+type DisputeStatus = 'reported' | 'under_review' | 'resolved';
+
+type AdminDispute = {
+  id: number;
+  serviceRequestId: number;
+  category: DisputeCategory;
+  description: string;
+  status: DisputeStatus;
+  resolutionNote: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  customerName: string;
+};
+
 type ScheduleSlot = {
   id: number;
   mechanicId: number;
@@ -457,6 +472,14 @@ export default function App() {
     rating: '5',
     comment: '',
   });
+  const [disputeForm, setDisputeForm] = useState({
+    category: 'incomplete_work' as 'incomplete_work' | 'incorrect_charge' | 'vehicle_damage' | 'other',
+    description: '',
+  });
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [adminDisputes, setAdminDisputes] = useState<AdminDispute[]>([]);
+  const [disputeResolutionNotes, setDisputeResolutionNotes] = useState<Record<number, string>>({});
+  const [disputeRefundAmounts, setDisputeRefundAmounts] = useState<Record<number, string>>({});
   const [mechanicConnection, setMechanicConnection] = useState<'online' | 'offline'>('offline');
 
   const selectedMechanicId = useMemo(() => user?.mechanicId?.toString() || '', [user]);
@@ -572,6 +595,14 @@ export default function App() {
     }
 
     loadMyRequests().catch((error) => setMessage(formatError(error)));
+  }, [user, token]);
+
+  useEffect(() => {
+    if (user?.role !== 'admin' || !token) {
+      setAdminDisputes([]);
+      return;
+    }
+    loadAdminDisputes().catch((error) => setMessage(formatError(error)));
   }, [user, token]);
 
   useEffect(() => {
@@ -1034,6 +1065,69 @@ export default function App() {
       setReviewForm({ rating: '5', comment: '' });
       await loadMechanicReviews(selectedRequest.mechanicId);
       setMessage('Reseña enviada');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSubmitDispute() {
+    if (!selectedRequest) {
+      setMessage('No hay solicitud seleccionada');
+      return;
+    }
+    if (disputeForm.description.trim().length < 10) {
+      setMessage('Describe el problema con al menos 10 caracteres');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await apiRequest('/api/disputes', {
+        method: 'POST',
+        token,
+        body: {
+          serviceRequestId: selectedRequest.id,
+          category: disputeForm.category,
+          description: disputeForm.description.trim(),
+        },
+      });
+      setDisputeForm({ category: 'incomplete_work', description: '' });
+      setShowDisputeForm(false);
+      setMessage('Problema reportado. Un administrador lo revisará.');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadAdminDisputes() {
+    try {
+      const data = await apiRequest<{ disputes: AdminDispute[] }>('/api/admin/disputes', { token });
+      setAdminDisputes(data.disputes);
+    } catch (error) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleResolveDispute(disputeId: number, status: 'under_review' | 'resolved') {
+    setBusy(true);
+    try {
+      const refundRaw = disputeRefundAmounts[disputeId];
+      const refundAmount = refundRaw ? Number(refundRaw) : undefined;
+      await apiRequest(`/api/admin/disputes/${disputeId}`, {
+        method: 'PATCH',
+        token,
+        body: {
+          status,
+          resolutionNote: disputeResolutionNotes[disputeId] || undefined,
+          refundAmount: refundAmount && refundAmount > 0 ? refundAmount : undefined,
+        },
+      });
+      await loadAdminDisputes();
+      setMessage(status === 'resolved' ? 'Disputa resuelta' : 'Disputa marcada en revisión');
     } catch (error) {
       setMessage(formatError(error));
     } finally {
@@ -2748,6 +2842,40 @@ export default function App() {
                   </View>
                 </Card>
               )}
+              {selectedRequest.status === 'completed' && user.role === 'customer' && (
+                <Card title="¿Algo salió mal?" subtitle="Reporta un problema con este servicio">
+                  {!showDisputeForm ? (
+                    <SecondaryButton title="Reportar un problema" onPress={() => setShowDisputeForm(true)} />
+                  ) : (
+                    <View style={styles.stack}>
+                      <Field label="Motivo">
+                        <Segmented
+                          value={disputeForm.category}
+                          options={[
+                            { key: 'incomplete_work', label: 'Trabajo incompleto' },
+                            { key: 'incorrect_charge', label: 'Cobro incorrecto' },
+                            { key: 'vehicle_damage', label: 'Daño al vehículo' },
+                            { key: 'other', label: 'Otro' },
+                          ]}
+                          onChange={(value) =>
+                            setDisputeForm({ ...disputeForm, category: value as typeof disputeForm.category })
+                          }
+                        />
+                      </Field>
+                      <Field label="Describe el problema">
+                        <Input
+                          value={disputeForm.description}
+                          multiline
+                          placeholder="Cuéntanos qué pasó, con el mayor detalle posible"
+                          onChangeText={(value) => setDisputeForm({ ...disputeForm, description: value })}
+                        />
+                      </Field>
+                      <PrimaryButton title="Enviar reporte" busy={busy} onPress={handleSubmitDispute} />
+                      <SecondaryButton title="Cancelar" onPress={() => setShowDisputeForm(false)} />
+                    </View>
+                  )}
+                </Card>
+              )}
               <Card title="Chat" subtitle="Habla con el cliente o mecánico asignado">
                 <View style={styles.stack}>
                   {requestMessages.length === 0 ? (
@@ -2797,6 +2925,60 @@ export default function App() {
                 identityBusy={identityBusy}
                 onStart={handleStartIdentityVerification}
               />
+            )}
+            {currentUser.role === 'admin' && (
+              <Card
+                title="Disputas"
+                subtitle={adminDisputes.length > 0 ? `${adminDisputes.length} en total` : 'Sin disputas reportadas'}
+              >
+                <View style={styles.stack}>
+                  {adminDisputes.map((dispute) => (
+                    <View key={dispute.id} style={styles.publicProfileBox}>
+                      <Text style={styles.itemTitle}>
+                        #{dispute.id} · {dispute.customerName} · {dispute.status}
+                      </Text>
+                      <Text style={styles.smallText}>Solicitud #{dispute.serviceRequestId} · {dispute.category}</Text>
+                      <Text style={styles.smallText}>{dispute.description}</Text>
+                      {dispute.status !== 'resolved' && (
+                        <>
+                          <Input
+                            placeholder="Nota de resolución"
+                            value={disputeResolutionNotes[dispute.id] || ''}
+                            onChangeText={(value) =>
+                              setDisputeResolutionNotes({ ...disputeResolutionNotes, [dispute.id]: value })
+                            }
+                          />
+                          <Input
+                            placeholder="Monto a reembolsar (opcional)"
+                            keyboardType="numeric"
+                            value={disputeRefundAmounts[dispute.id] || ''}
+                            onChangeText={(value) =>
+                              setDisputeRefundAmounts({ ...disputeRefundAmounts, [dispute.id]: value })
+                            }
+                          />
+                          <View style={styles.row}>
+                            {dispute.status === 'reported' && (
+                              <SecondaryButton
+                                title="Poner en revisión"
+                                compact
+                                onPress={() => handleResolveDispute(dispute.id, 'under_review')}
+                              />
+                            )}
+                            <PrimaryButton
+                              title="Resolver"
+                              busy={busy}
+                              onPress={() => handleResolveDispute(dispute.id, 'resolved')}
+                            />
+                          </View>
+                        </>
+                      )}
+                      {dispute.resolutionNote && (
+                        <Text style={styles.smallText}>Resolución: {dispute.resolutionNote}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </Card>
             )}
             <Card title="Acciones">
             <View style={styles.stack}>

@@ -370,6 +370,32 @@ export async function initDb(): Promise<void> {
     );
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_payments_service_request ON payments(service_request_id)");
+
+  // Disputas: el cliente reporta un problema con un servicio ya realizado.
+  // Un admin revisa manualmente y decide la resolución — sin reglas
+  // automáticas por ahora (ver README.md).
+  await run(`
+    CREATE TABLE IF NOT EXISTS disputes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      customer_id INTEGER NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('incomplete_work', 'incorrect_charge', 'vehicle_damage', 'other')),
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'reported' CHECK(status IN ('reported', 'under_review', 'resolved')),
+      resolution_note TEXT,
+      refund_payment_id INTEGER,
+      resolved_by_user_id INTEGER,
+      resolved_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+      FOREIGN KEY(customer_id) REFERENCES customers(id),
+      FOREIGN KEY(refund_payment_id) REFERENCES payments(id),
+      FOREIGN KEY(resolved_by_user_id) REFERENCES users(id)
+    );
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_disputes_service_request ON disputes(service_request_id)");
+  await run("CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status, created_at)");
 }
 
 async function ensureColumn(table: string, columnName: string, alterSql: string): Promise<void> {
