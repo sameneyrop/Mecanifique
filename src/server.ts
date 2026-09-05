@@ -239,17 +239,12 @@ const mechanicRegistrationSchema = z.object({
   longitude: z.number().optional()
 });
 
-const customerSchema = z.object({
-  fullName: z.string().min(3),
-  phone: z.string().min(10)
-});
-
 const serviceRequestSchema = z.object({
   customerId: z.number().int().positive(),
   vehicleMake: z.string().min(2),
   vehicleModel: z.string().min(1),
   vehicleYear: z.number().int().gte(1970).lte(new Date().getFullYear() + 1),
-  issueDescription: z.string().min(10),
+  issueDescription: z.string().min(10).max(1_000),
   preferredTime: z.string().min(3).optional().or(z.literal("")),
   city: z.string().min(2),
   zone: z.string().min(2),
@@ -304,7 +299,7 @@ const mechanicStatusSchema = z.object({
 
 const updateSchema = z.object({
   source: z.enum(["mechanic", "system"]),
-  message: z.string().min(3)
+  message: z.string().min(3).max(500)
 });
 
 const assignSchema = z.object({
@@ -328,8 +323,8 @@ const requestStatusSchema = z.object({
     "completed",
     "cancelled"
   ]),
-  diagnosisNotes: z.string().min(3).optional(),
-  repairNotes: z.string().min(3).optional(),
+  diagnosisNotes: z.string().min(3).max(1_000).optional(),
+  repairNotes: z.string().min(3).max(1_000).optional(),
   estimatedPrice: z.number().nonnegative().optional(),
   finalPrice: z.number().nonnegative().optional()
 });
@@ -351,7 +346,7 @@ const mechanicScheduleSlotSchema = z.object({
   slotDate: z.string().min(8),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
-  note: z.string().min(1).optional()
+  note: z.string().min(1).max(500).optional()
 });
 
 const mechanicPublicProfileSchema = z.object({
@@ -409,6 +404,12 @@ const disputeResolveSchema = z.object({
   // 'refund') y se liga a la disputa vía refund_payment_id. La captura
   // real contra el procesador de pagos queda pendiente de la integración
   // de Stripe — por ahora esto solo deja el registro contable.
+});
+
+const panicAlertCreateSchema = z.object({
+  serviceRequestId: z.number().int().positive().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional()
 });
 
 type MechanicRow = {
@@ -502,6 +503,11 @@ async function getUserIdByMechanicId(mechanicId: number): Promise<number | null>
     [mechanicId]
   );
   return user?.id ?? null;
+}
+
+async function getAdminUserIds(): Promise<number[]> {
+  const rows = await all<{ id: number }>("SELECT id FROM users WHERE role = 'admin'");
+  return rows.map((row) => row.id);
 }
 
 async function getPushTokensByUserId(userId: number): Promise<string[]> {
@@ -970,6 +976,59 @@ app.patch("/api/admin/disputes/:id", requireAuth, requireRole("admin"), handleAs
     [payload.status, payload.resolutionNote ?? null, refundPaymentId, req.auth?.user.id ?? null, payload.status, disputeId]
   );
   res.status(200).json({ message: "Disputa actualizada", refundPaymentId });
+}));
+
+// El botón de pánico/911 en la app SIEMPRE llama al 911 directo desde el
+// marcador nativo del teléfono, sin depender de este endpoint. Esta ruta
+// solo deja constancia de que se presionó el botón (quién, desde qué
+// solicitud, con qué ubicación) y avisa a los admins para que puedan dar
+// seguimiento humano — nunca debe bloquear ni sustituir la llamada real.
+app.post("/api/alerts/panic", requireAuth, handleAsync(async (req, res) => {
+  const user = req.auth?.user;
+  if (!user) {
+    res.status(401).json({ error: "Autenticación requerida" });
+    return;
+  }
+  const payload = panicAlertCreateSchema.parse(req.body);
+
+  const result = await run(
+    `INSERT INTO panic_alerts (service_request_id, reporter_user_id, reporter_role, latitude, longitude)
+     VALUES (?, ?, ?, ?, ?)`,
+    [payload.serviceRequestId ?? null, user.id, user.role, payload.latitude ?? null, payload.longitude ?? null]
+  );
+
+  const adminUserIds = await getAdminUserIds();
+  const locationNote =
+    payload.latitude != null && payload.longitude != null
+      ? ` Última ubicación conocida: ${payload.latitude}, ${payload.longitude}.`
+      : "";
+  await Promise.all(
+    adminUserIds.map((adminUserId) =>
+      createNotification(
+        adminUserId,
+        "Alerta de emergencia (911)",
+        `${user.role === "mechanic" ? "El mecánico" : "El cliente"} ${user.fullName} presionó el botón de emergencia${
+          payload.serviceRequestId ? ` en la solicitud #${payload.serviceRequestId}` : ""
+        }.${locationNote}`,
+        { panicAlertId: result.lastID, serviceRequestId: payload.serviceRequestId ?? null }
+      )
+    )
+  );
+
+  res.status(201).json({ id: result.lastID });
+}));
+
+// Admin revisa el historial de alertas de pánico para dar seguimiento.
+app.get("/api/admin/panic-alerts", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
+  const alerts = await all<any>(
+    `SELECT pa.id, pa.service_request_id AS serviceRequestId, pa.reporter_user_id AS reporterUserId,
+            pa.reporter_role AS reporterRole, pa.latitude, pa.longitude, pa.created_at AS createdAt,
+            u.full_name AS reporterName
+     FROM panic_alerts pa
+     JOIN users u ON u.id = pa.reporter_user_id
+     ORDER BY pa.created_at DESC`
+  );
+  res.json({ alerts });
 }));
 
 app.get("/api/admin/identity-verifications", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
@@ -1664,52 +1723,6 @@ app.post(
   })
 );
 
-app.post(
-  "/mechanics",
-  handleAsync(async (req, res) => {
-    const payload = mechanicRegistrationSchema.parse(req.body);
-    const result = await run(
-      `
-      INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, latitude, longitude)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        payload.fullName,
-        payload.phone,
-        payload.city,
-        payload.zone,
-        payload.yearsExperience,
-        JSON.stringify(payload.specialties),
-        payload.latitude ?? null,
-        payload.longitude ?? null
-      ]
-    );
-
-    const created = await get<MechanicRow>(
-      `
-      SELECT id, full_name AS fullName, phone, city, zone, years_experience AS yearsExperience,
-             specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
-             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
-      FROM mechanics
-      WHERE id = ?
-      `,
-      [result.lastID]
-    );
-
-    if (!created) {
-      res.status(500).json({ error: "No se pudo recuperar el mecánico creado" });
-      return;
-    }
-
-    res.status(201).json({
-      ...created,
-      specialties: JSON.parse(created.specialties),
-      isAvailable: created.isAvailable === 1,
-      isOnline: created.isOnline === 1
-    });
-  })
-);
-
 app.get(
   "/mechanics",
   handleAsync(async (req, res) => {
@@ -2000,64 +2013,6 @@ app.post(
 );
 
 app.patch(
-  "/mechanics/:id/availability",
-  handleAsync(async (req, res) => {
-    const mechanicId = Number(req.params.id);
-    const payload = availabilitySchema.parse(req.body);
-
-    if (!Number.isInteger(mechanicId) || mechanicId <= 0) {
-      res.status(400).json({ error: "mechanicId inválido" });
-      return;
-    }
-
-    const updated = await run(
-      `
-      UPDATE mechanics
-      SET is_available = ?
-      WHERE id = ?
-      `,
-      [payload.isAvailable ? 1 : 0, mechanicId]
-    );
-
-    if (updated.changes === 0) {
-      res.status(404).json({ error: "Mecánico no encontrado" });
-      return;
-    }
-
-    res.status(200).json({ ok: true });
-  })
-);
-
-app.patch(
-  "/mechanics/:id/status",
-  handleAsync(async (req, res) => {
-    const mechanicId = Number(req.params.id);
-    const payload = mechanicStatusSchema.parse(req.body);
-
-    if (!Number.isInteger(mechanicId) || mechanicId <= 0) {
-      res.status(400).json({ error: "mechanicId inválido" });
-      return;
-    }
-
-    const updated = await run(
-      `
-      UPDATE mechanics
-      SET status = ?
-      WHERE id = ?
-      `,
-      [payload.status, mechanicId]
-    );
-
-    if (updated.changes === 0) {
-      res.status(404).json({ error: "Mecánico no encontrado" });
-      return;
-    }
-
-    res.status(200).json({ ok: true });
-  })
-);
-
-app.patch(
   "/api/mechanics/:id/availability",
   requireAuth,
   requireRole("mechanic", "admin"),
@@ -2227,208 +2182,6 @@ app.patch(
     }
 
     res.status(200).json({ ok: true });
-  })
-);
-
-app.post(
-  "/customers",
-  handleAsync(async (req, res) => {
-    const payload = customerSchema.parse(req.body);
-    const result = await run(
-      `
-      INSERT INTO customers (full_name, phone)
-      VALUES (?, ?)
-      `,
-      [payload.fullName, payload.phone]
-    );
-
-    const customer = await get(
-      `
-      SELECT id, full_name AS fullName, phone, created_at AS createdAt
-      FROM customers
-      WHERE id = ?
-      `,
-      [result.lastID]
-    );
-
-    res.status(201).json(customer);
-  })
-);
-
-app.post(
-  "/service-requests",
-  handleAsync(async (req, res) => {
-    const payload = serviceRequestSchema.parse(req.body);
-
-    const customer = await get<{ id: number }>(
-      `
-      SELECT id
-      FROM customers
-      WHERE id = ?
-      `,
-      [payload.customerId]
-    );
-
-    if (!customer) {
-      res.status(404).json({ error: "Cliente no encontrado" });
-      return;
-    }
-
-    const result = await run(
-      `
-      INSERT INTO service_requests (
-        customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
-        preferred_time, city, zone, latitude, longitude
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        payload.customerId,
-        payload.vehicleMake,
-        payload.vehicleModel,
-        payload.vehicleYear,
-        payload.issueDescription,
-        payload.preferredTime?.trim() || "Ahora",
-        payload.city,
-        payload.zone,
-        payload.latitude ?? null,
-        payload.longitude ?? null
-      ]
-    );
-
-    const created = await get(
-      `
-      SELECT id, customer_id AS customerId, vehicle_make AS vehicleMake, vehicle_model AS vehicleModel,
-             vehicle_year AS vehicleYear, issue_description AS issueDescription, preferred_time AS preferredTime,
-             city, zone, latitude, longitude, status, mechanic_id AS mechanicId, schedule_slot_id AS scheduleSlotId, diagnosis_notes AS diagnosisNotes, repair_notes AS repairNotes,
-             estimated_price AS estimatedPrice, final_price AS finalPrice, created_at AS createdAt, updated_at AS updatedAt
-      FROM service_requests
-      WHERE id = ?
-      `,
-      [result.lastID]
-    );
-
-    res.status(201).json(created);
-  })
-);
-
-app.post(
-  "/service-requests/:id/assign",
-  handleAsync(async (req, res) => {
-    const requestId = Number(req.params.id);
-    const payload = assignSchema.parse(req.body);
-
-    if (!Number.isInteger(requestId) || requestId <= 0) {
-      res.status(400).json({ error: "requestId inválido" });
-      return;
-    }
-
-    const serviceRequest = await get<{
-      id: number;
-      customerId: number;
-      city: string;
-      zone: string;
-      status: string;
-    }>(
-      `
-      SELECT id, customer_id AS customerId, city, zone, status
-      FROM service_requests
-      WHERE id = ?
-      `,
-      [requestId]
-    );
-
-    if (!serviceRequest) {
-      res.status(404).json({ error: "Solicitud no encontrada" });
-      return;
-    }
-
-    if (serviceRequest.status === "completed" || serviceRequest.status === "cancelled") {
-      res.status(409).json({ error: "No se puede asignar una solicitud cerrada" });
-      return;
-    }
-
-    let mechanicId = payload.mechanicId;
-    if (!mechanicId) {
-      const bestMechanic = await get<{ id: number }>(
-        `
-        SELECT id
-        FROM mechanics
-        WHERE status = 'active'
-          AND is_online = 1
-          AND is_available = 1
-          AND city = ?
-          AND zone = ?
-        ORDER BY rating DESC, jobs_completed DESC
-        LIMIT 1
-        `,
-        [serviceRequest.city, serviceRequest.zone]
-      );
-
-      mechanicId = bestMechanic?.id;
-    }
-
-    if (!mechanicId) {
-      res.status(404).json({ error: "No hay mecánicos disponibles en la zona" });
-      return;
-    }
-
-    const mechanic = await get<{ id: number; status: string; is_available: number }>(
-      `
-      SELECT id, status, is_available
-      FROM mechanics
-      WHERE id = ?
-      `,
-      [mechanicId]
-    );
-
-    if (!mechanic || mechanic.status !== "active") {
-      res.status(404).json({ error: "Mecánico activo no encontrado" });
-      return;
-    }
-
-    if (mechanic.is_available !== 1) {
-      res.status(409).json({ error: "Mecánico no disponible" });
-      return;
-    }
-
-    await run(
-      `
-      UPDATE service_requests
-      SET mechanic_id = ?, status = 'assigned', updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-      `,
-      [mechanicId, requestId]
-    );
-
-    await run(
-      `
-      UPDATE mechanics
-      SET is_available = 0
-      WHERE id = ?
-      `,
-      [mechanicId]
-    );
-
-    await run(
-      `
-      INSERT INTO service_request_updates (service_request_id, source, message)
-      VALUES (?, 'system', ?)
-      `,
-      [requestId, `Mecánico ${mechanicId} asignado`]
-    );
-
-    const customerUserId = await getUserIdByCustomerId(serviceRequest.customerId);
-    const mechanicUserId = await getUserIdByMechanicId(mechanicId);
-    if (customerUserId) {
-      notifyUser(customerUserId, "request-assigned", { requestId, mechanicId });
-    }
-    if (mechanicUserId) {
-      notifyUser(mechanicUserId, "request-assigned", { requestId, mechanicId });
-    }
-    notifyRequest(requestId, "request-assigned", { requestId, mechanicId });
-
-    res.status(200).json({ ok: true, mechanicId });
   })
 );
 
@@ -3104,7 +2857,7 @@ app.post(
   requireAuth,
   handleAsync(async (req, res) => {
     const requestId = Number(req.params.id);
-    const payload = z.object({ message: z.string().min(1) }).parse(req.body);
+    const payload = z.object({ message: z.string().min(1).max(1_000) }).parse(req.body);
 
     if (!Number.isInteger(requestId) || requestId <= 0) {
       res.status(400).json({ error: "requestId inválido" });

@@ -35,7 +35,10 @@ function getSupabaseError(data: Record<string, unknown>, fallback: string): stri
   return String(data.error_description || data.msg || data.message || data.error || fallback);
 }
 
-async function ensureLocalUser(supabaseUser: {
+// Exportada para poder testear directamente la resolución de condiciones de
+// carrera (ver tests/api.test.js) sin depender de una llamada real a la API
+// de Supabase Auth.
+export async function ensureLocalUser(supabaseUser: {
   id: string;
   email?: string;
   user_metadata?: Record<string, unknown>;

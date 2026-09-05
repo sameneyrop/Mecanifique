@@ -396,6 +396,27 @@ export async function initDb(): Promise<void> {
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_disputes_service_request ON disputes(service_request_id)");
   await run("CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status, created_at)");
+
+  // Registro de auditoría del botón de pánico/911: la llamada real al 911
+  // siempre la hace el sistema operativo directo (tel:911), sin pasar por
+  // este backend ni depender de él — esto solo deja constancia de quién
+  // presionó el botón, desde qué solicitud y con qué ubicación, para que un
+  // admin pueda dar seguimiento después. Nunca debe bloquear ni retrasar la
+  // llamada real.
+  await run(`
+    CREATE TABLE IF NOT EXISTS panic_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER,
+      reporter_user_id INTEGER NOT NULL,
+      reporter_role TEXT NOT NULL CHECK(reporter_role IN ('customer', 'mechanic', 'admin')),
+      latitude REAL,
+      longitude REAL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+      FOREIGN KEY(reporter_user_id) REFERENCES users(id)
+    );
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_panic_alerts_created_at ON panic_alerts(created_at DESC)");
 }
 
 async function ensureColumn(table: string, columnName: string, alterSql: string): Promise<void> {

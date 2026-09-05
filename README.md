@@ -51,7 +51,19 @@ mantener informadas a ambas partes.
   - registro de claves privadas de almacenamiento, nunca binarios ni URLs
     públicas de documentos;
   - envío a revisión y endpoints de revisión administrativa.
-- Migración SQL equivalente para una futura base de datos Supabase/Postgres.
+- Migración SQL equivalente para una futura base de datos Supabase/Postgres
+  (`migrations/supabase/001_core_schema.sql` a `005_panic_alerts.sql`). Hoy
+  Supabase solo se usa en producción para autenticación (Supabase Auth); todos
+  los datos de negocio (mecánicos, solicitudes, pagos, disputas, etc.) viven
+  en SQLite con disco persistente en Render. Estas migraciones son el
+  esquema preparado para el día que se decida mover esos datos a Postgres,
+  no una base de datos activa todavía.
+- Disputas de clientes sobre un servicio ya realizado (categoría,
+  descripción, revisión y resolución administrativa, con registro contable
+  opcional de reembolso).
+- Botón de emergencia (911) para clientes y mecánicos con registro de
+  auditoría y notificación a administradores (`panic_alerts`, `POST
+  /api/alerts/panic`).
 - Actualización de ubicación del mecánico en primer plano cada 15 segundos o
   50 metros, solo mientras está conectado y tiene un servicio activo.
 - Flujo más directo para mecánicos: desde una solicitud o al aceptarla, la app
@@ -105,6 +117,27 @@ puede ser menor al autorizado) o un `refund` parcial si aplica. Confirmar
 que el procesador elegido para México soporte este flujo antes de
 comprometerse a él.
 
+### Estado real de implementación (actualizado)
+Hoy existen únicamente las piezas de datos para este modelo, sin lógica de
+negocio ni cobro real conectados:
+
+- `mechanics.labor_rate`, y en `service_requests`: `deposit_amount`,
+  `extra_amount`, `extra_status`, `refund_amount` (columnas creadas, pero
+  **ningún endpoint de la API las lee ni las escribe todavía**).
+- Tabla `payments` para registro contable de movimientos
+  (`deposit_authorization`, `deposit_capture`, `extra_charge`, `refund`), que
+  solo se usa hoy desde `PATCH /api/admin/disputes/:id` para dejar un
+  registro manual del monto a reembolsar cuando un admin resuelve una
+  disputa — **no mueve dinero real**, no hay integración con Stripe ni con
+  ningún otro procesador de pagos.
+- La app móvil permite al mecánico capturar su tarifa de mano de obra, pero
+  el flujo de cobro al cliente (autorizar apartado, aceptar extra, recibir
+  reembolso) no está implementado en ninguna pantalla.
+
+En otras palabras: el modelo de pagos está **diseñado y con el esquema de
+datos preparado**, pero el cobro real es un roadmap pendiente, no una
+función activa.
+
 ## Riesgos operativos identificados (sin resolver aún en código)
 
 - **Fuga a trato directo ("te lo hago por fuera para evitar la comisión de
@@ -115,14 +148,23 @@ comprometerse a él.
   candado (se pierde si el mecánico se sale del sistema); detección de
   patrones de cancelación sospechosos. Ninguna de estas elimina el problema
   por completo, solo lo reduce.
-- **Seguridad del mecánico frente al cliente** (no solo verificar al
-  mecánico): falta considerar ubicación compartida en tiempo real y/o botón
-  de pánico.
+- **Seguridad del mecánico y del cliente frente a la otra parte**: existe un
+  botón de emergencia (llamar al 911 directo desde el teléfono, disponible
+  para ambos roles en el detalle de una solicitud activa) que además deja un
+  registro (`panic_alerts`) y notifica a los administradores con la última
+  ubicación conocida y la solicitud asociada, para dar seguimiento humano
+  después. La llamada real al 911 nunca depende de este registro ni se
+  retrasa por él. Sigue pendiente evaluar seguimiento GPS compartido en vivo
+  para contactos de confianza.
 - **Responsabilidad si el mecánico daña el vehículo**: verificar identidad
   no es lo mismo que garantizar calidad de trabajo. Falta definir si existe
   seguro, fondo de garantía, o el usuario asume el riesgo.
-- **Proceso de disputas** ("el trabajo no quedó bien" después de pagado): no
-  definido todavía.
+- **Proceso de disputas** ("el trabajo no quedó bien" después de pagado):
+  implementado — el cliente reporta con categoría y descripción
+  (`POST /api/disputes`), un admin revisa y resuelve (`PATCH
+  /api/admin/disputes/:id`), dejando opcionalmente un registro contable de
+  reembolso en `payments`. Sin SLA de tiempo de resolución ni apelación
+  todavía.
 - **Mecánicos que aceptan más solicitudes de las que pueden atender**: falta
   límite de solicitudes simultáneas o penalización por cancelación tardía.
 

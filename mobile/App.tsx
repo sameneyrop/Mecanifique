@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { colors } from './colors';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
@@ -545,11 +546,32 @@ export default function App() {
   useEffect(() => {
     async function restoreSession() {
       try {
-        const [storedToken, storedUser, storedOnboarding] = await Promise.all([
-          AsyncStorage.getItem(AUTH_TOKEN_KEY),
-          AsyncStorage.getItem(AUTH_USER_KEY),
-          AsyncStorage.getItem(ONBOARDING_KEY),
+        let [storedToken, storedUser] = await Promise.all([
+          SecureStore.getItemAsync(AUTH_TOKEN_KEY),
+          SecureStore.getItemAsync(AUTH_USER_KEY),
         ]);
+
+        if (!storedToken || !storedUser) {
+          // Migración: versiones anteriores guardaban la sesión sin cifrar en
+          // AsyncStorage. Si existe, la movemos a SecureStore y limpiamos el
+          // valor viejo, para no forzar un re-login a usuarios existentes.
+          const [legacyToken, legacyUser] = await Promise.all([
+            AsyncStorage.getItem(AUTH_TOKEN_KEY),
+            AsyncStorage.getItem(AUTH_USER_KEY),
+          ]);
+          if (legacyToken && legacyUser) {
+            storedToken = legacyToken;
+            storedUser = legacyUser;
+            await Promise.all([
+              SecureStore.setItemAsync(AUTH_TOKEN_KEY, legacyToken),
+              SecureStore.setItemAsync(AUTH_USER_KEY, legacyUser),
+              AsyncStorage.removeItem(AUTH_TOKEN_KEY),
+              AsyncStorage.removeItem(AUTH_USER_KEY),
+            ]);
+          }
+        }
+
+        const storedOnboarding = await AsyncStorage.getItem(ONBOARDING_KEY);
 
         if (storedToken && storedUser) {
           const parsedUser = JSON.parse(storedUser) as AuthUser;
@@ -856,8 +878,8 @@ export default function App() {
     }
 
     await Promise.all([
-      AsyncStorage.setItem(AUTH_TOKEN_KEY, nextToken),
-      AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(nextUser)),
+      SecureStore.setItemAsync(AUTH_TOKEN_KEY, nextToken),
+      SecureStore.setItemAsync(AUTH_USER_KEY, JSON.stringify(nextUser)),
     ]);
   }
 
@@ -877,6 +899,8 @@ export default function App() {
     setMechanicConnection('offline');
     setLocationAutoRequested(false);
     await Promise.all([
+      SecureStore.deleteItemAsync(AUTH_TOKEN_KEY),
+      SecureStore.deleteItemAsync(AUTH_USER_KEY),
       AsyncStorage.removeItem(AUTH_TOKEN_KEY),
       AsyncStorage.removeItem(AUTH_USER_KEY),
     ]);
@@ -1607,9 +1631,27 @@ export default function App() {
           text: 'Llamar al 911',
           style: 'destructive',
           onPress: () => {
+            // La llamada real nunca debe esperar ni depender del backend:
+            // se dispara de inmediato y, en paralelo (best-effort), se dejar
+            // constancia para que un admin pueda dar seguimiento después.
             Linking.openURL('tel:911').catch(() =>
               setMessage('No se pudo abrir el marcador. Marca 911 manualmente.'),
             );
+            if (token) {
+              apiRequest('/api/alerts/panic', {
+                method: 'POST',
+                token,
+                body: {
+                  serviceRequestId: selectedRequest?.id,
+                  latitude: currentLocation?.latitude,
+                  longitude: currentLocation?.longitude,
+                },
+              }).catch(() => {
+                // Silencioso a propósito: si falla el registro, no debe
+                // interrumpir ni preocupar al usuario en medio de una
+                // emergencia real.
+              });
+            }
           },
         },
       ],
@@ -2365,7 +2407,9 @@ export default function App() {
                       value={requestForm.issueDescription}
                       onChangeText={(value) => setRequestForm({ ...requestForm, issueDescription: value })}
                       multiline
+                      maxLength={1000}
                     />
+                    <CharCounter value={requestForm.issueDescription} max={1000} />
                   </Field>
                   <Text style={styles.smallText}>
                     {requestForm.requestedMechanicId
@@ -2866,9 +2910,11 @@ export default function App() {
                         <Input
                           value={disputeForm.description}
                           multiline
+                          maxLength={1000}
                           placeholder="Cuéntanos qué pasó, con el mayor detalle posible"
                           onChangeText={(value) => setDisputeForm({ ...disputeForm, description: value })}
                         />
+                        <CharCounter value={disputeForm.description} max={1000} />
                       </Field>
                       <PrimaryButton title="Enviar reporte" busy={busy} onPress={handleSubmitDispute} />
                       <SecondaryButton title="Cancelar" onPress={() => setShowDisputeForm(false)} />
@@ -2905,9 +2951,11 @@ export default function App() {
                     <Input
                       value={messageDraft}
                       multiline
+                      maxLength={1000}
                       placeholder="Escribe un mensaje"
                       onChangeText={setMessageDraft}
                     />
+                    <CharCounter value={messageDraft} max={1000} />
                   </Field>
                   <PrimaryButton title="Enviar mensaje" onPress={handleSendMessage} />
                 </View>
@@ -2956,6 +3004,10 @@ export default function App() {
                               setDisputeRefundAmounts({ ...disputeRefundAmounts, [dispute.id]: value })
                             }
                           />
+                          <Text style={styles.smallText}>
+                            Esto solo deja un registro contable de la disputa; el reembolso real al cliente
+                            debe hacerse manualmente hasta que exista un procesador de pagos integrado.
+                          </Text>
                           <View style={styles.row}>
                             {dispute.status === 'reported' && (
                               <SecondaryButton
@@ -3079,7 +3131,8 @@ export default function App() {
                     <Input value={updateForm.requestId} keyboardType="numeric" onChangeText={(value) => setUpdateForm({ ...updateForm, requestId: value })} />
                   </Field>
                   <Field label="Mensaje de avance">
-                    <Input value={updateForm.message} multiline onChangeText={(value) => setUpdateForm({ ...updateForm, message: value })} />
+                    <Input value={updateForm.message} multiline maxLength={500} onChangeText={(value) => setUpdateForm({ ...updateForm, message: value })} />
+                    <CharCounter value={updateForm.message} max={500} />
                   </Field>
                   <PrimaryButton title="Publicar update" onPress={handleAddUpdate} />
                   <SecondaryButton title="Estoy disponible" onPress={() => handleToggleAvailability(true)} />
@@ -3090,8 +3143,10 @@ export default function App() {
                       <Input
                         value={publicProfileForm.bio}
                         multiline
+                        maxLength={500}
                         onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, bio: value })}
                       />
+                      <CharCounter value={publicProfileForm.bio} max={500} />
                     </Field>
                     <Field label="Foto principal (URL)">
                       <Input
@@ -3107,7 +3162,8 @@ export default function App() {
                         onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value.replace(/[^0-9.]/g, '') })}
                       />
                       <Text style={styles.smallText}>
-                        También es tu apartado mínimo por servicio — el cliente lo paga al solicitarte.
+                        También funciona como tu apartado mínimo de referencia. Nota: el cobro real dentro de
+                        la app todavía no está implementado — por ahora este monto es solo informativo.
                       </Text>
                     </Field>
                     <Field label="Galería (URLs separadas por coma)">
@@ -3210,6 +3266,7 @@ export default function App() {
                   <Field label="Nota">
                     <Input
                       value={slotForm.note}
+                      maxLength={500}
                       onChangeText={(value) => setSlotForm({ ...slotForm, note: value })}
                     />
                   </Field>
@@ -3394,6 +3451,14 @@ function Field({
 
 function Input(props: ComponentProps<typeof TextInput>) {
   return <TextInput placeholderTextColor={colors.textSecondary} style={styles.input} {...props} />;
+}
+
+function CharCounter({ value, max }: { value: string; max: number }) {
+  return (
+    <Text style={styles.smallText}>
+      {value.length}/{max}
+    </Text>
+  );
 }
 
 function Segmented({

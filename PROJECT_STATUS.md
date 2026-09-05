@@ -1,162 +1,130 @@
 # Mecanifique - Estado actual del proyecto
 
-Fecha: 26 de agosto de 2026
+Fecha: 5 de septiembre de 2026 (auditoría de punta a punta)
 
-## ✅ Completado
+> Este documento es un snapshot puntual. Para el detalle vivo y siempre
+> actualizado de features, riesgos y roadmap, la fuente de verdad es
+> [README.md](./README.md) — este archivo solo resume el estado al momento
+> de la última auditoría y qué se corrigió en ella.
 
-### Backend (Node.js + Express + TypeScript)
-- ✅ Autenticación manual con SQLite (v1)
-- ✅ **Autenticación con Supabase JWT (v2)** - NUEVO
-- ✅ Gestión de mecánicos (alta, búsqueda, perfil)
-- ✅ Solicitudes de servicio (crear, asignar, actualizar estado)
-- ✅ Agenda / turnos de mecánicos
-- ✅ Notificaciones push con Expo
-- ✅ Centro de notificaciones persistente
-- ✅ Sistema de reseñas y ratings
-- ✅ Chat por solicitud
-- ✅ Búsqueda geolocalizada (GPS)
-- ✅ Rate limiting en auth
+## ✅ Completado (confirmado en código, no solo planeado)
 
-### Supabase Auth - Novedad
-- ✅ Endpoints v2 de registro/login con Supabase
-- ✅ JWT verification
-- ✅ Middleware de autenticación
-- ✅ Backward compatibility con auth v1
-- ✅ Documentación completa
-- ✅ Ejemplos de uso (curl)
+### Backend (Node.js + Express + TypeScript, `src/server.ts` ~3000 líneas)
+- ✅ Autenticación exclusivamente con Supabase JWT (v2). **La auth manual v1
+  (password_hash local, tabla `sessions`, `/auth/register`, `/auth/login`)
+  se eliminó por completo** (commit `366a6d1`): la app móvil nunca la usó y
+  solo agregaba superficie de ataque.
+- ✅ Gestión de mecánicos (alta vía registro Supabase, búsqueda, perfil
+  público con bio/galería/tarifa de mano de obra).
+- ✅ Solicitudes de servicio: creación, hold temporal, asignación
+  automática/manual, respuesta aceptar/rechazar, ciclo de estados completo
+  (pendiente → asignada → en camino → en sitio → diagnóstico → reparación →
+  espera de refacciones → terminada/cancelada).
+- ✅ Agenda / turnos de mecánicos.
+- ✅ Notificaciones push con Expo + centro de notificaciones persistente.
+- ✅ Reseñas y calificaciones post-servicio.
+- ✅ Chat por solicitud.
+- ✅ Búsqueda geolocalizada (GPS) y actualización de ubicación del mecánico.
+- ✅ Verificación de identidad con Didit (consentimiento, documentos,
+  webhook, revisión administrativa).
+- ✅ Disputas de clientes (categoría, descripción, revisión y resolución
+  admin, con registro contable opcional de reembolso).
+- ✅ Botón de emergencia (911): la llamada real siempre pasa por el marcador
+  nativo del teléfono; el backend solo deja auditoría (`panic_alerts`) y
+  notifica a administradores con ubicación y solicitud asociadas.
+- ✅ Rate limiting en auth, cabeceras de seguridad básicas, CORS restringido
+  en producción.
 
-### App Android (React Native + Expo)
-- ✅ Pantalla de inicio
-- ✅ Pantalla de solicitudes
-- ✅ Pantalla de búsqueda de mecánicos
-- ✅ Pantalla de mapa con GPS
-- ✅ Pantalla de acciones (admin/config)
-- ✅ Login y registro básicos
-- ✅ Barra de navegación inferior fija
-- ✅ Fondo personalizado
-- ✅ Centro de notificaciones
+### Supabase
+- ✅ Auth (registro/login/roles/JWT) es la única vía de autenticación.
+- ⚠️ **Supabase Postgres NO es la base de datos operativa todavía.** Todos
+  los datos de negocio viven en SQLite con disco persistente en Render.
+  Las migraciones en `migrations/supabase/` (001 a 005) son un esquema
+  espejo preparado para una futura migración, no una BD activa.
 
----
-
-## 📋 Pendiente (Roadmap)
-
-### Fase 1: Supabase Foundation (INICIADA)
-- ✅ **Autenticación con Supabase** - HECHO
-- ⏳ Migración de BD a Supabase Postgres (tablas principales)
-- ⏳ Supabase Storage para fotos de mecánicos
-- ⏳ Real-time subscriptions con Supabase
-
-### Fase 2: Tiempo Real (sin Supabase realtime, ver fase 1)
-- ⏳ WebSocket para solicitudes entrantes en vivo
-- ⏳ Push notifications sin polling
-- ⏳ Actualización de estado en tiempo real
-
-### Fase 3: Autenticación Avanzada
-- ⏳ Email verification requerida antes de usar
-- ⏳ Password reset por email
-- ⏳ OAuth (Google, Facebook)
-
-### Fase 4: Features faltantes
-- ⏳ Perfil público completo del mecánico (fotos, servicios)
-- ⏳ Calendario visual de turnos (no solo lista)
-- ⏳ Pago / anticipo / retención real
-- ⏳ Estados de servicio más finos (en camino, en sitio, diagnóstico, etc.)
-- ⏳ Mejor UX móvil (inputs cortos, menos texto)
-
-### Fase 5: Producción
-- ⏳ Publicación en Google Play Store
-- ⏳ Branding final
-- ⏳ Onboarding completo
-- ⏳ Testing de carga
-- ⏳ Documentación de API final
+### App Android (React Native + Expo, `mobile/App.tsx` ~4100 líneas)
+- ✅ Inicio, solicitudes, búsqueda/mapa de mecánicos, acciones (mecánico/
+  admin), cuenta — con navegación inferior fija.
+- ✅ Login/registro con Supabase, incluyendo botón de Google OAuth.
+- ✅ Vehículos guardados por el cliente, reutilizables al crear solicitud.
+- ✅ Verificación de identidad (Didit) vía navegador seguro + deep link.
+- ✅ Chat, reseñas, disputas y botón de emergencia integrados en el detalle
+  de solicitud.
+- ✅ Sesión persistida de forma **cifrada** con `expo-secure-store` (con
+  migración automática desde el `AsyncStorage` sin cifrar de versiones
+  anteriores).
+- ✅ Onboarding, indicadores de carga, feedback de botones, modo seguro de
+  mapa cuando no hay clave de Google Maps configurada.
 
 ---
 
-## 🔧 Cómo empezar con Supabase Auth
+## 🔧 Hallazgos y correcciones de esta auditoría (5 sep 2026)
 
-### 1. Setup (5 minutos)
-```bash
-# 1. Ir a https://supabase.com y crear proyecto gratuito
-# 2. Copiar SUPABASE_URL y SUPABASE_ANON_KEY
-# 3. Crear .env en la raíz:
-cat > .env << EOF
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJ...
-PORT=4000
-EOF
-```
+Se hizo una revisión completa de backend y app móvil. Resultado y acciones:
 
-### 2. Correr servidor
-```bash
-npm run dev
-```
+1. **[Corregido] Endpoints legacy sin autenticación.** Existían rutas
+   duplicadas sin `/api` y sin ningún middleware de auth (`POST /mechanics`,
+   `PATCH /mechanics/:id/availability`, `PATCH /mechanics/:id/status`,
+   `POST /customers`, `POST /service-requests`, `POST
+   /service-requests/:id/assign`) que permitían, por ejemplo, activar un
+   mecánico sin verificación. Confirmado que la app móvil no las usa;
+   **se eliminaron del código**.
+2. **[Corregido] Migraciones de Supabase incompletas.** Faltaban `disputes`
+   y `panic_alerts` en el esquema Postgres espejo. Se agregaron
+   (`004_disputes.sql`, `005_panic_alerts.sql`) y se documentó explícitamente
+   que Supabase hoy solo cubre autenticación, no datos operativos.
+3. **[Corregido] Tokens de sesión sin cifrar.** El JWT y el usuario se
+   guardaban en `AsyncStorage` plano. Se migró a `expo-secure-store`.
+4. **[Corregido] Copy engañoso sobre pagos.** La pantalla de perfil del
+   mecánico decía "el cliente lo paga al solicitarte" sobre la tarifa de
+   mano de obra, cuando **ningún endpoint de la API lee ni escribe** los
+   campos de apartado/extra/reembolso (existen en el esquema, sin lógica de
+   negocio conectada). Se corrigió el texto y se documentó el estado real en
+   el README.
+5. **[Agregado] Botón de pánico ahora deja registro.** Antes solo abría el
+   marcador del teléfono sin ningún rastro. Ahora, en paralelo (sin
+   bloquear ni retrasar la llamada real), se registra quién presionó el
+   botón, desde qué solicitud y con qué ubicación, y se notifica a los
+   administradores.
+6. **[Agregado] Tests de autenticación y regresión de concurrencia.** El
+   backend solo tenía 3 tests triviales (health, 404, JSON inválido). Se
+   agregaron tests de: rutas protegidas sin token (401), token inválido
+   contra Supabase real (401), y una prueba de regresión directa sobre
+   `ensureLocalUser` para el bug de condición de carrera del rol de mecánico
+   (commit `366a6d1`) — hoy 10 tests, todos en verde.
+7. **[Documentado, no implementado]** Pagos reales (Stripe) y refuerzo
+   adicional del botón de pánico (seguimiento GPS compartido en vivo)
+   siguen siendo roadmap: requieren cuenta/credenciales de un procesador de
+   pagos y decisiones de producto que no se pueden resolver solo con
+   cambios de código. Ver README, sección "Modelo de pagos y apartado" y
+   "Riesgos operativos identificados".
 
-### 3. Probar endpoints
-```bash
-bash examples-auth-v2.sh
-```
-
-### 4. Actualizar app Android
-- Cambiar endpoints de `/auth/register/` a `/auth/v2/register/`
-- Cambiar login a `/auth/v2/login`
-- Guardar accessToken en lugar de token manual
-- Incluir `Authorization: Bearer <token>` en requests
-
----
-
-## 📊 Estadísticas del código
-
-### Backend
-- **TypeScript**: ~3000 líneas
-- **Endpoints**: 40+
-- **Tablas SQLite**: 12
-- **Auth methods**: 2 (v1 manual + v2 Supabase)
-
-### App Android
-- **React Native**: ~2000 líneas
-- **Pantallas**: 5
-- **Components**: 20+
-
----
-
-## 🎯 Prioridades actuales
-
-1. **AHORA**: Probar Supabase Auth (registrar usuario, login, obtener token)
-2. **DESPUÉS**: Migrar app Android a v2 endpoints
-3. **LUEGO**: Agregar Supabase Postgres para realtime
-4. **SIGUIENTE**: OAuth y email verification
-5. **FINAL**: Features adicionales y publicación
+Validación tras los cambios: `npm run build`, `npm test` (10/10) y
+`npx tsc --noEmit` / `npx expo-doctor` (18/18) en `mobile`, todos en verde.
 
 ---
 
-## 📚 Documentación generada
+## 📋 Pendiente (ver README.md → "Roadmap pendiente" para el detalle vivo)
 
-- [SUPABASE_AUTH_SETUP.md](./SUPABASE_AUTH_SETUP.md) - Guía de configuración
-- [SUPABASE_IMPLEMENTATION_SUMMARY.md](./SUPABASE_IMPLEMENTATION_SUMMARY.md) - Cambios implementados
-- [.env.example](./.env.example) - Variables de entorno
-- [examples-auth-v2.sh](./examples-auth-v2.sh) - Scripts de prueba
-- [README.md](./README.md) - README actualizado
-
----
-
-## 💡 Notas importantes
-
-- ✅ Los endpoints v1 siguen funcionando (no es breaking change)
-- ✅ Supabase es gratuito hasta 50k usuarios
-- ✅ No necesitas credenciales para correr servidor (fallback local)
-- ✅ Puedes migrar usuarios gradualmente de v1 a v2
-- ✅ JWT de Supabase dura 1 hora (configurable)
-- ⚠️ Email verification aún se configura manual en Supabase console
-- ⚠️ OAuth requiere setup adicional (clientID, secret) en Supabase
+- Migrar datos operativos de SQLite a Supabase Postgres (o decidir
+  formalmente no hacerlo y retirar las migraciones espejo).
+- Integración real de pagos (Stripe u otro PSP): autorización, captura
+  parcial, reembolso — hoy solo existe el esquema de datos.
+- Verificación telefónica por SMS, panel administrativo completo de
+  identidad, seguimiento GPS compartido para contactos de confianza.
+- Mejoras de UX pendientes: `maxLength` y contador de caracteres en
+  descripciones largas (falla, disputas, bio), menos texto para usuarios
+  mayores.
+- Ampliar cobertura de tests (roles/403, flujo completo de disputas,
+  websockets).
 
 ---
 
-## 🚀 Próxima sesión
+## 📚 Documentación relacionada
 
-Cuando retomes:
-1. Crear proyecto Supabase
-2. Probar endpoints v2 con curl
-3. Integrar en app Android
-4. Comenzar con migración de BD a Postgres (si decides pasar a Fase 1 completa)
-
-Toda la estructura está lista. Solo necesitas las credenciales de Supabase.
+- [README.md](./README.md) — estado de implementación, modelo de pagos,
+  riesgos operativos y roadmap (fuente de verdad).
+- [SUPABASE_AUTH_SETUP.md](./SUPABASE_AUTH_SETUP.md) — guía de
+  configuración de Supabase Auth.
+- [migrations/supabase/](./migrations/supabase) — esquema Postgres espejo
+  (no activo todavía).
