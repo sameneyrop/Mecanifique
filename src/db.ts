@@ -291,6 +291,14 @@ export async function initDb(): Promise<void> {
     "supabase_user_id",
     "ALTER TABLE users ADD COLUMN supabase_user_id TEXT"
   );
+  // Forzamos UNIQUE aquí porque en bases de datos existentes, la columna se
+  // agregó vía ALTER TABLE ADD COLUMN (arriba), que en SQLite no admite
+  // UNIQUE inline. Sin esto, dos peticiones concurrentes de un mismo login
+  // (ver ensureLocalUser) podían insertar dos filas para el mismo usuario
+  // de Supabase, y la que "ganaba la carrera" a veces quedaba con el rol
+  // por defecto (customer) en vez del rol real. Bug confirmado en
+  // producción el 2026-09-05 con logs de diagnóstico.
+  await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_supabase_user_id ON users(supabase_user_id) WHERE supabase_user_id IS NOT NULL");
 
   await run(`
     CREATE TABLE IF NOT EXISTS sessions (

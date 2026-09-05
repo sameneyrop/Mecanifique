@@ -45,16 +45,6 @@ async function ensureLocalUser(supabaseUser: {
      FROM users WHERE supabase_user_id = ?`,
     [supabaseUser.id]
   );
-  console.log(
-    "[DIAG ensureLocalUser]",
-    JSON.stringify({
-      supabaseUserId: supabaseUser.id,
-      email: supabaseUser.email,
-      metadataRole: supabaseUser.user_metadata?.role,
-      existingFound: Boolean(existing),
-      existingRole: existing?.role,
-    })
-  );
   if (existing) {
     return existing;
   }
@@ -66,10 +56,19 @@ async function ensureLocalUser(supabaseUser: {
   const fullName = String(metadata.full_name || email);
   const phone = String(metadata.phone || "");
 
+  // Dos peticiones concurrentes (ej. login + la primera petición autenticada
+  // que dispara el middleware) pueden llegar aquí ambas con `existing` en
+  // null, porque ninguna vio todavía el INSERT de la otra. Para que esto no
+  // produzca una fila con el rol equivocado (bug confirmado en producción
+  // el 2026-09-05), el INSERT en `users` usa `OR IGNORE`, apoyado en el
+  // índice único de supabase_user_id: como máximo una de las peticiones
+  // concurrentes logra insertar; la(s) otra(s) simplemente no hacen nada
+  // ahí, y todas relogran leyendo el resultado final al final de la
+  // función — sin importar cuál "ganó", todas devuelven la misma fila.
   if (role === "admin") {
     await run(
       `
-      INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash)
+      INSERT OR IGNORE INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash)
       VALUES ('admin', ?, ?, ?, ?, ?)
       `,
       [
@@ -81,9 +80,15 @@ async function ensureLocalUser(supabaseUser: {
       ]
     );
   } else if (role === "mechanic") {
-    const mechanic = await run(
+    // mechanics.phone es UNIQUE, así que dos peticiones concurrentes con el
+    // mismo teléfono (el caso real: es la misma persona registrándose dos
+    // veces en paralelo) competirían por esa fila también, no solo por la
+    // de `users`. INSERT OR IGNORE aquí evita que la segunda petición
+    // lance una excepción en vez de simplemente no insertar nada.
+    const phoneValue = phone || `supabase-${supabaseUser.id}`;
+    await run(
       `
-      INSERT INTO mechanics (
+      INSERT OR IGNORE INTO mechanics (
         full_name, phone, city, zone, years_experience, specialties,
         status, is_available, is_online, created_at
       )
@@ -91,31 +96,44 @@ async function ensureLocalUser(supabaseUser: {
       `,
       [
         fullName,
-        phone || `supabase-${supabaseUser.id}`,
+        phoneValue,
         String(metadata.city || ""),
         String(metadata.zone || ""),
         Number(metadata.years_experience || 0),
         Array.isArray(metadata.specialties) ? metadata.specialties.join(", ") : String(metadata.specialties || "")
       ]
     );
-    await run(
+    // Releemos por phone (no por lastID: si OR IGNORE no insertó porque ya
+    // existía, lastID no apunta a la fila real) para obtener el id correcto
+    // sin importar cuál petición ganó la carrera.
+    const mechanicRow = await get<{ id: number }>("SELECT id FROM mechanics WHERE phone = ?", [phoneValue]);
+    if (!mechanicRow) {
+      throw new Error("No se pudo crear ni encontrar el registro de mecánico");
+    }
+    const insertResult = await run(
       `
-      INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
+      INSERT OR IGNORE INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
       VALUES ('mechanic', ?, ?, ?, ?, ?, ?)
       `,
-      [email, supabaseUser.id, fullName, crypto.randomBytes(16).toString("hex"), crypto.randomBytes(32).toString("hex"), mechanic.lastID]
+      [email, supabaseUser.id, fullName, crypto.randomBytes(16).toString("hex"), crypto.randomBytes(32).toString("hex"), mechanicRow.id]
     );
   } else {
-    const customer = await run(
-      `INSERT INTO customers (full_name, phone, created_at) VALUES (?, ?, datetime('now'))`,
-      [fullName, phone || `supabase-${supabaseUser.id}`]
+    // customers.phone también es UNIQUE — mismo patrón que mechanics.
+    const phoneValue = phone || `supabase-${supabaseUser.id}`;
+    await run(
+      `INSERT OR IGNORE INTO customers (full_name, phone, created_at) VALUES (?, ?, datetime('now'))`,
+      [fullName, phoneValue]
     );
+    const customerRow = await get<{ id: number }>("SELECT id FROM customers WHERE phone = ?", [phoneValue]);
+    if (!customerRow) {
+      throw new Error("No se pudo crear ni encontrar el registro de cliente");
+    }
     await run(
       `
-      INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, customer_id)
+      INSERT OR IGNORE INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, customer_id)
       VALUES ('customer', ?, ?, ?, ?, ?, ?)
       `,
-      [email, supabaseUser.id, fullName, crypto.randomBytes(16).toString("hex"), crypto.randomBytes(32).toString("hex"), customer.lastID]
+      [email, supabaseUser.id, fullName, crypto.randomBytes(16).toString("hex"), crypto.randomBytes(32).toString("hex"), customerRow.id]
     );
   }
 
@@ -257,17 +275,6 @@ export async function registerMechanicWithSupabase(
     });
 
     const data = await response.json();
-
-    console.log(
-      "[DIAG registerMechanic]",
-      JSON.stringify({
-        email,
-        responseOk: response.ok,
-        hasUser: Boolean(data.user),
-        userId: data.user?.id,
-        hasSession: Boolean(data.session ?? data.access_token),
-      })
-    );
 
     if (!response.ok) {
       throw new Error(`Signup failed: ${getSupabaseError(data, "No fue posible crear la cuenta")}`);
