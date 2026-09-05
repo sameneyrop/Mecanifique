@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } fro
 import MapView, { Marker, type Region } from 'react-native-maps';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ImageBackground,
   Platform,
@@ -1502,6 +1503,25 @@ export default function App() {
     }
   }
 
+  function handleEmergencyCall() {
+    Alert.alert(
+      'Llamar al 911',
+      '¿Necesitas ayuda de emergencia ahora mismo?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Llamar al 911',
+          style: 'destructive',
+          onPress: () => {
+            Linking.openURL('tel:911').catch(() =>
+              setMessage('No se pudo abrir el marcador. Marca 911 manualmente.'),
+            );
+          },
+        },
+      ],
+    );
+  }
+
   async function handleLoadRequest() {
     if (!requestLookupId) return;
 
@@ -2685,6 +2705,12 @@ export default function App() {
           {selectedRequest && (
             <View style={styles.stack}>
               <RequestCard request={selectedRequest} />
+              {selectedRequest.status !== 'completed' && selectedRequest.status !== 'cancelled' && (
+                <Pressable style={styles.emergencyButton} onPress={handleEmergencyCall}>
+                  <Ionicons name="warning" size={20} color={colors.white} />
+                  <Text style={styles.emergencyButtonText}>Emergencia — Llamar al 911</Text>
+                </Pressable>
+              )}
               {(user.role === 'customer' || user.role === 'admin') &&
                 selectedRequest.status !== 'completed' &&
                 selectedRequest.status !== 'cancelled' && (
@@ -3483,6 +3509,21 @@ const styles = StyleSheet.create({
   },
   connectionOff: {
     backgroundColor: '#ef4444',
+  },
+  emergencyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ef4444',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  emergencyButtonText: {
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 15,
   },
   connectionButtonText: {
     color: colors.white,
