@@ -9,7 +9,7 @@ import { openExternalNavigation } from '../utils';
 
 const ILLUST_FIRST_REQUEST = require('../assets/illust-first-request.png');
 const ILLUST_NEW_REQUEST = require('../assets/illust-new-request.png');
-const ILLUST_SEARCH = require('../assets/illust-search.png');
+const ILLUST_NEARBY_EMPTY = require('../assets/illust-home-hero.png');
 
 export function MapScreen({
   onRespondToIncoming,
@@ -110,7 +110,7 @@ export function MapScreen({
               )}
               {nearbyMechanics.length === 0 ? (
                 <View style={styles.emptyStateWrap}>
-                  <Image source={ILLUST_SEARCH} resizeMode="cover" style={styles.cardIllustration} />
+                  <Image source={ILLUST_NEARBY_EMPTY} resizeMode="cover" style={styles.cardIllustration} />
                   <Text style={styles.itemText}>Aún no hay resultados cercanos.</Text>
                 </View>
               ) : (

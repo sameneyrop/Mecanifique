@@ -283,7 +283,7 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 14,
     gap: 8,
-    backgroundColor: colors.bgCard,
+    backgroundColor: colors.white,
     shadowColor: colors.textDark,
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -613,7 +613,7 @@ export const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   bottomNav: {
-    backgroundColor: colors.bgCard,
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.primaryLighter,
     paddingTop: 8,
