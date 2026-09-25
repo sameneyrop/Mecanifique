@@ -1,5 +1,6 @@
 import { Platform, StyleSheet } from 'react-native';
 import { colors } from './colors';
+import { fonts } from './fonts';
 
 export const styles = StyleSheet.create({
   safeArea: {
@@ -48,7 +49,7 @@ export const styles = StyleSheet.create({
   },
   kicker: {
     color: colors.primary,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     textAlign: 'center',
     fontSize: 28,
   },
@@ -60,7 +61,7 @@ export const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
     color: colors.textDark,
     textAlign: 'center',
   },
@@ -106,13 +107,14 @@ export const styles = StyleSheet.create({
     marginTop: 2,
     textAlign: 'center',
     fontSize: 15,
+    fontFamily: fonts.regular,
   },
   heroSubtitle: {
     color: colors.textSecondary,
     marginTop: 6,
     textAlign: 'center',
     fontSize: 16,
-    fontWeight: '500',
+    fontFamily: fonts.medium,
     paddingHorizontal: 12,
   },
   heroButton: {
@@ -125,7 +127,7 @@ export const styles = StyleSheet.create({
   },
   heroButtonText: {
     color: colors.white,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     fontSize: 16,
   },
   onboardingDots: {
@@ -158,7 +160,7 @@ export const styles = StyleSheet.create({
   locationText: {
     color: colors.textDark,
     fontSize: 15,
-    fontWeight: '500',
+    fontFamily: fonts.medium,
     flexShrink: 1,
   },
   profileCard: {
@@ -193,12 +195,13 @@ export const styles = StyleSheet.create({
   },
   profileName: {
     fontSize: 20,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     color: colors.textDark,
   },
   profileMeta: {
     color: colors.textDark,
     fontSize: 14,
+    fontFamily: fonts.regular,
   },
   starsRow: {
     flexDirection: 'row',
@@ -214,7 +217,7 @@ export const styles = StyleSheet.create({
   expandLabel: {
     color: colors.primary,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
   connectionButton: {
     borderRadius: 18,
@@ -240,13 +243,13 @@ export const styles = StyleSheet.create({
   },
   emergencyButtonText: {
     color: colors.white,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     fontSize: 15,
   },
   connectionButtonText: {
     color: colors.white,
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
     letterSpacing: 0.6,
   },
   sessionHeader: {
@@ -273,7 +276,7 @@ export const styles = StyleSheet.create({
   sessionText: {
     flex: 1,
     color: colors.textDark,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     fontSize: 14,
   },
   card: {
@@ -291,17 +294,19 @@ export const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 19,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
     color: colors.textDark,
   },
   cardSubtitle: {
     color: colors.textDark,
     fontSize: 15,
+    fontFamily: fonts.regular,
   },
   identityHint: {
     color: colors.primaryDark,
     fontSize: 14,
     marginBottom: 8,
+    fontFamily: fonts.regular,
   },
   stack: {
     gap: 8,
@@ -316,7 +321,7 @@ export const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     color: colors.textDark,
     marginBottom: 6,
   },
@@ -327,6 +332,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     fontSize: 17,
+    fontFamily: fonts.regular,
     color: colors.textDark,
     backgroundColor: colors.primaryLighter,
     minHeight: 52,
@@ -355,7 +361,7 @@ export const styles = StyleSheet.create({
   },
   segmentText: {
     color: colors.textDark,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     textAlign: 'center',
     fontSize: 15,
   },
@@ -383,7 +389,7 @@ export const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: colors.white,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
     fontSize: 17,
   },
   secondaryButton: {
@@ -397,7 +403,7 @@ export const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: colors.textDark,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     fontSize: 16,
   },
   secondaryButtonCompact: {
@@ -441,7 +447,7 @@ export const styles = StyleSheet.create({
   chatSender: {
     color: colors.textDark,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
   },
   notificationItem: {
     padding: 10,
@@ -455,17 +461,19 @@ export const styles = StyleSheet.create({
     opacity: 0.72,
   },
   itemTitle: {
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
     fontSize: 17,
     color: colors.textDark,
   },
   itemText: {
     color: colors.textDark,
     fontSize: 16,
+    fontFamily: fonts.regular,
   },
   smallText: {
     color: colors.textSecondary,
     fontSize: 14,
+    fontFamily: fonts.regular,
   },
   publicProfileBox: {
     gap: 4,
@@ -477,7 +485,7 @@ export const styles = StyleSheet.create({
   },
   publicProfileTitle: {
     color: colors.textDark,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
     fontSize: 13,
   },
   coverPhoto: {
@@ -509,7 +517,7 @@ export const styles = StyleSheet.create({
   reviewTitle: {
     color: colors.textDark,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: fonts.extrabold,
   },
   calendarStrip: {
     flexDirection: 'row',
@@ -535,7 +543,7 @@ export const styles = StyleSheet.create({
   calendarChipText: {
     color: colors.textDark,
     fontSize: 10,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
   },
   calendarChipTextActive: {
     color: colors.white,
@@ -569,7 +577,7 @@ export const styles = StyleSheet.create({
   statusPillText: {
     color: colors.textDark,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
   },
   toastWrap: {
     position: 'absolute',
@@ -595,13 +603,13 @@ export const styles = StyleSheet.create({
   toastText: {
     color: colors.white,
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     textAlign: 'center',
   },
   badge: {
     color: colors.textDark,
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
   },
   bottomNavDock: {
     paddingHorizontal: 14,
@@ -634,13 +642,13 @@ export const styles = StyleSheet.create({
   navTooltipText: {
     color: colors.white,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fonts.semibold,
     textAlign: 'center',
   },
   bottomNavItem: {
     color: colors.textDark,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fonts.bold,
     letterSpacing: 0.2,
     marginTop: 2,
   },

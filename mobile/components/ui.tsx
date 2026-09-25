@@ -258,15 +258,12 @@ export function NavTooltip({
       style={{ position: 'absolute', bottom: 72, left: x, width, alignItems: 'center' }}
       pointerEvents="none"
     >
-      <Animated.View
-        key={`${text}-${x}`}
-        entering={FadeInUp.duration(200).easing(Easing.out(Easing.cubic))}
-        exiting={FadeOutUp.duration(160)}
-        style={[styles.navTooltip, { transform: [{ translateX: edgeShift }] }]}
-      >
-        <Text style={styles.navTooltipText} numberOfLines={2}>
-          {text}
-        </Text>
+      <Animated.View entering={FadeInUp.duration(200).easing(Easing.out(Easing.cubic))} exiting={FadeOutUp.duration(160)}>
+        <View style={[styles.navTooltip, { transform: [{ translateX: edgeShift }] }]}>
+          <Text style={styles.navTooltipText} numberOfLines={2}>
+            {text}
+          </Text>
+        </View>
       </Animated.View>
     </View>
   );
