@@ -385,6 +385,31 @@ export const styles = StyleSheet.create({
     opacity: 0.82,
     transform: [{ scale: 0.98 }],
   },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primaryLighter,
+  },
+  menuRowLabel: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: fonts.medium,
+    color: colors.textDark,
+  },
+  menuRowBadge: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  menuRowBadgeText: {
+    color: colors.primaryDark,
+    fontSize: 11,
+    fontFamily: fonts.bold,
+  },
   primaryButtonText: {
     color: colors.white,
     fontFamily: fonts.extrabold,

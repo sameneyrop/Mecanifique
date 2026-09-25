@@ -111,6 +111,36 @@ export function Toast({ message, onDismiss }: { message: string; onDismiss: () =
   );
 }
 
+export function MenuRow({
+  icon,
+  label,
+  badge,
+  onPress,
+}: {
+  icon: ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  badge?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.menuRow, pressed && styles.buttonPressed]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Ionicons name={icon} size={20} color={colors.textDark} />
+      <Text style={styles.menuRowLabel}>{label}</Text>
+      {badge && (
+        <View style={styles.menuRowBadge}>
+          <Text style={styles.menuRowBadgeText}>{badge}</Text>
+        </View>
+      )}
+      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+    </Pressable>
+  );
+}
+
 export function Card({
   title,
   subtitle,
