@@ -1,5 +1,5 @@
 import { useEffect, type ComponentProps, type ReactNode } from 'react';
-import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, {
   Easing,
   FadeInUp,
@@ -239,7 +239,12 @@ export function NavTooltip({
     return () => clearTimeout(timeout);
   }, [text, x]);
 
-  const centeredLeft = Math.max(4, x + width / 2 - 80);
+  const screenWidth = Dimensions.get('window').width;
+  const tooltipWidth = 210;
+  const navHorizontalMargin = 24; // paddingHorizontal de bottomNavDock (14) + margen del propio pill
+  const idealLeft = x + width / 2 - tooltipWidth / 2;
+  const maxLeft = screenWidth - navHorizontalMargin * 2 - tooltipWidth;
+  const centeredLeft = Math.min(Math.max(4, idealLeft), Math.max(4, maxLeft));
 
   return (
     <Animated.View

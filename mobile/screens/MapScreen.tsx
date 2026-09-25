@@ -4,6 +4,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, PrimaryButton, SecondaryButton } from '../components/ui';
+import { MechanicRadar } from '../components/MechanicRadar';
 import { openExternalNavigation } from '../utils';
 
 const ILLUST_FIRST_REQUEST = require('../assets/illust-first-request.png');
@@ -101,9 +102,12 @@ export function MapScreen({
 
           {user.role !== 'mechanic' && (
             <>
-              <Text style={styles.smallText}>
-                {currentLocation ? 'La ubicación ya está lista.' : 'Activa tu ubicación desde Inicio para ver mecánicos cercanos.'}
-              </Text>
+              {!currentLocation && (
+                <Text style={styles.smallText}>Buscando tu ubicación para mostrar mecánicos cercanos...</Text>
+              )}
+              {currentLocation && nearbyMechanics.length > 0 && (
+                <MechanicRadar userLocation={currentLocation} mechanics={nearbyMechanics} maxDistanceKm={25} />
+              )}
               {nearbyMechanics.length === 0 ? (
                 <View style={styles.emptyStateWrap}>
                   <Image source={ILLUST_SEARCH} resizeMode="cover" style={styles.cardIllustration} />

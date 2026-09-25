@@ -42,6 +42,10 @@ export const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 5,
   },
+  appShell: {
+    gap: 14,
+    width: '100%',
+  },
   kicker: {
     color: colors.primary,
     fontWeight: '700',
@@ -50,8 +54,8 @@ export const styles = StyleSheet.create({
   },
   logoWordmark: {
     alignSelf: 'center',
-    width: 250,
-    height: 48,
+    width: 130,
+    height: 25,
     marginBottom: 2,
   },
   title: {
@@ -617,11 +621,12 @@ export const styles = StyleSheet.create({
   navTooltip: {
     position: 'absolute',
     bottom: 72,
-    maxWidth: 160,
+    minWidth: 120,
+    maxWidth: 210,
     backgroundColor: colors.textDark,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     shadowColor: '#000',
     shadowOpacity: 0.25,
     shadowRadius: 8,

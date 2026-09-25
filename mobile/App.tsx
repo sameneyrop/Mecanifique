@@ -292,6 +292,25 @@ const ONBOARDING_STEPS = [
   },
 ] as const;
 
+function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
+  switch (screen) {
+    case 'home':
+      return 'Panel de servicio';
+    case 'mechanics':
+      return 'Encuentra tu mecánico';
+    case 'requests':
+      return 'Tus solicitudes';
+    case 'map':
+      return role === 'mechanic' ? 'Solicitud entrante' : 'Mecánicos cerca de ti';
+    case 'actions':
+      return 'Acciones';
+    case 'account':
+      return 'Tu cuenta';
+    default:
+      return 'Mecanifique';
+  }
+}
+
 export default function App() {
   const {
     token, setToken,
@@ -655,6 +674,9 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.role === 'mechanic' && currentScreen === 'mechanics') {
       setCurrentScreen('home');
+    }
+    if (currentUser && currentUser.role !== 'mechanic' && currentScreen === 'home') {
+      setCurrentScreen('mechanics');
     }
   }, [currentUser?.role, currentScreen]);
 
@@ -1830,19 +1852,13 @@ export default function App() {
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical
         >
-        <View style={[styles.shell, { backgroundColor: colors.white }]}>
+        <View style={styles.appShell}>
           <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
           <View key={currentScreen}>
-          <Text style={styles.title}>{currentScreen === 'home' ? 'Encuentra tu mecánico' : 'Panel de servicio'}</Text>
+          <Text style={styles.title}>{getScreenTitle(currentScreen, currentUser?.role)}</Text>
           {currentScreen === 'home' && (
             <View>
-              <HomeScreen
-                mechanicCursor={mechanicCursor}
-                selectedMechanicReviews={selectedMechanicReviews}
-                mechanicReviewsExpanded={mechanicReviewsExpanded}
-                setMechanicReviewsExpanded={setMechanicReviewsExpanded}
-                onToggleMechanicConnection={handleToggleMechanicConnection}
-              />
+              <HomeScreen onToggleMechanicConnection={handleToggleMechanicConnection} />
             </View>
           )}
 
@@ -1984,7 +2000,7 @@ export default function App() {
             onPress={() => {
               setCurrentScreen('requests');
               setRequestsView('list');
-              setNavTooltip({ id: 'requests', text: 'Ver y crear tus solicitudes de servicio' });
+              setNavTooltip({ id: 'requests', text: 'Tus solicitudes' });
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, requests: layout }))}
             iconName="car-outline"
@@ -1995,30 +2011,32 @@ export default function App() {
               active={currentScreen === 'mechanics'}
               onPress={() => {
                 setCurrentScreen('mechanics');
-                setNavTooltip({ id: 'mechanics', text: 'Buscar mecánicos disponibles cerca de ti' });
+                setNavTooltip({ id: 'mechanics', text: 'Buscar mecánicos' });
               }}
               onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, mechanics: layout }))}
               iconName="construct-outline"
               accessibilityLabel="Mecánicos"
             />
           )}
-          <BottomNavButton
-            active={currentScreen === 'home'}
-            onPress={() => {
-              setCurrentScreen('home');
-              setNavTooltip({ id: 'home', text: 'Pantalla principal de la app' });
-            }}
-            onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, home: layout }))}
-            iconName="home-outline"
-            accessibilityLabel="Inicio"
-          />
+          {currentUser?.role === 'mechanic' && (
+            <BottomNavButton
+              active={currentScreen === 'home'}
+              onPress={() => {
+                setCurrentScreen('home');
+                setNavTooltip({ id: 'home', text: 'Conectarte para recibir solicitudes' });
+              }}
+              onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, home: layout }))}
+              iconName="home-outline"
+              accessibilityLabel="Inicio"
+            />
+          )}
           <BottomNavButton
             active={currentScreen === 'map'}
             onPress={() => {
               setCurrentScreen('map');
               setNavTooltip({
                 id: 'map',
-                text: currentUser?.role === 'mechanic' ? 'Ver solicitud entrante y cómo llegar' : 'Ver mecánicos cercanos a ti',
+                text: currentUser?.role === 'mechanic' ? 'Solicitud entrante y cómo llegar' : 'Mecánicos cerca de ti',
               });
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, map: layout }))}
@@ -2031,7 +2049,7 @@ export default function App() {
               setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions');
               setNavTooltip({
                 id: 'account',
-                text: currentUser?.role === 'customer' ? 'Ver tu perfil y notificaciones' : 'Gestionar solicitudes, turnos y perfil',
+                text: currentUser?.role === 'customer' ? 'Tu perfil y notificaciones' : 'Solicitudes, turnos y perfil',
               });
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, account: layout }))}
