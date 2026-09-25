@@ -195,12 +195,14 @@ export function BottomNavButton({
   iconName,
   label,
   accessibilityLabel,
+  onLayoutMeasured,
 }: {
   active: boolean;
   onPress: () => void;
   iconName: ComponentProps<typeof Ionicons>['name'];
   label: string;
   accessibilityLabel: string;
+  onLayoutMeasured?: (layout: { x: number; width: number }) => void;
 }) {
   const { animatedStyle, onPressIn, onPressOut } = usePressScale(0.88);
   return (
@@ -209,6 +211,10 @@ export function BottomNavButton({
       onPress={onPress}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
+      onLayout={(event) => {
+        const { x, width } = event.nativeEvent.layout;
+        onLayoutMeasured?.({ x, width });
+      }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       hitSlop={6}
@@ -218,6 +224,39 @@ export function BottomNavButton({
         {label}
       </Text>
     </AnimatedPressable>
+  );
+}
+
+export function NavTooltip({
+  text,
+  x,
+  width,
+  onDismiss,
+}: {
+  text: string;
+  x: number;
+  width: number;
+  onDismiss: () => void;
+}) {
+  useEffect(() => {
+    const timeout = setTimeout(onDismiss, 1800);
+    return () => clearTimeout(timeout);
+  }, [text, x]);
+
+  const centeredLeft = Math.max(4, x + width / 2 - 80);
+
+  return (
+    <Animated.View
+      key={`${text}-${x}`}
+      entering={FadeInUp.duration(160)}
+      exiting={FadeOutUp.duration(140)}
+      style={[styles.navTooltip, { left: centeredLeft }]}
+      pointerEvents="none"
+    >
+      <Text style={styles.navTooltipText} numberOfLines={2}>
+        {text}
+      </Text>
+    </Animated.View>
   );
 }
 export function PrimaryButton({

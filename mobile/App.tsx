@@ -11,7 +11,7 @@ import { AccountScreen } from './screens/AccountScreen';
 import { ActionsScreen } from './screens/ActionsScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { LoginScreen } from './screens/LoginScreen';
-import { BottomNavButton, Toast } from './components/ui';
+import { BottomNavButton, NavTooltip, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
 import {
   normalizeSpecialties,
@@ -320,6 +320,8 @@ export default function App() {
     identityBusy, setIdentityBusy,
   } = useAppContext();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [navTooltip, setNavTooltip] = useState<{ id: string; text: string } | null>(null);
+  const [navLayouts, setNavLayouts] = useState<Record<string, { x: number; width: number }>>({});
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [locationAutoRequested, setLocationAutoRequested] = useState(false);
@@ -1982,7 +1984,9 @@ export default function App() {
             onPress={() => {
               setCurrentScreen('requests');
               setRequestsView('list');
+              setNavTooltip({ id: 'requests', text: 'Ver y crear tus solicitudes de servicio' });
             }}
+            onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, requests: layout }))}
             iconName="car-outline"
             label="Solicitudes"
             accessibilityLabel="Solicitudes"
@@ -1990,7 +1994,11 @@ export default function App() {
           {currentUser && currentUser.role !== 'mechanic' && (
             <BottomNavButton
               active={currentScreen === 'mechanics'}
-              onPress={() => setCurrentScreen('mechanics')}
+              onPress={() => {
+                setCurrentScreen('mechanics');
+                setNavTooltip({ id: 'mechanics', text: 'Buscar mecánicos disponibles cerca de ti' });
+              }}
+              onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, mechanics: layout }))}
               iconName="construct-outline"
               label="Mecánicos"
               accessibilityLabel="Mecánicos"
@@ -1998,25 +2006,51 @@ export default function App() {
           )}
           <BottomNavButton
             active={currentScreen === 'home'}
-            onPress={() => setCurrentScreen('home')}
+            onPress={() => {
+              setCurrentScreen('home');
+              setNavTooltip({ id: 'home', text: 'Pantalla principal de la app' });
+            }}
+            onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, home: layout }))}
             iconName="home-outline"
             label="Inicio"
             accessibilityLabel="Inicio"
           />
           <BottomNavButton
             active={currentScreen === 'map'}
-            onPress={() => setCurrentScreen('map')}
+            onPress={() => {
+              setCurrentScreen('map');
+              setNavTooltip({
+                id: 'map',
+                text: currentUser?.role === 'mechanic' ? 'Ver solicitud entrante y cómo llegar' : 'Ver mecánicos cercanos a ti',
+              });
+            }}
+            onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, map: layout }))}
             iconName="map-outline"
             label="Mapa"
             accessibilityLabel="Mapa"
           />
           <BottomNavButton
             active={currentScreen === 'actions' || currentScreen === 'account'}
-            onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
+            onPress={() => {
+              setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions');
+              setNavTooltip({
+                id: 'account',
+                text: currentUser?.role === 'customer' ? 'Ver tu perfil y notificaciones' : 'Gestionar solicitudes, turnos y perfil',
+              });
+            }}
+            onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, account: layout }))}
             iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
             label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
             accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
           />
+          {navTooltip && navLayouts[navTooltip.id] && (
+            <NavTooltip
+              text={navTooltip.text}
+              x={navLayouts[navTooltip.id].x}
+              width={navLayouts[navTooltip.id].width}
+              onDismiss={() => setNavTooltip(null)}
+            />
+          )}
         </View>
       </View>
       </SafeAreaView>

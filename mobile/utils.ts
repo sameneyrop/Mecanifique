@@ -1,7 +1,40 @@
+import { Linking, Platform } from 'react-native';
+
 type Mechanic = {
   isOnline?: boolean;
   isAvailable: boolean;
 };
+
+/**
+ * Abre la navegación en una app externa (Waze, si está instalada, si no
+ * Google Maps) en vez de construir un sistema de mapas/rutas propio.
+ */
+export async function openExternalNavigation(latitude: number, longitude: number, label?: string) {
+  const wazeUrl = `waze://ul?ll=${latitude},${longitude}&navigate=yes`;
+  const googleMapsAppUrl = Platform.select({
+    ios: `comgooglemaps://?daddr=${latitude},${longitude}&directionsmode=driving`,
+    android: `google.navigation:q=${latitude},${longitude}`,
+  });
+  const googleMapsWebUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}${
+    label ? `&destination_place_id=&query=${encodeURIComponent(label)}` : ''
+  }`;
+
+  const candidates = [wazeUrl, googleMapsAppUrl, googleMapsWebUrl].filter(Boolean) as string[];
+
+  for (const url of candidates) {
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        return;
+      }
+    } catch {
+      // Intenta la siguiente opción.
+    }
+  }
+
+  await Linking.openURL(googleMapsWebUrl);
+}
 
 export function normalizeSpecialties(value: string): string[] {
   return value

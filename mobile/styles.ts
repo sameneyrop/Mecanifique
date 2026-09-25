@@ -407,29 +407,6 @@ export const styles = StyleSheet.create({
   list: {
     gap: 12,
   },
-  mapContainer: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-  },
-  mapContainerCompact: {
-    borderRadius: 14,
-  },
-  map: {
-    width: '100%',
-    height: 170,
-  },
-  mapCompact: {
-    height: 130,
-  },
-  mapUnavailable: {
-    minHeight: 170,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: colors.primaryLighter,
-  },
   item: {
     padding: 10,
     borderRadius: 16,
@@ -634,6 +611,27 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    position: 'relative',
+  },
+  navTooltip: {
+    position: 'absolute',
+    bottom: 72,
+    maxWidth: 160,
+    backgroundColor: colors.textDark,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  navTooltipText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   bottomNavItem: {
     color: colors.textDark,

@@ -35,8 +35,10 @@ mantener informadas a ambas partes.
 - La app permite guardar un vehículo y reutilizarlo al crear una solicitud.
 - Onboarding, sesión persistente, indicadores de carga, botones con feedback,
   diseño de tarjetas y navegación inferior.
-- Mapa con modo seguro: muestra un aviso y evita un cierre inesperado cuando
-  aún no existe una clave de Google Maps configurada.
+- Navegación tipo inDrive/Rappi: la app no dibuja mapas ni rutas propias —
+  muestra la dirección/distancia y un botón "Cómo llegar" que abre Waze o
+  Google Maps con el destino ya cargado. No requiere clave de Google Maps
+  ni el SDK de mapas nativo.
 
 ### Inventario de pantallas (app móvil)
 
@@ -107,7 +109,6 @@ estar completas sin una cuenta, credenciales o decisión operativa:
 | Correos de producción | Configurar SMTP propio en Supabase. En pruebas se puede desactivar temporalmente Confirm email. |
 | SMS | Configurar Supabase Phone Auth, Twilio o Vonage. |
 | Documentos de identidad | Almacenamiento privado cifrado, carga de archivos, proveedor de prueba de vida y proceso legal de privacidad/retención. |
-| Mapa nativo | Clave de Google Maps restringida al paquete Android y variable `GOOGLE_MAPS_API_KEY` en EAS. |
 | Ubicación continua | Consentimiento adicional y configuración nativa para ubicación en segundo plano. |
 | Pagos | Cuenta de Stripe Connect u otro PSP compatible con México, requisitos fiscales y política de reembolsos. |
 | CLABE y liquidaciones | Onboarding bancario del proveedor de pagos y calendario comercial de dispersión. |

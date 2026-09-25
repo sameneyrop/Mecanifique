@@ -14,7 +14,7 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
 } from '../components/ui';
-import { getServiceRequestStatusLabel, formatCalendarDate } from '../utils';
+import { getServiceRequestStatusLabel, formatCalendarDate, openExternalNavigation } from '../utils';
 
 const ILLUST_MECHANIC_DASHBOARD = require('../assets/illust-mechanic-dashboard.png');
 const ILLUST_SETTINGS = require('../assets/illust-settings.png');
@@ -237,6 +237,19 @@ export function ActionsScreen({
               {selectedActionRequest.serviceAddress ? (
                 <Text numberOfLines={2} style={styles.smallText}>Destino: {selectedActionRequest.serviceAddress}</Text>
               ) : null}
+              {selectedActionRequest.latitude != null && selectedActionRequest.longitude != null && (
+                <SecondaryButton
+                  title="Cómo llegar"
+                  compact
+                  onPress={() =>
+                    openExternalNavigation(
+                      selectedActionRequest.latitude,
+                      selectedActionRequest.longitude,
+                      selectedActionRequest.serviceAddress || undefined,
+                    )
+                  }
+                />
+              )}
             </View>
           )}
           <Segmented
