@@ -1,20 +1,18 @@
-/**
- * Paleta de colores de marca de Mecanifique.
- * Un solo lugar para todos los colores de la app — evita tener hex sueltos
- * repetidos sin relación entre sí por todo App.tsx.
- */
 export const colors = {
-  primary: '#0072B2', // Azul de marca — botones, header, elementos activos
-  primaryDark: '#00568a', // Azul oscuro — texto sobre fondo claro, estados hover/pressed
-  primaryLight: '#e6f2f9', // Azul muy claro — fondos suaves (chips, bordes de tarjeta)
-  primaryLighter: '#f2f8fc', // Azul aún más claro — fondos de tarjeta, fondo general
+  bgTop: '#0B1F33',
+  bgBottom: '#132A44',
 
-  textDark: '#0d2028', // Texto principal
-  textSecondary: '#4a5d66', // Texto secundario / subtítulos
+  primary: '#2F8FEA',
+  primaryDark: '#1C6DC4',
+  primaryLight: '#D6E4F5',    // antes: rgba(255,255,255,0.16) — azul pálido sólido, visible sobre blanco
+  primaryLighter: '#EEF3FA',  // antes: rgba(255,255,255,0.10) — azul casi blanco, para fondos sutiles de inputs/tarjetas
 
-  accent: '#ffa500', // Acento — estrellas de calificación, destacados
+  textDark: '#0b0f22',       // vuelve al original: texto oscuro sobre fondo blanco
+  textSecondary: '#4A5568',  // gris oscuro legible sobre blanco (antes #172531 era casi ilegible por bajo contraste)
 
-  warningBg: '#fff8e0', // Fondo de avisos (ej. hint de verificación de identidad)
-
+  accent: '#F2B84B',
+  warningBg: 'rgba(242,184,75,0.16)',
   white: '#ffffff',
+  cardBg: '#122A42',
+  cardAccentMechanic: '#F2B84B',
 } as const;

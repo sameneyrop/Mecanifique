@@ -1,6 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { colors } from './colors';
+import { styles } from './styles';
+import { useAppContext } from './context/AppContext';
+import { HomeScreen } from './screens/HomeScreen';
+import { MechanicsScreen } from './screens/MechanicsScreen';
+import { MapScreen } from './screens/MapScreen';
+import { RequestsScreen } from './screens/RequestsScreen';
+import { AccountScreen } from './screens/AccountScreen';
+import { ActionsScreen } from './screens/ActionsScreen';
+import { Card, Field, Input, CharCounter, Segmented, PrimaryButton, SecondaryButton, BottomNavButton } from './components/ui';
+import {
+  normalizeSpecialties,
+  formatError,
+  normalizeServerTextError,
+  getMechanicPublicStatus,
+  getServiceRequestStatusLabel,
+  formatCalendarDate,
+} from './utils';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
@@ -9,20 +26,16 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
-import MapView, { Marker, type Region } from 'react-native-maps';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
-  ImageBackground,
   Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
@@ -230,13 +243,6 @@ type ScheduleSlot = {
   note?: string | null;
 };
 
-const DEFAULT_REGION: Region = {
-  latitude: 21.8818,
-  longitude: -102.2916,
-  latitudeDelta: 0.12,
-  longitudeDelta: 0.12,
-};
-
 const expoHost = Constants.expoConfig?.hostUri?.split(':')[0];
 const defaultApiBaseUrl =
   Platform.OS === 'web'
@@ -250,10 +256,8 @@ const AUTH_USER_KEY = 'mecanifique.auth.user';
 const ONBOARDING_KEY = 'mecanifique.onboarding.seen';
 const API_REQUEST_TIMEOUT_MS = 15_000;
 const STATUS_REFRESH_INTERVAL_MS = 10_000;
-const APP_BACKGROUND_IMAGE = require('./assets/blue-bg.png');
 const APP_LOGO_IMAGE = require('./assets/logo.png');
-const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.android?.config?.googleMaps?.apiKey;
-const isMapConfigured = Boolean(GOOGLE_MAPS_API_KEY);
+const ONBOARDING_MECHANIC_IMAGE = require('./assets/onboarding-mechanic.png');
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -276,6 +280,7 @@ const ONBOARDING_STEPS = [
     title: 'Solicita un servicio',
     body: 'Pide ayuda directo a un mecánico, reserva turnos y sigue el flujo del servicio.',
     icon: 'car-sport-outline' as const,
+    image: ONBOARDING_MECHANIC_IMAGE,
   },
   {
     title: 'Mecánicos se conectan y reciben pedidos',
@@ -284,90 +289,37 @@ const ONBOARDING_STEPS = [
   },
 ] as const;
 
-function normalizeSpecialties(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'Ocurrió un error inesperado';
-}
-
-function normalizeServerTextError(payloadText: string): string {
-  const preMatch = payloadText.match(/<pre>([\s\S]*?)<\/pre>/i);
-  const rawMessage = preMatch ? preMatch[1] : payloadText;
-  const cleanMessage = rawMessage.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-
-  if (cleanMessage.includes('Cannot PATCH /api/mechanics/') && cleanMessage.includes('/online')) {
-    return 'No se pudo conectar. Verifica que el backend esté corriendo.';
-  }
-
-  return cleanMessage || 'Error inesperado';
-}
-
-function getMechanicPublicStatus(mechanic: Mechanic): string {
-  if (!mechanic.isOnline) {
-    return 'Fuera de línea';
-  }
-
-  if (mechanic.isAvailable) {
-    return 'Disponible para solicitudes';
-  }
-
-  return 'Conectado pero ocupado';
-}
-
-function getServiceRequestStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    pending: 'Pendiente',
-    assigned: 'Asignada',
-    in_progress: 'En progreso',
-    en_route: 'En camino',
-    on_site: 'En sitio',
-    diagnosing: 'Diagnosticando',
-    repairing: 'Reparando',
-    awaiting_parts: 'Esperando refacciones',
-    completed: 'Terminada',
-    cancelled: 'Cancelada',
-  };
-
-  return labels[status] || status;
-}
-
-function formatCalendarDate(date: string): { weekday: string; day: string; month: string } {
-  const parsed = new Date(`${date}T00:00:00`);
-  const weekdays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-
-  if (Number.isNaN(parsed.getTime())) {
-    return { weekday: 'Día', day: date, month: '' };
-  }
-
-  return {
-    weekday: weekdays[parsed.getDay()],
-    day: String(parsed.getDate()).padStart(2, '0'),
-    month: months[parsed.getMonth()],
-  };
-}
-
 export default function App() {
+  const {
+    token, setToken,
+    user, setUser,
+    loadingSession, setLoadingSession,
+    busy, setBusy,
+    message, setMessage,
+    currentScreen, setCurrentScreen,
+    requestsView, setRequestsView,
+    actionsView, setActionsView,
+    requestCreateStep, setRequestCreateStep,
+    mechanicSignupStep, setMechanicSignupStep,
+    mechanics, setMechanics,
+    myRequests, setMyRequests,
+    nearbyMechanics, setNearbyMechanics,
+    vehicles, setVehicles,
+    selectedRequest, setSelectedRequest,
+    incomingRequest, setIncomingRequest,
+    requestMessages, setRequestMessages,
+    messageDraft, setMessageDraft,
+    currentLocation, setCurrentLocation,
+    mechanicConnection, setMechanicConnection,
+    notifications, setNotifications,
+    unreadNotifications, setUnreadNotifications,
+    identityState, setIdentityState,
+    identityBusy, setIdentityBusy,
+  } = useAppContext();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
-  const [mechanicSignupStep, setMechanicSignupStep] = useState<MechanicSignupStep>('account');
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
-  const [token, setToken] = useState('');
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loadingSession, setLoadingSession] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('Listo');
   const [locationAutoRequested, setLocationAutoRequested] = useState(false);
-  const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [mechanicSlots, setMechanicSlots] = useState<ScheduleSlot[]>([]);
   const [selectedMechanicReviews, setSelectedMechanicReviews] = useState<MechanicReview[]>([]);
   const [selectedMechanicReviewStats, setSelectedMechanicReviewStats] = useState<{ averageRating: number | null; reviewCount: number }>({
@@ -375,19 +327,7 @@ export default function App() {
     reviewCount: 0,
   });
   const [requestMechanicSlots, setRequestMechanicSlots] = useState<ScheduleSlot[]>([]);
-  const [nearbyMechanics, setNearbyMechanics] = useState<Mechanic[]>([]);
-  const [myRequests, setMyRequests] = useState<RequestSummary[]>([]);
-  const [vehicles, setVehicles] = useState<VehicleProfile[]>([]);
-  const [identityState, setIdentityState] = useState<IdentityVerificationState>({ status: null });
-  const [identityBusy, setIdentityBusy] = useState(false);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
   const [selectedActionRequest, setSelectedActionRequest] = useState<ServiceRequest | RequestSummary | null>(null);
-  const [requestMessages, setRequestMessages] = useState<RequestMessage[]>([]);
-  const [messageDraft, setMessageDraft] = useState('');
-  const [incomingRequest, setIncomingRequest] = useState<ServiceRequest | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const [loginForm, setLoginForm] = useState({
     email: '',
@@ -481,22 +421,14 @@ export default function App() {
   const [adminDisputes, setAdminDisputes] = useState<AdminDispute[]>([]);
   const [disputeResolutionNotes, setDisputeResolutionNotes] = useState<Record<number, string>>({});
   const [disputeRefundAmounts, setDisputeRefundAmounts] = useState<Record<number, string>>({});
-  const [mechanicConnection, setMechanicConnection] = useState<'online' | 'offline'>('offline');
 
   const selectedMechanicId = useMemo(() => user?.mechanicId?.toString() || '', [user]);
   const currentUser = user;
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('home');
-  const [requestsView, setRequestsView] = useState<RequestsView>('list');
-  const [requestCreateStep, setRequestCreateStep] = useState<RequestCreateStep>('vehicle');
-  const [actionsView, setActionsView] = useState<ActionsView>('assign');
   const [requestCursor, setRequestCursor] = useState(0);
   const [mechanicCursor, setMechanicCursor] = useState(0);
   const [mechanicReviewsExpanded, setMechanicReviewsExpanded] = useState(false);
   const [selectedScheduleDate, setSelectedScheduleDate] = useState('');
   const [selectedRequestScheduleDate, setSelectedRequestScheduleDate] = useState('');
-  const locationLabel = currentLocation
-    ? `${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`
-    : 'Ubicación pendiente';
   const actionOptions = useMemo<Array<{ key: ActionsView; label: string }>>(() => {
     if (currentUser?.role === 'admin') {
       return [
@@ -1170,42 +1102,7 @@ export default function App() {
     setNearbyMechanics(data);
   }
 
-  function getMapRegion(): Region {
-    if (
-      incomingRequest?.latitude !== null &&
-      incomingRequest?.latitude !== undefined &&
-      incomingRequest.longitude !== null &&
-      incomingRequest.longitude !== undefined
-    ) {
-      return {
-        latitude: incomingRequest.latitude,
-        longitude: incomingRequest.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      };
-    }
 
-    if (currentLocation) {
-      return {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        latitudeDelta: 0.08,
-        longitudeDelta: 0.08,
-      };
-    }
-
-    if (selectedRequest?.latitude !== null && selectedRequest?.latitude !== undefined &&
-      selectedRequest.longitude !== null && selectedRequest.longitude !== undefined) {
-      return {
-        latitude: selectedRequest.latitude,
-        longitude: selectedRequest.longitude,
-        latitudeDelta: 0.08,
-        longitudeDelta: 0.08,
-      };
-    }
-
-    return DEFAULT_REGION;
-  }
 
   async function requestCurrentLocation() {
     const permission = await Location.requestForegroundPermissionsAsync();
@@ -1658,6 +1555,11 @@ export default function App() {
     );
   }
 
+  async function loadRequestDetailById(requestId: number) {
+    const fullRequest = await apiRequest<ServiceRequest>(`/service-requests/${requestId}`, { token });
+    setSelectedRequest(fullRequest);
+  }
+
   async function handleLoadRequest() {
     if (!requestLookupId) return;
 
@@ -1819,12 +1721,12 @@ export default function App() {
 
   if (loadingSession) {
     return (
-      <ImageBackground source={APP_BACKGROUND_IMAGE} resizeMode="cover" style={styles.safeArea}>
+      <View style={styles.safeArea}>
         <SafeAreaView style={styles.centered}>
           <ActivityIndicator size="large" />
           <Text style={styles.subtitle}>Cargando sesión...</Text>
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
@@ -1832,7 +1734,7 @@ export default function App() {
     if (onboardingSeen === false) {
       const step = ONBOARDING_STEPS[onboardingStep];
       return (
-        <ImageBackground source={APP_BACKGROUND_IMAGE} resizeMode="cover" style={styles.safeArea}>
+        <View style={styles.safeArea}>
           <SafeAreaView style={styles.safeAreaInner}>
             <StatusBar style="dark" />
             <View style={styles.content}>
@@ -1845,9 +1747,13 @@ export default function App() {
               >
                 <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
                   <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
-                  <View style={styles.onboardingIconWrap}>
-                    <Ionicons name={step.icon} size={42} color={colors.primary} />
-                  </View>
+                  {'image' in step && step.image ? (
+                    <Image source={step.image} resizeMode="contain" style={styles.onboardingImage} />
+                  ) : (
+                    <View style={styles.onboardingIconWrap}>
+                      <Ionicons name={step.icon} size={42} color={colors.primary} />
+                    </View>
+                  )}
                   <Text style={styles.title}>{step.title}</Text>
                   <Text style={styles.subtitle}>{step.body}</Text>
                   <View style={styles.onboardingDots}>
@@ -1875,12 +1781,12 @@ export default function App() {
               </ScrollView>
             </View>
           </SafeAreaView>
-        </ImageBackground>
+        </View>
       );
     }
 
     return (
-      <ImageBackground source={APP_BACKGROUND_IMAGE} resizeMode="cover" style={styles.safeArea}>
+      <View style={styles.safeArea}>
         <SafeAreaView style={styles.safeAreaInner}>
           <StatusBar style="dark" />
           <View style={styles.content}>
@@ -2035,12 +1941,12 @@ export default function App() {
             </ScrollView>
           </View>
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
   return (
-    <ImageBackground source={APP_BACKGROUND_IMAGE} resizeMode="cover" style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <SafeAreaView style={styles.safeAreaInner}>
       <StatusBar style="dark" />
       <View style={styles.content}>
@@ -2050,36 +1956,21 @@ export default function App() {
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical
         >
-        <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
+        <View style={[styles.shell, { backgroundColor: colors.white }]}>
           <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+          <View key={currentScreen}>
           <Text style={styles.title}>{currentScreen === 'home' ? 'Encuentra tu mecánico' : 'Panel de servicio'}</Text>
           {currentScreen === 'home' && (
-            <>
-              <Text style={styles.heroSubtitle}>Mecánicos verificados, cuando quieras y donde quieras.</Text>
-              {user.role !== 'mechanic' && (
-                <Pressable style={styles.heroButton} onPress={() => setCurrentScreen('mechanics')}>
-                  <Text style={styles.heroButtonText}>Buscar mecánicos</Text>
-                </Pressable>
-              )}
-            </>
+            <View>
+              <HomeScreen
+                mechanicCursor={mechanicCursor}
+                selectedMechanicReviews={selectedMechanicReviews}
+                mechanicReviewsExpanded={mechanicReviewsExpanded}
+                setMechanicReviewsExpanded={setMechanicReviewsExpanded}
+                onToggleMechanicConnection={handleToggleMechanicConnection}
+              />
+            </View>
           )}
-
-          <View style={styles.locationPill}>
-            <Text style={styles.locationPin}>📍</Text>
-            <Text style={styles.locationText}>{locationLabel}</Text>
-          </View>
-
-          <View style={styles.sessionHeader}>
-            <Text style={styles.sessionText}>{user.fullName} · {user.role}</Text>
-            <SecondaryButton
-              title="Cerrar sesión"
-              compact
-              onPress={async () => {
-                await clearSession();
-                setMessage('Sesión cerrada');
-              }}
-            />
-          </View>
 
           <View style={styles.statusPill}>
             <Text numberOfLines={2} style={styles.statusPillText}>{message}</Text>
@@ -2094,2061 +1985,168 @@ export default function App() {
             </Pressable>
           )}
 
-          {currentScreen === 'home' && user.role !== 'mechanic' && mechanics.length > 0 && (
-            <Card title="Mecánicos destacados" subtitle="Perfil público, comentarios y disponibilidad">
-              {mechanics.slice(mechanicCursor, mechanicCursor + 1).map((mechanic) => (
-                <View key={mechanic.id} style={styles.stack}>
-                  <View style={styles.locationPill}>
-                    <Text style={styles.locationPin}>📍</Text>
-                    <Text style={styles.locationText}>{mechanic.city} {mechanic.zone}</Text>
-                  </View>
-                  <View style={styles.profileCard}>
-                    {mechanic.coverPhotoUrl ? (
-                      <Image
-                        source={{ uri: mechanic.coverPhotoUrl }}
-                        style={styles.avatarCircle}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View style={styles.avatarCircle}>
-                        <Ionicons name="person" size={28} color={colors.textSecondary} />
-                      </View>
-                    )}
-                    <View style={styles.profileBody}>
-                      <Text style={styles.profileName}>{mechanic.fullName}</Text>
-                      <Text style={styles.profileMeta}>{mechanic.specialties.join(', ')}</Text>
-                      <View style={styles.starsRow}>
-                        {[1, 2, 3, 4, 5].map((star) => (
-                          <Ionicons
-                            key={star}
-                            name={star <= Math.round(mechanic.rating) ? 'star' : 'star-outline'}
-                            size={16}
-                            color={colors.accent}
-                          />
-                        ))}
-                        <Text style={styles.profileMeta}> {mechanic.reviewCount || 0} reseñas</Text>
-                      </View>
-                    </View>
-                  </View>
-                  <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>
-                      Comentarios {selectedMechanicReviews.length > 0 ? `(${selectedMechanicReviews.length})` : ''}
-                    </Text>
-                    {selectedMechanicReviews.length === 0 ? (
-                      <Text style={styles.smallText}>Aún no hay comentarios.</Text>
-                    ) : (
-                      <Pressable onPress={() => setMechanicReviewsExpanded((prev) => !prev)}>
-                        {(mechanicReviewsExpanded
-                          ? selectedMechanicReviews
-                          : selectedMechanicReviews.slice(0, 1)
-                        ).map((review) => (
-                          <Text
-                            key={review.id}
-                            numberOfLines={mechanicReviewsExpanded ? undefined : 3}
-                            style={styles.smallText}
-                          >
-                            {review.customerName}: {review.comment}
-                          </Text>
-                        ))}
-                        {selectedMechanicReviews.length > 1 && (
-                          <View style={styles.expandRow}>
-                            <Text style={styles.expandLabel}>
-                              {mechanicReviewsExpanded ? 'Ver menos' : 'Ver más'}
-                            </Text>
-                            <Ionicons
-                              name={mechanicReviewsExpanded ? 'chevron-up' : 'chevron-down'}
-                              size={14}
-                              color={colors.primary}
-                            />
-                          </View>
-                        )}
-                      </Pressable>
-                    )}
-                  </View>
-                </View>
-              ))}
-            </Card>
-          )}
-
-          {currentScreen === 'home' && user.role === 'mechanic' && (
-            <Card
-              title="Modo conductor mecánico"
-              subtitle={
-                liveLocationRequest
-                  ? `Compartiendo ubicación durante la solicitud #${liveLocationRequest.id}.`
-                  : 'Tu ubicación solo se comparte mientras tienes un servicio activo.'
-              }
-            >
-              <Pressable
-                style={[styles.connectionButton, mechanicConnection === 'online' ? styles.connectionOn : styles.connectionOff]}
-                onPress={() => handleToggleMechanicConnection(mechanicConnection === 'online' ? 'offline' : 'online')}
-              >
-                <Text style={styles.connectionButtonText}>
-                  {mechanicConnection === 'online' ? 'DESCONECTARME' : 'CONECTARME'}
-                </Text>
-              </Pressable>
-            </Card>
-          )}
-
           {currentScreen === 'account' && (
-            <>
-              <IdentityVerificationCard
-                identityState={identityState}
-                identityBusy={identityBusy}
-                onStart={handleStartIdentityVerification}
+            <View>
+              <AccountScreen
+                onStartIdentityVerification={handleStartIdentityVerification}
+                onLoadNotifications={loadNotifications}
+                onMarkNotificationRead={handleMarkNotificationRead}
+                onClearSession={clearSession}
               />
-
-              <Card title="Notificaciones" subtitle="Últimos avisos de la plataforma">
-                <View style={styles.stack}>
-                  <SecondaryButton
-                    title="Refrescar"
-                    compact
-                    onPress={async () => {
-                      try {
-                        await loadNotifications();
-                      } catch (error) {
-                        setMessage(formatError(error));
-                      }
-                    }}
-                  />
-                  {notifications.length === 0 && (
-                    <Text style={styles.smallText}>Sin notificaciones por ahora.</Text>
-                  )}
-                  {notifications.map((notification) => (
-                    <View key={notification.id} style={[styles.notificationItem, notification.readAt && styles.notificationItemRead]}>
-                      <Text style={styles.itemTitle}>{notification.title}</Text>
-                      <Text style={styles.itemText}>{notification.body}</Text>
-                      <Text style={styles.smallText}>{notification.createdAt}</Text>
-                      {!notification.readAt && (
-                        <SecondaryButton title="Marcar leída" compact onPress={() => handleMarkNotificationRead(notification.id)} />
-                      )}
-                    </View>
-                  ))}
-                </View>
-              </Card>
-
-              <Card title={user.fullName} subtitle={user.role}>
-                <SecondaryButton
-                  title="Cerrar sesión"
-                  onPress={async () => {
-                    await clearSession();
-                    setMessage('Sesión cerrada');
-                  }}
-                />
-              </Card>
-            </>
+            </View>
           )}
 
           {currentScreen === 'requests' && (
-          <Card title="Solicitudes" subtitle="Elige la vista">
-            <Segmented
-              value={requestsView}
-              options={[
-                { key: 'list', label: 'Listado' },
-                { key: 'create', label: 'Crear' },
-                { key: 'detail', label: 'Detalle' },
-              ]}
-              onChange={(value) => setRequestsView(value as RequestsView)}
+            <View>
+            <RequestsScreen
+              requestCursor={requestCursor}
+              setRequestCursor={setRequestCursor}
+              requestForm={requestForm}
+              setRequestForm={setRequestForm}
+              requestMechanicIdNumber={requestMechanicIdNumber}
+              requestMechanicSlots={requestMechanicSlots}
+              requestMechanicSlotsDates={requestMechanicSlotsDates}
+              selectedRequestScheduleDate={selectedRequestScheduleDate}
+              setSelectedRequestScheduleDate={setSelectedRequestScheduleDate}
+              requestFilteredSlots={requestFilteredSlots}
+              requestLookupId={requestLookupId}
+              setRequestLookupId={setRequestLookupId}
+              reviewForm={reviewForm}
+              setReviewForm={setReviewForm}
+              showDisputeForm={showDisputeForm}
+              setShowDisputeForm={setShowDisputeForm}
+              disputeForm={disputeForm}
+              setDisputeForm={setDisputeForm}
+              onLoadMyRequests={loadMyRequests}
+              onLoadRequestById={loadRequestDetailById}
+              onOpenRequestActions={openRequestActions}
+              onCancelRequest={handleCancelRequest}
+              onSaveCurrentVehicle={saveCurrentVehicle}
+              onCreateRequest={handleCreateRequest}
+              onLoadRequestLookup={handleLoadRequest}
+              onEmergencyCall={handleEmergencyCall}
+              onSubmitReview={handleSubmitReview}
+              onSubmitDispute={handleSubmitDispute}
+              onSendMessage={handleSendMessage}
             />
-          </Card>
-          )}
-
-          {currentScreen === 'requests' && requestsView === 'list' && (
-          <Card title="Mis solicitudes" subtitle="Vista rápida de tu actividad reciente">
-            <View style={styles.stack}>
-              <SecondaryButton
-                title="Actualizar lista"
-                onPress={async () => {
-                  try {
-                    await loadMyRequests();
-                    setMessage('Solicitudes actualizadas');
-                  } catch (error) {
-                    setMessage(formatError(error));
-                  }
-                }}
-              />
-              <View style={styles.list}>
-                {myRequests.length === 0 ? (
-                  <Text style={styles.itemText}>Todavía no hay solicitudes para mostrar.</Text>
-                ) : (
-                  myRequests.slice(requestCursor, requestCursor + 1).map((request) => (
-                    <View key={request.id} style={styles.item}>
-                      <Text style={styles.itemTitle}>Solicitud #{request.id}</Text>
-                      <Text style={styles.itemText}>
-                        {request.vehicleMake} {request.vehicleModel} {request.vehicleYear}
-                      </Text>
-                      <Text style={styles.itemText}>
-                        {request.city} · {request.zone}
-                      </Text>
-                      <Text style={styles.itemText}>Estado: {getServiceRequestStatusLabel(request.status)}</Text>
-                      <Text style={styles.itemText}>Mecánico: {request.mechanicName || 'sin asignar'}</Text>
-                      <Text style={styles.smallText}>Actualizada: {request.updatedAt}</Text>
-                      {request.scheduleSlotId && <Text style={styles.smallText}>Turno #{request.scheduleSlotId}</Text>}
-                      {request.holdExpiresAt && request.status === 'pending' && (
-                        <Text style={styles.smallText}>En hold hasta: {request.holdExpiresAt}</Text>
-                      )}
-                      <SecondaryButton
-                        title="Ver detalle"
-                        onPress={async () => {
-                          try {
-                            const fullRequest = await apiRequest<ServiceRequest>(`/service-requests/${request.id}`, { token });
-                            setSelectedRequest(fullRequest);
-                            setMessage(`Solicitud #${request.id} cargada`);
-                          } catch (error) {
-                            setMessage(formatError(error));
-                          }
-                        }}
-                      />
-                      {(user.role === 'mechanic' || user.role === 'admin') && (
-                        <PrimaryButton
-                          title="Gestionar esta solicitud"
-                          onPress={() => openRequestActions(request)}
-                        />
-                      )}
-                      {(user.role === 'customer' || user.role === 'admin') && request.status !== 'completed' && request.status !== 'cancelled' && (
-                        <SecondaryButton title="Cancelar solicitud" busy={busy} onPress={() => handleCancelRequest(request.id)} />
-                      )}
-                    </View>
-                  ))
-                )}
-                {myRequests.length > 1 && (
-                  <View style={styles.row}>
-                    <SecondaryButton title="Anterior" onPress={() => setRequestCursor((value) => Math.max(0, value - 1))} />
-                    <SecondaryButton
-                      title="Siguiente"
-                      onPress={() => setRequestCursor((value) => Math.min(myRequests.length - 1, value + 1))}
-                    />
-                  </View>
-                )}
-              </View>
             </View>
-          </Card>
           )}
-
-          {currentScreen === 'requests' && requestsView === 'create' && (
-          <Card title="Crear solicitud">
-            <View style={styles.stack}>
-              <Segmented
-                value={requestCreateStep}
-                options={[
-                  { key: 'vehicle', label: 'Vehículo' },
-                  { key: 'details', label: 'Detalle' },
-                ]}
-                onChange={(value) => setRequestCreateStep(value as RequestCreateStep)}
-              />
-              {requestCreateStep === 'vehicle' ? (
-                <View style={styles.stack}>
-                  {user.role === 'customer' && vehicles.length > 0 && (
-                    <View style={styles.publicProfileBox}>
-                      <Text style={styles.publicProfileTitle}>Mis vehículos</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                        {vehicles.map((vehicle) => (
-                          <Pressable
-                            key={vehicle.id}
-                            style={styles.calendarChip}
-                            onPress={() =>
-                              setRequestForm({
-                                ...requestForm,
-                                vehicleMake: vehicle.make,
-                                vehicleModel: vehicle.model,
-                                vehicleYear: String(vehicle.year),
-                              })
-                            }
-                          >
-                            <Text style={styles.calendarChipText}>
-                              {vehicle.nickname || `${vehicle.make} ${vehicle.model}`}
-                            </Text>
-                            <Text style={styles.smallText}>{vehicle.year}</Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
-                  {user.role === 'admin' && (
-                    <Field label="customerId">
-                      <Input
-                        value={requestForm.customerId}
-                        keyboardType="numeric"
-                        onChangeText={(value) => setRequestForm({ ...requestForm, customerId: value })}
-                      />
-                    </Field>
-                  )}
-                  <Field label="Mecánico solicitado (opcional)">
-                    <Input
-                      value={requestForm.requestedMechanicId}
-                      keyboardType="numeric"
-                      onChangeText={(value) => setRequestForm({ ...requestForm, requestedMechanicId: value })}
-                    />
-                  </Field>
-                  <View style={styles.row}>
-                    <Field label="Marca" style={styles.flex}>
-                      <Input value={requestForm.vehicleMake} onChangeText={(value) => setRequestForm({ ...requestForm, vehicleMake: value })} />
-                    </Field>
-                    <Field label="Modelo" style={styles.flex}>
-                      <Input value={requestForm.vehicleModel} onChangeText={(value) => setRequestForm({ ...requestForm, vehicleModel: value })} />
-                    </Field>
-                  </View>
-                  <Field label="Año">
-                    <Input
-                      value={requestForm.vehicleYear}
-                      keyboardType="numeric"
-                      onChangeText={(value) => setRequestForm({ ...requestForm, vehicleYear: value })}
-                    />
-                  </Field>
-                  {user.role === 'customer' && (
-                    <SecondaryButton title="Guardar vehículo para después" onPress={saveCurrentVehicle} busy={busy} />
-                  )}
-                  <SecondaryButton title="Continuar" onPress={() => setRequestCreateStep('details')} />
-                </View>
-              ) : (
-                <View style={styles.stack}>
-                  <Field label="Descripción de la falla">
-                    <Input
-                      value={requestForm.issueDescription}
-                      onChangeText={(value) => setRequestForm({ ...requestForm, issueDescription: value })}
-                      multiline
-                      maxLength={1000}
-                    />
-                    <CharCounter value={requestForm.issueDescription} max={1000} />
-                  </Field>
-                  <Text style={styles.smallText}>
-                    {requestForm.requestedMechanicId
-                      ? `Agenda del mecánico #${requestForm.requestedMechanicId}`
-                      : 'Si quieres elegir un turno, primero escribe un mecánico solicitado arriba.'}
-                  </Text>
-                  {requestMechanicIdNumber && requestMechanicSlots.length > 0 && (
-                    <View style={styles.publicProfileBox}>
-                      <Text style={styles.publicProfileTitle}>Agenda del mecánico #{requestMechanicIdNumber}</Text>
-                      <View style={styles.calendarStrip}>
-                        {requestMechanicSlotsDates.map((date) => {
-                          const label = formatCalendarDate(date);
-                          return (
-                            <Pressable
-                              key={date}
-                              style={[
-                                styles.calendarChip,
-                                selectedRequestScheduleDate === date && styles.calendarChipActive,
-                              ]}
-                              onPress={() => setSelectedRequestScheduleDate(date)}
-                            >
-                              <Text
-                                style={[
-                                  styles.calendarChipText,
-                                  selectedRequestScheduleDate === date && styles.calendarChipTextActive,
-                                ]}
-                              >
-                                {label.weekday}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.calendarChipText,
-                                  selectedRequestScheduleDate === date && styles.calendarChipTextActive,
-                                ]}
-                              >
-                                {label.day}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.calendarChipText,
-                                  selectedRequestScheduleDate === date && styles.calendarChipTextActive,
-                                ]}
-                              >
-                                {label.month}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                      <View style={styles.list}>
-                        {requestFilteredSlots.length === 0 ? (
-                          <Text style={styles.smallText}>No hay turnos para la fecha elegida.</Text>
-                        ) : (
-                          requestFilteredSlots.map((slot) => {
-                            const active = requestForm.scheduleSlotId === String(slot.id);
-                            return (
-                              <Pressable
-                                key={slot.id}
-                                style={[styles.slotCard, active && styles.slotCardActive]}
-                                onPress={() => setRequestForm({ ...requestForm, scheduleSlotId: String(slot.id) })}
-                              >
-                                <Text style={styles.itemTitle}>
-                                  {slot.startTime} - {slot.endTime}
-                                </Text>
-                                <Text style={styles.smallText}>Estado: {slot.status}</Text>
-                                {slot.note ? <Text style={styles.smallText}>{slot.note}</Text> : null}
-                              </Pressable>
-                            );
-                          })
-                        )}
-                      </View>
-                    </View>
-                  )}
-                  <Text style={styles.smallText}>
-                    {requestForm.scheduleSlotId
-                      ? `Turno seleccionado #${requestForm.scheduleSlotId}`
-                      : 'Puedes enviar la solicitud sin turno o elegir uno disponible.'}
-                  </Text>
-                  <Field label="Programar visita (opcional)">
-                    <Input
-                      value={requestForm.preferredTime}
-                      onChangeText={(value) => setRequestForm({ ...requestForm, preferredTime: value })}
-                      placeholder="Déjalo vacío para solicitar ahora"
-                    />
-                  </Field>
-                  <Field label="Dirección del servicio">
-                    <Input
-                      value={requestForm.serviceAddress}
-                      onChangeText={(value) => setRequestForm({ ...requestForm, serviceAddress: value })}
-                      placeholder="Calle, número, colonia y referencias"
-                    />
-                  </Field>
-                  <Text style={styles.smallText}>El mecánico verá esta dirección como destino del servicio.</Text>
-                  <Text style={styles.smallText}>Zona por defecto: {requestForm.city} · {requestForm.zone}</Text>
-                  <PrimaryButton
-                    title={requestForm.preferredTime.trim() ? "Programar solicitud" : "Solicitar mecánico ahora"}
-                    onPress={handleCreateRequest}
-                    busy={busy}
-                  />
-                  <SecondaryButton title="Volver" onPress={() => setRequestCreateStep('vehicle')} />
-                </View>
-              )}
-            </View>
-          </Card>
-        )}
 
           {currentScreen === 'mechanics' && currentUser && currentUser.role !== 'mechanic' && (
-          <Card title="Buscar mecánicos">
-          <View style={styles.stack}>
-            <View style={styles.row}>
-              <Field label="Ciudad" style={styles.flex}>
-                <Input
-                  value={mechanicsFilter.city}
-                  onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, city: value })}
-                />
-              </Field>
-              <Field label="Zona" style={styles.flex}>
-                <Input
-                  value={mechanicsFilter.zone}
-                  onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, zone: value })}
-                />
-              </Field>
+            <View>
+            <MechanicsScreen
+              mechanicsFilter={mechanicsFilter}
+              setMechanicsFilter={setMechanicsFilter}
+              requestForm={requestForm}
+              setRequestForm={setRequestForm}
+              mechanicCursor={mechanicCursor}
+              setMechanicCursor={setMechanicCursor}
+              selectedMechanicReviews={selectedMechanicReviews}
+              selectedMechanicReviewStats={selectedMechanicReviewStats}
+              scheduleDates={scheduleDates}
+              selectedScheduleDate={selectedScheduleDate}
+              setSelectedScheduleDate={setSelectedScheduleDate}
+              filteredScheduleSlots={filteredScheduleSlots}
+              onLoadMechanics={loadMechanics}
+              onRequestCurrentLocation={requestCurrentLocation}
+              onLoadNearbyMechanics={loadNearbyMechanics}
+            />
             </View>
-            <PrimaryButton
-              title="Buscar"
-              onPress={async () => {
-                try {
-                  await loadMechanics();
-                  setMessage('Mecánicos cargados');
-                } catch (error) {
-                  setMessage(formatError(error));
-                }
-              }}
-            />
-            <SecondaryButton
-              title="Buscar cerca de mí"
-              busy={busy}
-              onPress={async () => {
-                setBusy(true);
-                try {
-                  const coords = currentLocation || (await requestCurrentLocation());
-                  await loadNearbyMechanics(coords.latitude, coords.longitude);
-                  setMessage('Mecánicos cercanos cargados');
-                } catch (error) {
-                  setMessage(formatError(error));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
-            {currentLocation && (
-              <Text style={styles.smallText}>
-                Ubicación actual: {currentLocation.latitude.toFixed(5)}, {currentLocation.longitude.toFixed(5)}
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.list}>
-            {mechanics.slice(mechanicCursor, mechanicCursor + 1).map((mechanic) => (
-              <View key={mechanic.id} style={styles.item}>
-                <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
-                <Text style={styles.itemText}>{mechanic.city} · {mechanic.zone}</Text>
-                <Text style={styles.itemText}>⭐ {mechanic.rating.toFixed(1)} · {mechanic.jobsCompleted} trabajos</Text>
-                <Text style={styles.itemText}>{mechanic.specialties.join(', ')}</Text>
-                <Text style={styles.itemText}>
-                  Estado de conexión: {mechanic.isOnline ? 'Conectado' : 'Desconectado'} · {mechanic.isAvailable ? 'Disponible' : 'Ocupado'}
-                </Text>
-                {typeof mechanic.distanceKm === 'number' && (
-                  <Text style={styles.itemText}>A {mechanic.distanceKm.toFixed(1)} km</Text>
-                )}
-                <View style={styles.publicProfileBox}>
-                  <Text style={styles.publicProfileTitle}>Perfil público</Text>
-                  {mechanic.coverPhotoUrl ? (
-                    <Image source={{ uri: mechanic.coverPhotoUrl }} style={styles.coverPhoto} />
-                  ) : null}
-                  <Text style={styles.smallText}>Teléfono: {mechanic.phone}</Text>
-                  {mechanic.bio ? <Text style={styles.smallText}>{mechanic.bio}</Text> : null}
-                  <Text style={styles.smallText}>Zona de atención: {mechanic.city} · {mechanic.zone}</Text>
-                  <Text style={styles.smallText}>Estado actual: {getMechanicPublicStatus(mechanic)}</Text>
-                  <Text style={styles.smallText}>
-                    Agenda rápida: {mechanic.isOnline ? (mechanic.isAvailable ? 'Acepta solicitudes ahora' : 'Conectado, esperando turno') : 'Sin turno activo'}
-                  </Text>
-                  <Text style={styles.smallText}>
-                    Reseñas: {selectedMechanicReviewStats.averageRating ? selectedMechanicReviewStats.averageRating.toFixed(1) : 'N/D'} · {selectedMechanicReviewStats.reviewCount}
-                  </Text>
-                </View>
-                {mechanic.gallery && mechanic.gallery.length > 0 && (
-                  <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>Galería</Text>
-                    <View style={styles.galleryRow}>
-                      {mechanic.gallery.slice(0, 3).map((imageUrl, index) => (
-                        <Image key={`${mechanic.id}-${index}`} source={{ uri: imageUrl }} style={styles.galleryPhoto} />
-                      ))}
-                    </View>
-                  </View>
-                )}
-                <View style={styles.publicProfileBox}>
-                  <Text style={styles.publicProfileTitle}>Opiniones recientes</Text>
-                  {selectedMechanicReviews.length === 0 ? (
-                    <Text style={styles.smallText}>Todavía no hay reseñas.</Text>
-                  ) : (
-                    selectedMechanicReviews.slice(0, 3).map((review) => (
-                      <View key={review.id} style={styles.reviewCard}>
-                        <Text style={styles.reviewTitle}>
-                          {review.customerName} · {'⭐'.repeat(review.rating)}
-                        </Text>
-                        <Text style={styles.smallText}>{review.comment}</Text>
-                      </View>
-                    ))
-                  )}
-                </View>
-                <View style={styles.publicProfileBox}>
-                  <Text style={styles.publicProfileTitle}>Calendario de turnos</Text>
-                  <View style={styles.calendarStrip}>
-                    {scheduleDates.length === 0 ? (
-                      <Text style={styles.smallText}>Sin turnos cargados todavía.</Text>
-                    ) : (
-                      scheduleDates.map((date) => (
-                        <Pressable
-                          key={date}
-                          style={[styles.calendarChip, selectedScheduleDate === date && styles.calendarChipActive]}
-                          onPress={() => setSelectedScheduleDate(date)}
-                        >
-                          {(() => {
-                            const label = formatCalendarDate(date);
-                            return (
-                              <>
-                                <Text
-                                  style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                                >
-                                  {label.weekday}
-                                </Text>
-                                <Text
-                                  style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                                >
-                                  {label.day}
-                                </Text>
-                                <Text
-                                  style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                                >
-                                  {label.month}
-                                </Text>
-                              </>
-                            );
-                          })()}
-                        </Pressable>
-                      ))
-                    )}
-                  </View>
-                  <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>Turnos del día</Text>
-                    {filteredScheduleSlots.length === 0 ? (
-                      <Text style={styles.smallText}>No hay turnos en esta fecha.</Text>
-                    ) : (
-                      filteredScheduleSlots.map((slot) => (
-                        <View key={slot.id} style={styles.slotRow}>
-                          <Text style={styles.smallText}>
-                            {slot.startTime} - {slot.endTime} · {slot.status}
-                          </Text>
-                          {slot.note ? <Text style={styles.smallText}>{slot.note}</Text> : null}
-                          {(user.role === 'customer' || user.role === 'admin') && slot.status === 'available' && (
-                            <SecondaryButton
-                              title="Tomar turno"
-                              compact
-                              onPress={() => {
-                                setRequestForm({
-                                  ...requestForm,
-                                  requestedMechanicId: String(mechanic.id),
-                                  scheduleSlotId: String(slot.id),
-                                  preferredTime: `${slot.slotDate} ${slot.startTime}`,
-                                });
-                                setCurrentScreen('requests');
-                                setRequestsView('create');
-                                setRequestCreateStep('vehicle');
-                                setMessage(`Turno #${slot.id} preparado para solicitud`);
-                              }}
-                            />
-                          )}
-                        </View>
-                      ))
-                    )}
-                  </View>
-                </View>
-                <Text style={styles.badge}>
-                  #{mechanic.id} · {mechanic.status} · {mechanic.isAvailable ? 'disponible' : 'ocupado'}
-                </Text>
-                {(user.role === 'customer' || user.role === 'admin') && (
-                  <PrimaryButton
-                    title="Solicitar ayuda de este mecánico"
-                    onPress={() => {
-                      setRequestForm({ ...requestForm, requestedMechanicId: String(mechanic.id) });
-                      setCurrentScreen('requests');
-                      setRequestsView('create');
-                      setMessage(`Solicitud preparada para mecánico #${mechanic.id}`);
-                    }}
-                  />
-                )}
-                <View style={styles.row}>
-                  <SecondaryButton title="Anterior" onPress={() => setMechanicCursor((value) => Math.max(0, value - 1))} />
-                  <SecondaryButton
-                    title="Siguiente"
-                    onPress={() => setMechanicCursor((value) => Math.min(mechanics.length - 1, value + 1))}
-                  />
-                </View>
-              </View>
-            ))}
-          </View>
-          </Card>
           )}
 
           {currentScreen === 'map' && currentUser && (
-          <Card
-            title={currentUser.role === 'mechanic' ? 'Solicitud entrante' : 'Mecánicos cercanos'}
-            subtitle={currentUser.role === 'mechanic' ? 'Vista privada del mecánico' : 'Calculado por GPS'}
-          >
-          <View style={styles.stack}>
-            {currentUser.role === 'mechanic' && mechanicConnection === 'online' && incomingRequest && (
-              <View style={styles.item}>
-                <Text style={styles.itemTitle}>Solicitud entrante #{incomingRequest.id}</Text>
-                <Text style={styles.itemText}>
-                  Cliente: {incomingRequest.customerName || 'N/D'} · {incomingRequest.customerPhone || 'N/D'}
-                </Text>
-                <Text numberOfLines={2} style={styles.smallText}>{incomingRequest.issueDescription}</Text>
-                {incomingRequest.holdExpiresAt && (
-                  <Text style={styles.smallText}>Hold hasta: {incomingRequest.holdExpiresAt}</Text>
-                )}
-                <View style={styles.row}>
-                  <PrimaryButton title="Aceptar" onPress={() => handleIncomingResponse('accept')} />
-                  <SecondaryButton title="Rechazar" busy={busy} onPress={() => handleIncomingResponse('reject')} />
-                </View>
-              </View>
-            )}
-            <Text style={styles.smallText}>
-              {currentLocation ? 'La ubicación ya está lista.' : 'Pulsa el botón para obtener tu ubicación y ver cercanos.'}
-            </Text>
-            <Text style={styles.smallText}>
-              Refresco automático cada 10 segundos.
-            </Text>
-            <View style={[styles.mapContainer, currentUser.role === 'mechanic' && incomingRequest ? styles.mapContainerCompact : null]}>
-              {isMapConfigured ? (
-              <MapView
-                style={[styles.map, currentUser.role === 'mechanic' && incomingRequest ? styles.mapCompact : null]}
-                initialRegion={getMapRegion()}
-                region={getMapRegion()}
-              >
-                {currentLocation && (
-                  <Marker
-                    coordinate={currentLocation}
-                    title="Tú"
-                    description="Tu ubicación actual"
-                    pinColor="#2563eb"
-                  />
-                )}
-                {currentUser.role === 'mechanic' &&
-                  incomingRequest?.latitude !== null &&
-                  incomingRequest?.latitude !== undefined &&
-                  incomingRequest.longitude !== null &&
-                  incomingRequest.longitude !== undefined && (
-                    <Marker
-                      coordinate={{
-                        latitude: incomingRequest.latitude,
-                        longitude: incomingRequest.longitude,
-                      }}
-                      title={`Entrante #${incomingRequest.id}`}
-                      description={incomingRequest.issueDescription}
-                      pinColor="#f59e0b"
-                    />
-                  )}
-                {selectedRequest?.latitude !== null &&
-                  selectedRequest?.latitude !== undefined &&
-                  selectedRequest.longitude !== null &&
-                  selectedRequest.longitude !== undefined && (
-                    <Marker
-                      coordinate={{
-                        latitude: selectedRequest.latitude,
-                        longitude: selectedRequest.longitude,
-                      }}
-                      title={`Solicitud #${selectedRequest.id}`}
-                      description={selectedRequest.issueDescription}
-                      pinColor="#f97316"
-                    />
-                  )}
-                {currentUser.role !== 'mechanic' &&
-                  nearbyMechanics
-                    .filter(
-                      (mechanic) =>
-                        mechanic.latitude !== null &&
-                        mechanic.latitude !== undefined &&
-                        mechanic.longitude !== null &&
-                        mechanic.longitude !== undefined
-                    )
-                    .map((mechanic) => (
-                      <Marker
-                        key={`nearby-${mechanic.id}`}
-                        coordinate={{
-                          latitude: mechanic.latitude as number,
-                          longitude: mechanic.longitude as number,
-                        }}
-                        title={mechanic.fullName}
-                        description={`${mechanic.distanceKm?.toFixed(1) || '?'} km · ${mechanic.zone}`}
-                      />
-                    ))}
-              </MapView>
-              ) : (
-                <View style={styles.mapUnavailable}>
-                  <Text style={styles.itemText}>Mapa no configurado todavía.</Text>
-                  <Text style={styles.smallText}>Puedes usar la ubicación y las solicitudes mientras se configura Google Maps.</Text>
-                </View>
-              )}
+            <View>
+              <MapScreen onRespondToIncoming={handleIncomingResponse} />
             </View>
-            {currentUser.role !== 'mechanic' && (
-              nearbyMechanics.length === 0 ? (
-                <Text style={styles.itemText}>Aún no hay resultados cercanos.</Text>
-              ) : (
-                <Text style={styles.smallText}>Mostrando {nearbyMechanics.length} mecánicos cercanos en el mapa.</Text>
-              )
-            )}
-          </View>
-          </Card>
-          )}
-
-          {currentScreen === 'requests' && requestsView === 'detail' && (
-          <Card title="Solicitud por ID">
-          <View style={styles.stack}>
-            <Field label="ID">
-              <Input value={requestLookupId} keyboardType="numeric" onChangeText={setRequestLookupId} />
-            </Field>
-            <PrimaryButton title="Cargar solicitud" onPress={handleLoadRequest} />
-          </View>
-
-          {selectedRequest && (
-            <View style={styles.stack}>
-              <RequestCard request={selectedRequest} />
-              {selectedRequest.status !== 'completed' && selectedRequest.status !== 'cancelled' && (
-                <Pressable style={styles.emergencyButton} onPress={handleEmergencyCall}>
-                  <Ionicons name="warning" size={20} color={colors.white} />
-                  <Text style={styles.emergencyButtonText}>Emergencia — Llamar al 911</Text>
-                </Pressable>
-              )}
-              {(user.role === 'customer' || user.role === 'admin') &&
-                selectedRequest.status !== 'completed' &&
-                selectedRequest.status !== 'cancelled' && (
-                  <SecondaryButton
-                    title="Cancelar solicitud"
-                    busy={busy}
-                    onPress={() => handleCancelRequest(selectedRequest.id)}
-                  />
-                )}
-              {selectedRequest.status === 'completed' && user.role === 'customer' && selectedRequest.mechanicId && (
-                <Card title="Reseña" subtitle="Califica el trabajo finalizado">
-                  <View style={styles.stack}>
-                    <Field label="Calificación">
-                      <Segmented
-                        value={reviewForm.rating}
-                        options={[
-                          { key: '5', label: '5' },
-                          { key: '4', label: '4' },
-                          { key: '3', label: '3' },
-                          { key: '2', label: '2' },
-                          { key: '1', label: '1' },
-                        ]}
-                        onChange={(value) => setReviewForm({ ...reviewForm, rating: value })}
-                      />
-                    </Field>
-                    <Field label="Comentario">
-                      <Input
-                        value={reviewForm.comment}
-                        multiline
-                        placeholder="Cuéntanos cómo fue el servicio"
-                        onChangeText={(value) => setReviewForm({ ...reviewForm, comment: value })}
-                      />
-                    </Field>
-                    <PrimaryButton title="Enviar reseña" onPress={handleSubmitReview} />
-                  </View>
-                </Card>
-              )}
-              {selectedRequest.status === 'completed' && user.role === 'customer' && (
-                <Card title="¿Algo salió mal?" subtitle="Reporta un problema con este servicio">
-                  {!showDisputeForm ? (
-                    <SecondaryButton title="Reportar un problema" onPress={() => setShowDisputeForm(true)} />
-                  ) : (
-                    <View style={styles.stack}>
-                      <Field label="Motivo">
-                        <Segmented
-                          value={disputeForm.category}
-                          options={[
-                            { key: 'incomplete_work', label: 'Trabajo incompleto' },
-                            { key: 'incorrect_charge', label: 'Cobro incorrecto' },
-                            { key: 'vehicle_damage', label: 'Daño al vehículo' },
-                            { key: 'other', label: 'Otro' },
-                          ]}
-                          onChange={(value) =>
-                            setDisputeForm({ ...disputeForm, category: value as typeof disputeForm.category })
-                          }
-                        />
-                      </Field>
-                      <Field label="Describe el problema">
-                        <Input
-                          value={disputeForm.description}
-                          multiline
-                          maxLength={1000}
-                          placeholder="Cuéntanos qué pasó, con el mayor detalle posible"
-                          onChangeText={(value) => setDisputeForm({ ...disputeForm, description: value })}
-                        />
-                        <CharCounter value={disputeForm.description} max={1000} />
-                      </Field>
-                      <PrimaryButton title="Enviar reporte" busy={busy} onPress={handleSubmitDispute} />
-                      <SecondaryButton title="Cancelar" onPress={() => setShowDisputeForm(false)} />
-                    </View>
-                  )}
-                </Card>
-              )}
-              <Card title="Chat" subtitle="Habla con el cliente o mecánico asignado">
-                <View style={styles.stack}>
-                  {requestMessages.length === 0 ? (
-                    <Text style={styles.itemText}>Todavía no hay mensajes.</Text>
-                  ) : (
-                    requestMessages.map((chatMessage) => (
-                      <View
-                        key={chatMessage.id}
-                        style={[
-                          styles.chatBubble,
-                          chatMessage.senderRole === 'mechanic'
-                            ? styles.chatBubbleMechanic
-                            : chatMessage.senderRole === 'admin'
-                              ? styles.chatBubbleAdmin
-                              : styles.chatBubbleCustomer,
-                        ]}
-                      >
-                        <Text style={styles.chatSender}>
-                          {chatMessage.senderName} · {chatMessage.senderRole}
-                        </Text>
-                        <Text style={styles.itemText}>{chatMessage.message}</Text>
-                        <Text style={styles.smallText}>{chatMessage.createdAt}</Text>
-                      </View>
-                    ))
-                  )}
-                  <Field label="Nuevo mensaje">
-                    <Input
-                      value={messageDraft}
-                      multiline
-                      maxLength={1000}
-                      placeholder="Escribe un mensaje"
-                      onChangeText={setMessageDraft}
-                    />
-                    <CharCounter value={messageDraft} max={1000} />
-                  </Field>
-                  <PrimaryButton title="Enviar mensaje" onPress={handleSendMessage} />
-                </View>
-              </Card>
-            </View>
-          )}
-          </Card>
           )}
 
           {currentScreen === 'actions' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
-          <>
-            {currentUser.role === 'mechanic' && (
-              <IdentityVerificationCard
-                identityState={identityState}
-                identityBusy={identityBusy}
-                onStart={handleStartIdentityVerification}
-              />
-            )}
-            {currentUser.role === 'admin' && (
-              <Card
-                title="Disputas"
-                subtitle={adminDisputes.length > 0 ? `${adminDisputes.length} en total` : 'Sin disputas reportadas'}
-              >
-                <View style={styles.stack}>
-                  {adminDisputes.map((dispute) => (
-                    <View key={dispute.id} style={styles.publicProfileBox}>
-                      <Text style={styles.itemTitle}>
-                        #{dispute.id} · {dispute.customerName} · {dispute.status}
-                      </Text>
-                      <Text style={styles.smallText}>Solicitud #{dispute.serviceRequestId} · {dispute.category}</Text>
-                      <Text style={styles.smallText}>{dispute.description}</Text>
-                      {dispute.status !== 'resolved' && (
-                        <>
-                          <Input
-                            placeholder="Nota de resolución"
-                            value={disputeResolutionNotes[dispute.id] || ''}
-                            onChangeText={(value) =>
-                              setDisputeResolutionNotes({ ...disputeResolutionNotes, [dispute.id]: value })
-                            }
-                          />
-                          <Input
-                            placeholder="Monto a reembolsar (opcional)"
-                            keyboardType="numeric"
-                            value={disputeRefundAmounts[dispute.id] || ''}
-                            onChangeText={(value) =>
-                              setDisputeRefundAmounts({ ...disputeRefundAmounts, [dispute.id]: value })
-                            }
-                          />
-                          <Text style={styles.smallText}>
-                            Esto solo deja un registro contable de la disputa; el reembolso real al cliente
-                            debe hacerse manualmente hasta que exista un procesador de pagos integrado.
-                          </Text>
-                          <View style={styles.row}>
-                            {dispute.status === 'reported' && (
-                              <SecondaryButton
-                                title="Poner en revisión"
-                                compact
-                                onPress={() => handleResolveDispute(dispute.id, 'under_review')}
-                              />
-                            )}
-                            <PrimaryButton
-                              title="Resolver"
-                              busy={busy}
-                              onPress={() => handleResolveDispute(dispute.id, 'resolved')}
-                            />
-                          </View>
-                        </>
-                      )}
-                      {dispute.resolutionNote && (
-                        <Text style={styles.smallText}>Resolución: {dispute.resolutionNote}</Text>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              </Card>
-            )}
-            <Card title="Acciones">
-            <View style={styles.stack}>
-              {selectedActionRequest && (
-                <View style={styles.publicProfileBox}>
-                  <Text style={styles.publicProfileTitle}>Solicitud seleccionada #{selectedActionRequest.id}</Text>
-                  <Text style={styles.smallText}>
-                    {selectedActionRequest.vehicleMake} {selectedActionRequest.vehicleModel} {selectedActionRequest.vehicleYear} · {getServiceRequestStatusLabel(selectedActionRequest.status)}
-                  </Text>
-                  <Text numberOfLines={2} style={styles.smallText}>{selectedActionRequest.issueDescription}</Text>
-                  {selectedActionRequest.serviceAddress ? (
-                    <Text numberOfLines={2} style={styles.smallText}>Destino: {selectedActionRequest.serviceAddress}</Text>
-                  ) : null}
-                </View>
-              )}
-              <Segmented
-                value={actionsView}
-                options={actionOptions}
-                onChange={(value) => setActionsView(value as ActionsView)}
-              />
-              {currentUser.role === 'admin' && actionsView === 'assign' && (
-                <View style={styles.stack}>
-                  <Field label="Solicitud ID">
-                    <Input value={assignForm.requestId} keyboardType="numeric" onChangeText={(value) => setAssignForm({ ...assignForm, requestId: value })} />
-                  </Field>
-                  <Field label="Mecánico ID opcional">
-                    <Input value={assignForm.mechanicId} keyboardType="numeric" onChangeText={(value) => setAssignForm({ ...assignForm, mechanicId: value })} />
-                  </Field>
-                  <PrimaryButton title="Asignar mecánico" onPress={handleAssignRequest} />
-                </View>
-              )}
-              {currentUser.role === 'admin' && actionsView === 'status' && (
-                <View style={styles.stack}>
-                  <Field label="Actualizar estado mecánico">
-                    <Input
-                      value={statusForm.mechanicId}
-                      keyboardType="numeric"
-                      onChangeText={(value) => setStatusForm({ ...statusForm, mechanicId: value })}
-                    />
-                  </Field>
-                  <Field label="Estado (active, pending_verification, suspended)">
-                    <Segmented
-                      value={statusForm.status}
-                      options={[
-                        { key: 'active', label: 'active' },
-                        { key: 'pending_verification', label: 'pending_verification' },
-                        { key: 'suspended', label: 'suspended' },
-                      ]}
-                      onChange={(value) =>
-                        setStatusForm({
-                          ...statusForm,
-                          status: value as MechanicStatus,
-                        })
-                      }
-                    />
-                  </Field>
-                  <PrimaryButton title="Cambiar estado" onPress={handleChangeMechanicStatus} />
-                </View>
-              )}
-
-              {actionsView === 'requestStatus' && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
-                <View style={styles.stack}>
-                  <Field label="Solicitud ID">
-                    <Input
-                      value={serviceStatusForm.requestId}
-                      keyboardType="numeric"
-                      onChangeText={(value) => setServiceStatusForm({ ...serviceStatusForm, requestId: value })}
-                    />
-                  </Field>
-                  <Field label="Estado de la solicitud">
-                    <Segmented
-                      value={serviceStatusForm.status}
-                      options={[
-                        { key: 'assigned', label: 'Asignada' },
-                        { key: 'en_route', label: 'En camino' },
-                        { key: 'on_site', label: 'En sitio' },
-                        { key: 'diagnosing', label: 'Diagnosticando' },
-                        { key: 'repairing', label: 'Reparando' },
-                        { key: 'awaiting_parts', label: 'Refacciones' },
-                        { key: 'completed', label: 'Terminada' },
-                      ]}
-                      onChange={(value) =>
-                        setServiceStatusForm({
-                          ...serviceStatusForm,
-                          status: value as ServiceRequestStatus,
-                        })
-                      }
-                    />
-                  </Field>
-                  <PrimaryButton title="Actualizar estado" onPress={handleChangeServiceRequestStatus} />
-                </View>
-              )}
-
-              {currentUser.role === 'mechanic' && actionsView === 'update' && (
-                <View style={styles.stack}>
-                  <Text style={styles.itemText}>Tu mechanicId: {selectedMechanicId || 'no disponible'}</Text>
-                  <Field label="requestId para update">
-                    <Input value={updateForm.requestId} keyboardType="numeric" onChangeText={(value) => setUpdateForm({ ...updateForm, requestId: value })} />
-                  </Field>
-                  <Field label="Mensaje de avance">
-                    <Input value={updateForm.message} multiline maxLength={500} onChangeText={(value) => setUpdateForm({ ...updateForm, message: value })} />
-                    <CharCounter value={updateForm.message} max={500} />
-                  </Field>
-                  <PrimaryButton title="Publicar update" onPress={handleAddUpdate} />
-                  <SecondaryButton title="Estoy disponible" onPress={() => handleToggleAvailability(true)} />
-                  <SecondaryButton title="No disponible" onPress={() => handleToggleAvailability(false)} />
-                  <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>Perfil público</Text>
-                    <Field label="Bio">
-                      <Input
-                        value={publicProfileForm.bio}
-                        multiline
-                        maxLength={500}
-                        onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, bio: value })}
-                      />
-                      <CharCounter value={publicProfileForm.bio} max={500} />
-                    </Field>
-                    <Field label="Foto principal (URL)">
-                      <Input
-                        value={publicProfileForm.coverPhotoUrl}
-                        onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, coverPhotoUrl: value })}
-                      />
-                    </Field>
-                    <Field label="Tarifa de mano de obra (MXN)">
-                      <Input
-                        value={publicProfileForm.laborRate}
-                        keyboardType="numeric"
-                        placeholder="Ej. 400"
-                        onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value.replace(/[^0-9.]/g, '') })}
-                      />
-                      <Text style={styles.smallText}>
-                        También funciona como tu apartado mínimo de referencia. Nota: el cobro real dentro de
-                        la app todavía no está implementado — por ahora este monto es solo informativo.
-                      </Text>
-                    </Field>
-                    <Field label="Galería (URLs separadas por coma)">
-                      <Input
-                        value={publicProfileForm.galleryUrls}
-                        multiline
-                        onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, galleryUrls: value })}
-                      />
-                    </Field>
-                    <PrimaryButton title="Guardar perfil" onPress={handleSavePublicProfile} />
-                  </View>
-                </View>
-              )}
-
-              {(currentUser.role === 'mechanic' || currentUser.role === 'admin') && actionsView === 'schedule' && (
-                <View style={styles.stack}>
-                  <Text style={styles.itemText}>Calendario para {selectedMechanicId || 'el mecánico activo'}</Text>
-                  <View style={styles.calendarStrip}>
-                    {scheduleDates.length === 0 ? (
-                      <Text style={styles.smallText}>Aún no hay turnos.</Text>
-                    ) : (
-                      scheduleDates.map((date) => (
-                        <Pressable
-                          key={date}
-                          style={[styles.calendarChip, selectedScheduleDate === date && styles.calendarChipActive]}
-                          onPress={() => setSelectedScheduleDate(date)}
-                        >
-                          {(() => {
-                            const label = formatCalendarDate(date);
-                            return (
-                              <>
-                                <Text
-                                  style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                                >
-                                  {label.weekday}
-                                </Text>
-                                <Text
-                                  style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                                >
-                                  {label.day}
-                                </Text>
-                                <Text
-                                  style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                                >
-                                  {label.month}
-                                </Text>
-                              </>
-                            );
-                          })()}
-                        </Pressable>
-                      ))
-                    )}
-                  </View>
-                  <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>Turnos del día</Text>
-                    {filteredScheduleSlots.length === 0 ? (
-                      <Text style={styles.smallText}>No hay turnos para esta fecha.</Text>
-                    ) : (
-                      filteredScheduleSlots.map((slot) => (
-                        <View key={slot.id} style={styles.slotRow}>
-                          <Text style={styles.smallText}>
-                            {slot.startTime} - {slot.endTime} · {slot.status}
-                          </Text>
-                          {slot.note ? <Text style={styles.smallText}>{slot.note}</Text> : null}
-                        </View>
-                      ))
-                    )}
-                  </View>
-                  <View style={styles.row}>
-                    <Field label="mechanicId opcional" style={styles.flex}>
-                      <Input
-                        value={slotForm.mechanicId}
-                        keyboardType="numeric"
-                        onChangeText={(value) => setSlotForm({ ...slotForm, mechanicId: value })}
-                      />
-                    </Field>
-                    <Field label="Fecha (YYYY-MM-DD)" style={styles.flex}>
-                      <Input
-                        value={slotForm.slotDate}
-                        onChangeText={(value) => setSlotForm({ ...slotForm, slotDate: value })}
-                      />
-                    </Field>
-                  </View>
-                  <View style={styles.row}>
-                    <Field label="Inicio" style={styles.flex}>
-                      <Input
-                        value={slotForm.startTime}
-                        onChangeText={(value) => setSlotForm({ ...slotForm, startTime: value })}
-                        placeholder="09:00"
-                      />
-                    </Field>
-                    <Field label="Fin" style={styles.flex}>
-                      <Input
-                        value={slotForm.endTime}
-                        onChangeText={(value) => setSlotForm({ ...slotForm, endTime: value })}
-                        placeholder="10:00"
-                      />
-                    </Field>
-                  </View>
-                  <Field label="Nota">
-                    <Input
-                      value={slotForm.note}
-                      maxLength={500}
-                      onChangeText={(value) => setSlotForm({ ...slotForm, note: value })}
-                    />
-                  </Field>
-                  <PrimaryButton title="Crear turno" onPress={handleCreateScheduleSlot} />
-                </View>
-              )}
-
-              {currentUser.role === 'admin' && actionsView === 'availability' && (
-                <View style={styles.stack}>
-                  <Field label="Mecánico ID para disponibilidad">
-                    <Input
-                      value={availabilityForm.mechanicId}
-                      keyboardType="numeric"
-                      onChangeText={(value) => setAvailabilityForm({ ...availabilityForm, mechanicId: value })}
-                    />
-                  </Field>
-                  <Segmented
-                    value={availabilityForm.isAvailable}
-                    options={[
-                      { key: 'true', label: 'Disponible' },
-                      { key: 'false', label: 'No disponible' },
-                    ]}
-                    onChange={(value) => setAvailabilityForm({ ...availabilityForm, isAvailable: value })}
-                  />
-                  <SecondaryButton
-                    title="Actualizar disponibilidad"
-                    onPress={() => handleToggleAvailability(availabilityForm.isAvailable === 'true')}
-                  />
-                </View>
-              )}
+            <View>
+            <ActionsScreen
+              selectedActionRequest={selectedActionRequest}
+              actionsView={actionsView}
+              setActionsView={setActionsView}
+              assignForm={assignForm}
+              setAssignForm={setAssignForm}
+              statusForm={statusForm}
+              setStatusForm={setStatusForm}
+              serviceStatusForm={serviceStatusForm}
+              setServiceStatusForm={setServiceStatusForm}
+              updateForm={updateForm}
+              setUpdateForm={setUpdateForm}
+              publicProfileForm={publicProfileForm}
+              setPublicProfileForm={setPublicProfileForm}
+              scheduleDates={scheduleDates}
+              selectedScheduleDate={selectedScheduleDate}
+              setSelectedScheduleDate={setSelectedScheduleDate}
+              filteredScheduleSlots={filteredScheduleSlots}
+              slotForm={slotForm}
+              setSlotForm={setSlotForm}
+              availabilityForm={availabilityForm}
+              setAvailabilityForm={setAvailabilityForm}
+              adminDisputes={adminDisputes}
+              disputeResolutionNotes={disputeResolutionNotes}
+              setDisputeResolutionNotes={setDisputeResolutionNotes}
+              disputeRefundAmounts={disputeRefundAmounts}
+              setDisputeRefundAmounts={setDisputeRefundAmounts}
+              onStartIdentityVerification={handleStartIdentityVerification}
+              onAssignRequest={handleAssignRequest}
+              onChangeMechanicStatus={handleChangeMechanicStatus}
+              onChangeServiceRequestStatus={handleChangeServiceRequestStatus}
+              onAddUpdate={handleAddUpdate}
+              onToggleAvailability={handleToggleAvailability}
+              onSavePublicProfile={handleSavePublicProfile}
+              onCreateScheduleSlot={handleCreateScheduleSlot}
+              onResolveDispute={handleResolveDispute}
+              onClearSession={clearSession}
+            />
             </View>
-          </Card>
-          </>
           )}
 
-        </LinearGradient>
+          </View>
+        </View>
         </ScrollView>
       </View>
       <View style={styles.bottomNavDock}>
         <View style={styles.bottomNav}>
-          <Pressable
-            style={[styles.bottomNavButton, currentScreen === 'requests' && styles.bottomNavButtonActive]}
+          <BottomNavButton
+            active={currentScreen === 'requests'}
             onPress={() => {
               setCurrentScreen('requests');
               setRequestsView('list');
             }}
-            accessibilityRole="button"
+            iconName="car-outline"
             accessibilityLabel="Solicitudes"
-          >
-            <Ionicons name="car-outline" size={22} color={colors.white} />
-          </Pressable>
+          />
           {currentUser && currentUser.role !== 'mechanic' && (
-            <Pressable
-              style={[styles.bottomNavButton, currentScreen === 'mechanics' && styles.bottomNavButtonActive]}
+            <BottomNavButton
+              active={currentScreen === 'mechanics'}
               onPress={() => setCurrentScreen('mechanics')}
-              accessibilityRole="button"
+              iconName="construct-outline"
               accessibilityLabel="Mecánicos"
-            >
-              <Ionicons name="construct-outline" size={22} color={colors.white} />
-            </Pressable>
-          )}
-          <Pressable
-            style={[styles.bottomNavButton, currentScreen === 'home' && styles.bottomNavButtonActive]}
-            onPress={() => setCurrentScreen('home')}
-            accessibilityRole="button"
-            accessibilityLabel="Inicio"
-          >
-            <Ionicons name="home-outline" size={22} color={colors.white} />
-          </Pressable>
-          <Pressable
-            style={[styles.bottomNavButton, currentScreen === 'map' && styles.bottomNavButtonActive]}
-            onPress={() => setCurrentScreen('map')}
-            accessibilityRole="button"
-            accessibilityLabel="Mapa"
-          >
-            <Ionicons name="map-outline" size={22} color={colors.white} />
-          </Pressable>
-          <Pressable
-            style={[
-              styles.bottomNavButton,
-              (currentScreen === 'actions' || currentScreen === 'account') && styles.bottomNavButtonActive,
-            ]}
-            onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
-            accessibilityRole="button"
-            accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
-          >
-            <Ionicons
-              name={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
-              size={22}
-              color={colors.white}
             />
-          </Pressable>
+          )}
+          <BottomNavButton
+            active={currentScreen === 'home'}
+            onPress={() => setCurrentScreen('home')}
+            iconName="home-outline"
+            accessibilityLabel="Inicio"
+          />
+          <BottomNavButton
+            active={currentScreen === 'map'}
+            onPress={() => setCurrentScreen('map')}
+            iconName="map-outline"
+            accessibilityLabel="Mapa"
+          />
+          <BottomNavButton
+            active={currentScreen === 'actions' || currentScreen === 'account'}
+            onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
+            iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
+            accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
+          />
         </View>
       </View>
       </SafeAreaView>
-    </ImageBackground>
-  );
-}
-
-function IdentityVerificationCard({
-  identityState,
-  identityBusy,
-  onStart,
-}: {
-  identityState: IdentityVerificationState;
-  identityBusy: boolean;
-  onStart: () => void;
-}) {
-  return (
-    <Card
-      title="Verificación de identidad"
-      subtitle={
-        identityState.status === 'approved'
-          ? 'Tu identidad ya está verificada.'
-          : identityState.status === 'draft' || !identityState.status
-            ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
-            : identityState.status === 'rejected'
-              ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
-              : 'Tu verificación está en revisión.'
-      }
-    >
-      {identityState.status !== 'approved' &&
-        identityState.status !== 'submitted' &&
-        identityState.status !== 'under_review' && (
-          <>
-            <Text style={styles.identityHint}>
-              Usa la cámara en vivo para tus fotos — no subas imágenes desde tu galería, esa opción puede fallar.
-            </Text>
-            <Pressable style={styles.primaryButton} disabled={identityBusy} onPress={onStart}>
-              {identityBusy ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
-                </Text>
-              )}
-            </Pressable>
-          </>
-        )}
-    </Card>
-  );
-}
-
-function Card({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
-      {subtitle ? (
-        <Text numberOfLines={3} ellipsizeMode="tail" style={styles.cardSubtitle}>
-          {subtitle}
-        </Text>
-      ) : null}
-      {children}
     </View>
   );
 }
-
-function Field({
-  label,
-  children,
-  style,
-}: {
-  label: string;
-  children: ReactNode;
-  style?: object;
-}) {
-  return (
-    <View style={style}>
-      <Text style={styles.label}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
-function Input(props: ComponentProps<typeof TextInput>) {
-  return <TextInput placeholderTextColor={colors.textSecondary} style={styles.input} {...props} />;
-}
-
-function CharCounter({ value, max }: { value: string; max: number }) {
-  return (
-    <Text style={styles.smallText}>
-      {value.length}/{max}
-    </Text>
-  );
-}
-
-function Segmented({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: Array<{ key: string; label: string }>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <View style={styles.segmented}>
-      {options.map((option) => {
-        const active = option.key === value;
-        return (
-          <Pressable
-            key={option.key}
-            style={({ pressed }) => [styles.segment, active && styles.segmentActive, pressed && styles.buttonPressed]}
-            onPress={() => onChange(option.key)}
-          >
-            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{option.label}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function PrimaryButton({
-  title,
-  onPress,
-  busy = false,
-}: {
-  title: string;
-  onPress: () => void;
-  busy?: boolean;
-}) {
-  return (
-    <Pressable
-      style={({ pressed }) => [styles.primaryButton, busy && styles.primaryButtonBusy, pressed && styles.buttonPressed]}
-      hitSlop={8}
-      onPress={onPress}
-      disabled={busy}
-      accessibilityState={{ busy, disabled: busy }}
-    >
-      {busy ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>{title}</Text>}
-    </Pressable>
-  );
-}
-
-function SecondaryButton({
-  title,
-  onPress,
-  compact = false,
-  busy = false,
-}: {
-  title: string;
-  onPress: () => void;
-  compact?: boolean;
-  busy?: boolean;
-}) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.secondaryButton,
-        compact && styles.secondaryButtonCompact,
-        busy && styles.primaryButtonBusy,
-        pressed && styles.buttonPressed,
-      ]}
-      hitSlop={8}
-      onPress={onPress}
-      disabled={busy}
-      accessibilityState={{ busy, disabled: busy }}
-    >
-      {busy ? <ActivityIndicator /> : <Text style={[styles.secondaryButtonText, compact && styles.secondaryButtonTextCompact]}>{title}</Text>}
-    </Pressable>
-  );
-}
-
-function RequestCard({ request }: { request: ServiceRequest }) {
-  const latestUpdate = request.updates && request.updates.length > 0 ? request.updates[request.updates.length - 1] : null;
-  return (
-    <View style={styles.item}>
-      <Text style={styles.itemTitle}>Solicitud #{request.id}</Text>
-      <Text style={styles.itemText}>
-        {request.vehicleMake} {request.vehicleModel} {request.vehicleYear}
-      </Text>
-      <Text style={styles.itemText}>Estado: {getServiceRequestStatusLabel(request.status)}</Text>
-      <Text style={styles.itemText}>Mecánico: {request.mechanicName || 'sin asignar'}</Text>
-      <Text style={styles.itemText}>Dirección: {request.serviceAddress || `${request.city}, ${request.zone}`}</Text>
-      {request.scheduleSlotId && <Text style={styles.smallText}>Turno #{request.scheduleSlotId}</Text>}
-      <Text numberOfLines={2} style={styles.smallText}>{request.issueDescription}</Text>
-      {latestUpdate && (
-        <Text numberOfLines={1} style={styles.smallText}>
-          Último update: {latestUpdate.source} · {latestUpdate.message}
-        </Text>
-      )}
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  safeAreaInner: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 10,
-    gap: 14,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 8,
-  },
-  shell: {
-    borderRadius: 30,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: colors.primaryLighter,
-    backgroundColor: colors.white,
-    width: '100%',
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 5,
-  },
-  kicker: {
-    color: colors.primary,
-    fontWeight: '700',
-    textAlign: 'center',
-    fontSize: 28,
-  },
-  logoWordmark: {
-    alignSelf: 'center',
-    width: 250,
-    height: 48,
-    marginBottom: 2,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.textDark,
-    textAlign: 'center',
-  },
-  onboardingIconWrap: {
-    alignSelf: 'center',
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: colors.primaryLighter,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    marginTop: 2,
-    textAlign: 'center',
-    fontSize: 13,
-  },
-  heroSubtitle: {
-    color: colors.textSecondary,
-    marginTop: 6,
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '500',
-    paddingHorizontal: 12,
-  },
-  heroButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    alignSelf: 'center',
-    marginTop: 14,
-  },
-  heroButtonText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  onboardingDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  onboardingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primaryLight,
-  },
-  onboardingDotActive: {
-    backgroundColor: colors.primary,
-    width: 22,
-  },
-  locationPill: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: 999,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  locationPin: {
-    fontSize: 18,
-  },
-  locationText: {
-    color: colors.textDark,
-    fontSize: 15,
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-  profileCard: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    shadowColor: colors.textDark,
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  avatarCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarIcon: {
-    fontSize: 28,
-  },
-  profileBody: {
-    flex: 1,
-    gap: 2,
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.textDark,
-  },
-  profileMeta: {
-    color: colors.textDark,
-    fontSize: 14,
-  },
-  starsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  expandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  expandLabel: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  connectionButton: {
-    borderRadius: 18,
-    minHeight: 70,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  connectionOn: {
-    backgroundColor: '#16a34a',
-  },
-  connectionOff: {
-    backgroundColor: '#ef4444',
-  },
-  emergencyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#ef4444',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-  },
-  emergencyButtonText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  connectionButtonText: {
-    color: colors.white,
-    fontSize: 20,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  sessionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  notificationSummary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  notificationBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.warningBg,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  sessionText: {
-    flex: 1,
-    color: colors.textDark,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  card: {
-    borderRadius: 22,
-    padding: 12,
-    gap: 8,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    shadowColor: colors.textDark,
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.textDark,
-  },
-  cardSubtitle: {
-    color: colors.textDark,
-    fontSize: 13,
-  },
-  identityHint: {
-    color: colors.primaryDark,
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  stack: {
-    gap: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  flex: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textDark,
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: colors.textDark,
-    backgroundColor: colors.primaryLighter,
-    minHeight: 44,
-  },
-  segmented: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  segment: {
-    flexGrow: 1,
-    flexBasis: '30%',
-    minHeight: 46,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    backgroundColor: colors.primaryLighter,
-  },
-  segmentActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  segmentText: {
-    color: colors.textDark,
-    fontWeight: '700',
-    textAlign: 'center',
-    fontSize: 14,
-  },
-  segmentTextActive: {
-    color: colors.white,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 999,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.2,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  primaryButtonBusy: {
-    opacity: 0.7,
-  },
-  buttonPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.98 }],
-  },
-  primaryButtonText: {
-    color: colors.white,
-    fontWeight: '800',
-  },
-  secondaryButton: {
-    backgroundColor: colors.primaryLighter,
-    borderRadius: 999,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: colors.textDark,
-    fontWeight: '700',
-  },
-  secondaryButtonCompact: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    minWidth: 120,
-  },
-  secondaryButtonTextCompact: {
-    fontSize: 14,
-  },
-  list: {
-    gap: 12,
-  },
-  mapContainer: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-  },
-  mapContainerCompact: {
-    borderRadius: 14,
-  },
-  map: {
-    width: '100%',
-    height: 170,
-  },
-  mapCompact: {
-    height: 130,
-  },
-  mapUnavailable: {
-    minHeight: 170,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: colors.primaryLighter,
-  },
-  item: {
-    padding: 10,
-    borderRadius: 16,
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    gap: 6,
-  },
-  chatBubble: {
-    padding: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 4,
-  },
-  chatBubbleCustomer: {
-    backgroundColor: colors.primaryLighter,
-    borderColor: colors.primaryLighter,
-  },
-  chatBubbleMechanic: {
-    backgroundColor: '#d9f3e4',
-    borderColor: '#92d6ad',
-  },
-  chatBubbleAdmin: {
-    backgroundColor: colors.warningBg,
-    borderColor: colors.accent,
-  },
-  chatSender: {
-    color: colors.textDark,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  notificationItem: {
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: colors.primaryLighter,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    gap: 6,
-  },
-  notificationItemRead: {
-    opacity: 0.72,
-  },
-  itemTitle: {
-    fontWeight: '800',
-    fontSize: 15,
-    color: colors.textDark,
-  },
-  itemText: {
-    color: colors.textDark,
-  },
-  smallText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  publicProfileBox: {
-    gap: 4,
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: colors.primaryLighter,
-    borderWidth: 1,
-    borderColor: colors.primaryLighter,
-  },
-  publicProfileTitle: {
-    color: colors.textDark,
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  coverPhoto: {
-    width: '100%',
-    height: 150,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: colors.primaryLighter,
-  },
-  galleryRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  galleryPhoto: {
-    width: 92,
-    height: 92,
-    borderRadius: 12,
-    backgroundColor: colors.primaryLighter,
-  },
-  reviewCard: {
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: colors.primaryLighter,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    gap: 4,
-  },
-  reviewTitle: {
-    color: colors.textDark,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  calendarStrip: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  calendarChip: {
-    minWidth: 70,
-    minHeight: 62,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: colors.primaryLighter,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calendarChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  calendarChipText: {
-    color: colors.textDark,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  calendarChipTextActive: {
-    color: colors.white,
-  },
-  slotRow: {
-    gap: 6,
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderTopColor: colors.primaryLight,
-  },
-  slotCard: {
-    padding: 10,
-    borderRadius: 14,
-    backgroundColor: colors.primaryLighter,
-    borderWidth: 1,
-    borderColor: colors.primaryLighter,
-    gap: 4,
-  },
-  slotCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  statusPill: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  statusPillText: {
-    color: colors.textDark,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  badge: {
-    color: colors.textDark,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  bottomNavDock: {
-    paddingHorizontal: 14,
-    paddingBottom: Platform.OS === 'android' ? 6 : 0,
-    backgroundColor: 'transparent',
-  },
-  bottomNav: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  bottomNavItem: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-  },
-  bottomNavButton: {
-    borderRadius: 999,
-    minWidth: 54,
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 7,
-  },
-  bottomNavButtonActive: {
-    backgroundColor: colors.primary,
-  },
-});
