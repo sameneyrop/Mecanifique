@@ -55,6 +55,7 @@ veo este bug"):
 | 5 | Mapa | `mobile/screens/MapScreen.tsx` | Todos |
 | 6 | Acciones | `mobile/screens/ActionsScreen.tsx` | Mechanic/Admin |
 | 7 | Cuenta | `mobile/screens/AccountScreen.tsx` | Customer |
+| 8 | Vehículos | `mobile/screens/VehiclesScreen.tsx` | Customer |
 
 Las pantallas 0 y 1 todavía no están extraídas como componentes propios de
 `screens/` — viven como bloques condicionales dentro de `App.tsx`.

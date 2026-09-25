@@ -10,6 +10,7 @@ import { RequestsScreen } from './screens/RequestsScreen';
 import { AccountScreen } from './screens/AccountScreen';
 import { ActionsScreen } from './screens/ActionsScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
+import { VehiclesScreen } from './screens/VehiclesScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { BottomNavButton, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
@@ -45,7 +46,7 @@ import {
 type Role = 'customer' | 'mechanic' | 'admin';
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicStatus = 'pending_verification' | 'active' | 'suspended';
-type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account';
+type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account' | 'vehicles';
 type RequestsView = 'list' | 'create' | 'detail';
 type ActionsView = 'assign' | 'status' | 'requestStatus' | 'availability' | 'update' | 'schedule';
 type MechanicSignupStep = 'account' | 'work';
@@ -147,9 +148,12 @@ type VehicleProfile = {
   make: string;
   model: string;
   year: number;
+  engineType?: string | null;
+  transmissionType?: string | null;
   licensePlate?: string | null;
   color?: string | null;
   mileage?: number | null;
+  isPrimary?: boolean;
   photoUrls?: string[];
 };
 
@@ -306,6 +310,8 @@ function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
       return 'Acciones';
     case 'account':
       return 'Tu cuenta';
+    case 'vehicles':
+      return 'Mis vehículos';
     default:
       return 'Mecanifique';
   }
@@ -586,9 +592,7 @@ export default function App() {
       setVehicles([]);
       return;
     }
-    apiRequest<{ vehicles: VehicleProfile[] }>('/api/vehicles', { token })
-      .then((data) => setVehicles(data.vehicles))
-      .catch((error) => setMessage(formatError(error)));
+    loadVehicles().catch((error) => setMessage(formatError(error)));
   }, [user, token]);
 
   useEffect(() => {
@@ -1450,6 +1454,53 @@ export default function App() {
     setActionsView('requestStatus');
   }
 
+  async function loadVehicles() {
+    const data = await apiRequest<{ vehicles: VehicleProfile[] }>('/api/vehicles', { token });
+    setVehicles(data.vehicles);
+  }
+
+  async function handleAddVehicle(payload: {
+    nickname?: string;
+    make: string;
+    model: string;
+    year: number;
+    engineType?: string;
+    transmissionType?: string;
+    color?: string;
+    licensePlate?: string;
+  }) {
+    setBusy(true);
+    try {
+      await apiRequest('/api/vehicles', {
+        method: 'POST',
+        token,
+        body: payload,
+      });
+      await loadVehicles();
+      setMessage('Vehículo agregado');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSetPrimaryVehicle(vehicleId: number) {
+    setBusy(true);
+    try {
+      await apiRequest(`/api/vehicles/${vehicleId}/primary`, {
+        method: 'POST',
+        token,
+      });
+      await loadVehicles();
+      setMessage('Vehículo principal actualizado');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveCurrentVehicle() {
     if (!token || user?.role !== 'customer') return;
     try {
@@ -1880,6 +1931,12 @@ export default function App() {
             </View>
           )}
 
+          {currentScreen === 'vehicles' && currentUser?.role === 'customer' && (
+            <View>
+              <VehiclesScreen onAddVehicle={handleAddVehicle} onSetPrimaryVehicle={handleSetPrimaryVehicle} />
+            </View>
+          )}
+
           {currentScreen === 'requests' && (
             <View>
             <RequestsScreen
@@ -2028,6 +2085,15 @@ export default function App() {
             label="Mapa"
             accessibilityLabel="Mapa"
           />
+          {currentUser?.role === 'customer' && (
+            <BottomNavButton
+              active={currentScreen === 'vehicles'}
+              onPress={() => setCurrentScreen('vehicles')}
+              iconName="car-sport-outline"
+              label="Vehículo"
+              accessibilityLabel="Mis vehículos"
+            />
+          )}
           <BottomNavButton
             active={currentScreen === 'actions' || currentScreen === 'account'}
             onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}

@@ -8,6 +8,8 @@ const vehicleFieldsSchema = z.object({
   make: z.string().trim().min(2).max(50),
   model: z.string().trim().min(1).max(50),
   year: z.number().int().gte(1886).lte(new Date().getFullYear() + 1),
+  engineType: z.enum(["gasolina", "diesel", "hibrido", "electrico"]).optional(),
+  transmissionType: z.enum(["manual", "automatica", "doble_embrague", "cvt"]).optional(),
   licensePlate: z.string().trim().min(2).max(12).regex(/^[A-Za-z0-9 -]+$/).optional(),
   color: z.string().trim().min(1).max(30).optional(),
   mileage: z.number().int().nonnegative().max(2_000_000).optional(),
@@ -38,13 +40,15 @@ function parseJson<T>(value: string | null, fallback: T): T {
 
 function vehicleResponse(row: {
   id: number; customerId: number; nickname: string | null; make: string; model: string;
-  year: number; licensePlate: string | null; color: string | null; mileage: number | null;
+  year: number; engineType: string | null; transmissionType: string | null;
+  licensePlate: string | null; color: string | null; mileage: number | null; isPrimary: number;
   photoUrlsJson: string; metadataJson: string; createdAt: string; updatedAt: string;
 }) {
   return {
     id: row.id, customerId: row.customerId, nickname: row.nickname, make: row.make,
-    model: row.model, year: row.year, licensePlate: maskLicensePlate(row.licensePlate),
-    color: row.color, mileage: row.mileage,
+    model: row.model, year: row.year, engineType: row.engineType, transmissionType: row.transmissionType,
+    licensePlate: maskLicensePlate(row.licensePlate),
+    color: row.color, mileage: row.mileage, isPrimary: row.isPrimary === 1,
     photoUrls: parseJson<string[]>(row.photoUrlsJson, []),
     metadata: parseJson<Record<string, unknown>>(row.metadataJson, {}),
     createdAt: row.createdAt, updatedAt: row.updatedAt
@@ -62,7 +66,8 @@ function customerIdForVehicle(req: Parameters<typeof requireAnyAuth>[0], res: Pa
 
 const vehicleSelect = `
   SELECT id, customer_id AS customerId, nickname, make, model, year,
-         license_plate AS licensePlate, color, mileage,
+         engine_type AS engineType, transmission_type AS transmissionType,
+         license_plate AS licensePlate, color, mileage, is_primary AS isPrimary,
          photo_urls_json AS photoUrlsJson, metadata_json AS metadataJson,
          created_at AS createdAt, updated_at AS updatedAt
   FROM vehicle_profiles
@@ -84,16 +89,54 @@ vehiclesRouter.post(["/vehicles", "/customer/vehicles"], requireAnyAuth, handleA
   const customerId = customerIdForVehicle(req, res);
   if (!customerId) return;
   const payload = vehicleCreateSchema.parse(req.body);
+
+  const existingCount = await get<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM vehicle_profiles WHERE customer_id = ?",
+    [customerId]
+  );
+  // El primer vehículo del cliente se marca principal automáticamente; los
+  // siguientes se agregan como secundarios hasta que el cliente elija otro.
+  const isFirstVehicle = (existingCount?.count ?? 0) === 0;
+
   const result = await run(
     `INSERT INTO vehicle_profiles
-      (customer_id, nickname, make, model, year, license_plate, color, mileage, photo_urls_json, metadata_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (customer_id, nickname, make, model, year, engine_type, transmission_type, license_plate, color, mileage, is_primary, photo_urls_json, metadata_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [customerId, payload.nickname ?? null, payload.make, payload.model, payload.year,
+      payload.engineType ?? null, payload.transmissionType ?? null,
       payload.licensePlate?.toUpperCase() ?? null, payload.color ?? null, payload.mileage ?? null,
+      isFirstVehicle ? 1 : 0,
       JSON.stringify(payload.photoUrls ?? []), JSON.stringify(payload.metadata ?? {})]
   );
   const row = await get<any>(`${vehicleSelect} WHERE id = ? AND customer_id = ?`, [result.lastID, customerId]);
   res.status(201).json(vehicleResponse(row));
+}));
+
+vehiclesRouter.post(["/vehicles/:id/primary", "/customer/vehicles/:id/primary"], requireAnyAuth, handleAsync(async (req, res) => {
+  const customerId = customerIdForVehicle(req, res);
+  if (!customerId) return;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "vehicleId inválido" });
+    return;
+  }
+  const target = await get<{ id: number }>(
+    "SELECT id FROM vehicle_profiles WHERE id = ? AND customer_id = ?",
+    [id, customerId]
+  );
+  if (!target) {
+    res.status(404).json({ error: "Vehículo no encontrado" });
+    return;
+  }
+  // Solo puede haber un vehículo principal por cliente: primero se
+  // desmarcan todos, después se marca el elegido.
+  await run("UPDATE vehicle_profiles SET is_primary = 0 WHERE customer_id = ?", [customerId]);
+  await run(
+    "UPDATE vehicle_profiles SET is_primary = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND customer_id = ?",
+    [id, customerId]
+  );
+  const row = await get<any>(`${vehicleSelect} WHERE id = ? AND customer_id = ?`, [id, customerId]);
+  res.json(vehicleResponse(row));
 }));
 
 vehiclesRouter.get(["/vehicles/:id", "/customer/vehicles/:id"], requireAnyAuth, handleAsync(async (req, res) => {
@@ -133,6 +176,8 @@ vehiclesRouter.patch(["/vehicles/:id", "/customer/vehicles/:id"], requireAnyAuth
   if (payload.make !== undefined) add("make", payload.make);
   if (payload.model !== undefined) add("model", payload.model);
   if (payload.year !== undefined) add("year", payload.year);
+  if (payload.engineType !== undefined) add("engine_type", payload.engineType);
+  if (payload.transmissionType !== undefined) add("transmission_type", payload.transmissionType);
   if (payload.licensePlate !== undefined) add("license_plate", payload.licensePlate.toUpperCase());
   if (payload.color !== undefined) add("color", payload.color);
   if (payload.mileage !== undefined) add("mileage", payload.mileage);

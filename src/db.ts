@@ -114,6 +114,13 @@ export async function initDb(): Promise<void> {
     );
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_vehicle_profiles_customer ON vehicle_profiles(customer_id)");
+  await ensureColumn("vehicle_profiles", "engine_type", "ALTER TABLE vehicle_profiles ADD COLUMN engine_type TEXT");
+  await ensureColumn("vehicle_profiles", "transmission_type", "ALTER TABLE vehicle_profiles ADD COLUMN transmission_type TEXT");
+  await ensureColumn(
+    "vehicle_profiles",
+    "is_primary",
+    "ALTER TABLE vehicle_profiles ADD COLUMN is_primary INTEGER NOT NULL DEFAULT 0"
+  );
 
   await run(`
     CREATE TABLE IF NOT EXISTS service_requests (
@@ -170,7 +177,8 @@ export async function initDb(): Promise<void> {
     "service_requests",
     "deposit_amount",
     "ALTER TABLE service_requests ADD COLUMN deposit_amount REAL"
-  ); // Monto del apartado, copiado de mechanics.labor_rate al crear la
+  ); // Monto del apartado (40% de mechanics.labor_rate, ver
+     // src/payments.ts::calculateDepositAmount), calculado al crear la
      // solicitud (así, si el mecánico cambia su tarifa después, no afecta
      // solicitudes ya en curso).
   await ensureColumn(
