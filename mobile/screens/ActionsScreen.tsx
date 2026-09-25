@@ -89,6 +89,7 @@ export function ActionsScreen({
   onCreateScheduleSlot,
   onResolveDispute,
   onClearSession,
+  onSwitchRole,
 }: {
   selectedActionRequest: any;
   actionsView: ActionsViewKey;
@@ -126,6 +127,7 @@ export function ActionsScreen({
   onCreateScheduleSlot: () => void;
   onResolveDispute: (disputeId: number, status: 'under_review' | 'resolved') => void;
   onClearSession: () => Promise<void>;
+  onSwitchRole: (payload: { targetRole: 'customer' | 'mechanic' }) => Promise<void>;
 }) {
   const { user, busy, identityState, identityBusy, setMessage } = useAppContext();
 
@@ -507,7 +509,14 @@ export function ActionsScreen({
         </View>
       </Card>
       </Animated.View>
-      <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
+      {user.role === 'mechanic' && (
+        <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
+          <Card title="Modo cliente" subtitle="Cambia a esta misma cuenta para pedir un servicio como cliente">
+            <PrimaryButton title="Cambiar a modo cliente" busy={busy} onPress={() => onSwitchRole({ targetRole: 'customer' })} />
+          </Card>
+        </Animated.View>
+      )}
+      <Animated.View entering={FadeInDown.delay(240).duration(300)} needsOffscreenAlphaCompositing>
       <Card title={user.fullName} subtitle={user.role}>
         <SecondaryButton
           title="Cerrar sesión"

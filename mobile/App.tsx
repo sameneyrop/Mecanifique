@@ -1459,6 +1459,33 @@ export default function App() {
     setVehicles(data.vehicles);
   }
 
+  async function handleSwitchRole(payload: {
+    targetRole: 'customer' | 'mechanic';
+    city?: string;
+    zone?: string;
+    yearsExperience?: number;
+    specialties?: string[];
+  }) {
+    setBusy(true);
+    try {
+      const response = await apiRequest<{ user: AuthUser }>('/api/account/switch-role', {
+        method: 'POST',
+        token,
+        body: payload,
+      });
+      setUser(response.user);
+      await persistSession(token, response.user);
+      setCurrentScreen(response.user.role === 'mechanic' ? 'home' : 'mechanics');
+      setMessage(response.user.role === 'mechanic' ? 'Ahora estás en modo profesional' : 'Ahora estás en modo cliente');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleAddVehicle(payload: {
     nickname?: string;
     make: string;
@@ -1927,6 +1954,7 @@ export default function App() {
                 onLoadNotifications={loadNotifications}
                 onMarkNotificationRead={handleMarkNotificationRead}
                 onClearSession={clearSession}
+                onSwitchRole={handleSwitchRole}
               />
             </View>
           )}
@@ -2040,6 +2068,7 @@ export default function App() {
               onCreateScheduleSlot={handleCreateScheduleSlot}
               onResolveDispute={handleResolveDispute}
               onClearSession={clearSession}
+              onSwitchRole={handleSwitchRole}
             />
             </View>
           )}

@@ -39,6 +39,15 @@ mantener informadas a ambas partes.
   muestra la dirección/distancia y un botón "Cómo llegar" que abre Waze o
   Google Maps con el destino ya cargado. No requiere clave de Google Maps
   ni el SDK de mapas nativo.
+- **Dual-rol**: una misma cuenta puede operar como cliente y como mecánico.
+  `POST /api/account/switch-role` cambia el rol activo (`users.role`, que es
+  lo que ya lee cada endpoint y cada pantalla — no hubo que tocar las 22
+  verificaciones de rol existentes ni la navegación). Si el usuario todavía
+  no tiene perfil del rol destino, se crea uno mínimo en el mismo momento
+  (para mecánico: ciudad/zona/experiencia/especialidades pedidas en la app;
+  para cliente: solo nombre/teléfono, ya conocidos). `admin` no participa.
+  Botón "Cambiar a modo profesional" en Cuenta, "Cambiar a modo cliente" en
+  Acciones (solo mecánicos, no admin).
 
 ### Inventario de pantallas (app móvil)
 

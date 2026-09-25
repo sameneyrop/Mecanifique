@@ -6,7 +6,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 import { all, get, initDb, run } from "./db";
-import { requireAuth, requireRole } from "./auth";
+import { requireAuth, requireRole, type AuthUser } from "./auth";
 import { handleAsync } from "./middleware";
 import { vehiclesRouter } from "./routes/vehicles";
 import {
@@ -670,6 +670,22 @@ function toSqliteTimestamp(date: Date): string {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
+/**
+ * mechanics.specialties debe guardarse como JSON (JSON.stringify de un
+ * array), pero versiones anteriores del registro lo guardaban como texto
+ * separado por comas ("Motor, Electrico"). Si el valor no es JSON válido,
+ * se interpreta como esa lista separada por comas en vez de reventar el
+ * listado completo de mecánicos con un SyntaxError.
+ */
+function parseSpecialties(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [String(parsed)];
+  } catch {
+    return raw.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+}
+
 function calculateDistanceKm(
   latitudeA: number,
   longitudeA: number,
@@ -1256,6 +1272,92 @@ app.get(
 // END OF SUPABASE AUTH ENDPOINTS
 // ============================================================================
 
+// ============================================================================
+// DUAL-ROL: una misma cuenta puede operar como cliente y como mecánico.
+// El rol activo vive en users.role (leído en cada request por
+// supabaseAuthMiddleware desde la tabla local, no desde los metadatos de
+// Supabase — ver el comentario de ensureLocalUser). Cambiar de "modo" es
+// por lo tanto solo actualizar esa columna; el resto del backend (los 22
+// requireRole existentes) y toda la app móvil ya funcionan preguntando
+// "¿cuál es mi rol ahora?", que es exactamente lo que se vuelve dinámico.
+// admin queda fuera: no participa del dual-rol.
+// ============================================================================
+const switchRoleSchema = z.object({
+  targetRole: z.enum(["customer", "mechanic"]),
+  // Solo se piden si el usuario todavía no tiene perfil de mecánico —
+  // si ya lo tiene, se ignoran y se reutiliza el que ya existe.
+  city: z.string().trim().min(2).optional(),
+  zone: z.string().trim().min(2).optional(),
+  yearsExperience: z.number().int().min(0).optional(),
+  specialties: z.array(z.string().trim().min(2)).min(1).optional()
+});
+
+app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) => {
+  const authUser = req.auth!.user;
+  if (authUser.role === "admin") {
+    res.status(403).json({ error: "Los administradores no cambian de modo" });
+    return;
+  }
+
+  const payload = switchRoleSchema.parse(req.body);
+
+  if (payload.targetRole === authUser.role) {
+    res.json({ user: authUser });
+    return;
+  }
+
+  if (payload.targetRole === "customer") {
+    let customerId = authUser.customerId;
+    if (!customerId) {
+      const mechanicPhone = authUser.mechanicId
+        ? (await get<{ phone: string }>("SELECT phone FROM mechanics WHERE id = ?", [authUser.mechanicId]))?.phone
+        : null;
+      const result = await run(
+        "INSERT INTO customers (full_name, phone) VALUES (?, ?)",
+        [authUser.fullName, mechanicPhone || `sin-telefono-${authUser.id}`]
+      );
+      customerId = result.lastID;
+      await run("UPDATE users SET customer_id = ? WHERE id = ?", [customerId, authUser.id]);
+    }
+  } else {
+    let mechanicId = authUser.mechanicId;
+    if (!mechanicId) {
+      if (!payload.city || !payload.zone || payload.yearsExperience == null || !payload.specialties) {
+        res.status(400).json({
+          error: "Completa ciudad, zona, años de experiencia y especialidades para activar el modo profesional"
+        });
+        return;
+      }
+      const customerPhone = authUser.customerId
+        ? (await get<{ phone: string }>("SELECT phone FROM customers WHERE id = ?", [authUser.customerId]))?.phone
+        : null;
+      const result = await run(
+        `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 0)`,
+        [
+          authUser.fullName,
+          customerPhone || `sin-telefono-${authUser.id}`,
+          payload.city,
+          payload.zone,
+          payload.yearsExperience,
+          JSON.stringify(payload.specialties)
+        ]
+      );
+      mechanicId = result.lastID;
+      await run("UPDATE users SET mechanic_id = ? WHERE id = ?", [mechanicId, authUser.id]);
+    }
+  }
+
+  await run("UPDATE users SET role = ? WHERE id = ?", [payload.targetRole, authUser.id]);
+
+  const updatedUser = await get<AuthUser>(
+    `SELECT id, role, login, full_name AS fullName, customer_id AS customerId, mechanic_id AS mechanicId
+     FROM users WHERE id = ?`,
+    [authUser.id]
+  );
+  res.json({ user: updatedUser });
+}));
+
 app.get(
   "/api/notifications",
   requireAuth,
@@ -1779,7 +1881,7 @@ app.get(
     const mechanics = await all<MechanicRow>(sql, params);
     const normalized = mechanics.map((mechanic) => ({
       ...mechanic,
-      specialties: JSON.parse(mechanic.specialties),
+      specialties: parseSpecialties(mechanic.specialties),
       gallery: JSON.parse(mechanic.galleryJson || '[]'),
       isAvailable: mechanic.isAvailable === 1,
       isOnline: mechanic.isOnline === 1

@@ -103,7 +103,7 @@ export async function ensureLocalUser(supabaseUser: {
         String(metadata.city || ""),
         String(metadata.zone || ""),
         Number(metadata.years_experience || 0),
-        Array.isArray(metadata.specialties) ? metadata.specialties.join(", ") : String(metadata.specialties || "")
+        JSON.stringify(Array.isArray(metadata.specialties) ? metadata.specialties : [String(metadata.specialties || "")].filter(Boolean))
       ]
     );
     // Releemos por phone (no por lastID: si OR IGNORE no insertó porque ya
@@ -307,7 +307,7 @@ export async function registerMechanicWithSupabase(
         city,
         zone,
         yearsExperience,
-        specialties.join(", ")
+        JSON.stringify(specialties)
       ]
     );
     await run(

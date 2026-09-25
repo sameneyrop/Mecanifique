@@ -5,8 +5,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import Constants from 'expo-constants';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, MenuRow, SecondaryButton, IdentityVerificationCard } from '../components/ui';
-import { formatError } from '../utils';
+import { Card, Field, Input, MenuRow, PrimaryButton, SecondaryButton, IdentityVerificationCard } from '../components/ui';
+import { formatError, normalizeSpecialties } from '../utils';
 
 // TODO: reemplazar por el canal de soporte real (ver README.md → "Riesgos
 // operativos" / roadmap de lanzamiento) antes de publicar — hoy no hay un
@@ -20,20 +20,29 @@ export function AccountScreen({
   onLoadNotifications,
   onMarkNotificationRead,
   onClearSession,
+  onSwitchRole,
 }: {
   onStartIdentityVerification: () => void;
   onLoadNotifications: () => Promise<void>;
   onMarkNotificationRead: (id: number) => void;
   onClearSession: () => Promise<void>;
+  onSwitchRole: (payload: {
+    targetRole: 'customer' | 'mechanic';
+    city?: string;
+    zone?: string;
+    yearsExperience?: number;
+    specialties?: string[];
+  }) => Promise<void>;
 }) {
-  const { user, identityState, identityBusy, notifications, setMessage } = useAppContext();
-  const [expanded, setExpanded] = useState<'personal' | 'about' | null>(null);
+  const { user, identityState, identityBusy, notifications, busy, setMessage } = useAppContext();
+  const [expanded, setExpanded] = useState<'personal' | 'about' | 'switchToPro' | null>(null);
+  const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
 
   if (!user) {
     return null;
   }
 
-  function toggle(section: 'personal' | 'about') {
+  function toggle(section: 'personal' | 'about' | 'switchToPro') {
     setExpanded((current) => (current === section ? null : section));
   }
 
@@ -45,6 +54,24 @@ export function AccountScreen({
 
   function comingSoon(feature: string) {
     setMessage(`${feature}: todavía no está disponible.`);
+  }
+
+  async function handleSwitchToProfessional() {
+    if (user!.mechanicId) {
+      await onSwitchRole({ targetRole: 'mechanic' });
+      return;
+    }
+    if (!proForm.city.trim() || !proForm.zone.trim() || !proForm.specialties.trim()) {
+      setMessage('Completa ciudad, zona y especialidades');
+      return;
+    }
+    await onSwitchRole({
+      targetRole: 'mechanic',
+      city: proForm.city.trim(),
+      zone: proForm.zone.trim(),
+      yearsExperience: Number(proForm.yearsExperience) || 0,
+      specialties: normalizeSpecialties(proForm.specialties),
+    });
   }
 
   return (
@@ -122,6 +149,50 @@ export function AccountScreen({
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(240).duration(300)} needsOffscreenAlphaCompositing>
+        <Card
+          title="Modo profesional"
+          subtitle={
+            user.mechanicId
+              ? 'Ya tienes perfil de mecánico. Cambia de modo cuando quieras.'
+              : 'Ofrece tus servicios como mecánico con esta misma cuenta.'
+          }
+        >
+          {!user.mechanicId && expanded === 'switchToPro' && (
+            <View style={styles.stack}>
+              <Field label="Ciudad">
+                <Input value={proForm.city} onChangeText={(value) => setProForm({ ...proForm, city: value })} />
+              </Field>
+              <Field label="Zona">
+                <Input value={proForm.zone} onChangeText={(value) => setProForm({ ...proForm, zone: value })} />
+              </Field>
+              <Field label="Años de experiencia">
+                <Input
+                  value={proForm.yearsExperience}
+                  keyboardType="numeric"
+                  onChangeText={(value) => setProForm({ ...proForm, yearsExperience: value })}
+                />
+              </Field>
+              <Field label="Especialidades (separadas por coma)">
+                <Input
+                  value={proForm.specialties}
+                  onChangeText={(value) => setProForm({ ...proForm, specialties: value })}
+                  placeholder="Motor, Eléctrico"
+                />
+              </Field>
+            </View>
+          )}
+          <PrimaryButton
+            title="Cambiar a modo profesional"
+            busy={busy}
+            onPress={() => (user.mechanicId ? handleSwitchToProfessional() : toggle('switchToPro'))}
+          />
+          {!user.mechanicId && expanded === 'switchToPro' && (
+            <SecondaryButton title="Confirmar" busy={busy} onPress={handleSwitchToProfessional} />
+          )}
+        </Card>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(300).duration(300)} needsOffscreenAlphaCompositing>
         <Card title="Sesión">
           <SecondaryButton
             title="Cerrar sesión"
