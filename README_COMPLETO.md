@@ -1,5 +1,11 @@
 # Mecanifique - Resumen completo del proyecto
 
+> ⚠️ Este documento es una introducción narrativa al proyecto, pensada para
+> quien llega por primera vez. **No es la fuente de verdad.** Para el estado
+> de implementación real, actualizado y vivo, ver [README.md](./README.md).
+> Este archivo se corrigió el 25/09/2026 para quitar referencias a la auth
+> v1 (eliminada) y features que ya pasaron de "pendiente" a "implementado".
+
 ## Qué es
 
 Mecanifique es una app Android + backend para conectar clientes con mecánicos, mezclando:
@@ -13,18 +19,18 @@ La meta es que un cliente encuentre un mecánico, vea su perfil, consulte turnos
 
 ### Backend
 
-- API en Node.js + TypeScript + Express.
-- SQLite como base de datos local.
-- Auth con:
-  - registro de cliente
-  - registro de mecánico
-  - login
-  - admin de desarrollo
+- API en Node.js + TypeScript + Express, desplegada en Render.
+- SQLite como base de datos operativa (con disco persistente en Render).
+  Supabase Postgres solo se usa hoy para autenticación; existe un esquema
+  espejo en `migrations/supabase/` para una futura migración de datos, pero
+  no está activo.
+- Auth **exclusivamente vía Supabase JWT (v2)**. La auth manual v1
+  (password_hash local, tabla `sessions`, `/auth/register`, `/auth/login`)
+  se eliminó por completo — nunca la usó la app móvil.
 - Roles:
   - `customer`
   - `mechanic`
   - `admin`
-- Manejo de sesiones por token.
 - Validación con Zod.
 
 ### Mecánicos
@@ -113,25 +119,28 @@ La meta es que un cliente encuentre un mecánico, vea su perfil, consulte turnos
 
 ## Endpoints principales
 
-### Auth
+### Auth (Supabase v2 — la única auth vigente)
 
-- `POST /auth/register/customer`
-- `POST /auth/register/mechanic`
-- `POST /auth/login`
-- `POST /auth/admin/login`
-- `GET /auth/me`
+- `POST /auth/v2/register/customer`
+- `POST /auth/v2/register/mechanic`
+- `POST /auth/v2/login`
+- `GET /auth/v2/google`
+- `GET /auth/v2/me`
 
 ### Mecánicos
 
 - `GET /mechanics`
 - `GET /mechanics/:id/schedule-slots`
-- `POST /mechanics`
-- `PATCH /mechanics/:id/status`
-- `PATCH /mechanics/:id/availability`
+- `GET /mechanics/:id/reviews`
 
 ### API protegida
 
 - `PATCH /api/mechanics/:id/online`
+- `PATCH /api/mechanics/:id/availability`
+- `PATCH /api/mechanics/:id/status`
+- `PATCH /api/mechanics/:id/location`
+- `PATCH /api/mechanics/:id/public-profile`
+- `POST /api/mechanics/:id/reviews`
 - `POST /api/mechanics/:id/schedule-slots`
 - `GET /api/mechanics/incoming-request`
 - `POST /api/service-requests`
@@ -141,6 +150,18 @@ La meta es que un cliente encuentre un mecánico, vea su perfil, consulte turnos
 - `POST /api/service-requests/:id/cancel`
 - `PATCH /api/service-requests/:id/status`
 - `POST /api/service-requests/:id/updates`
+- `GET/POST /api/service-requests/:id/messages`
+- `GET/POST /api/vehicles`
+- `GET/POST /api/notifications`, `POST /api/push-tokens`
+- `GET/POST /api/identity-verification`, `POST /api/identity-verification/didit-session`
+- `POST /api/disputes`, `GET /api/admin/disputes`, `PATCH /api/admin/disputes/:id`
+- `POST /api/alerts/panic`
+
+> Nota: los endpoints legacy sin `/api` y sin autenticación
+> (`POST /mechanics`, `PATCH /mechanics/:id/availability`,
+> `PATCH /mechanics/:id/status`, `POST /customers`, `POST /service-requests`,
+> `POST /service-requests/:id/assign`) se **eliminaron** por ser una
+> superficie de ataque sin uso real (ver `PROJECT_STATUS.md`).
 
 ### Solicitudes públicas
 
@@ -148,75 +169,56 @@ La meta es que un cliente encuentre un mecánico, vea su perfil, consulte turnos
 
 ## Base de datos
 
-Tablas principales:
+Tablas principales (SQLite, operativa hoy):
 
-- `mechanics`
-- `customers`
-- `service_requests`
-- `service_request_updates`
-- `users`
-- `sessions`
-- `mechanic_schedule_slots`
+- `mechanics`, `customers`, `users`
+- `service_requests`, `service_request_updates`, `service_request_messages`
+- `mechanic_schedule_slots`, `mechanic_reviews`
+- `vehicles`, `notifications`, `push_tokens`
+- `identity_verifications`, `disputes`, `payments`, `panic_alerts`
+
+(La tabla `sessions` de la auth v1 ya no existe — la sesión ahora es un JWT
+de Supabase, sin estado en el servidor.)
 
 ## Estado actual
 
 ### Ya funcionando
 
-- Login y registro.
-- Perfiles de mecánicos.
+- Login y registro (Supabase, incluyendo Google OAuth).
+- Perfiles públicos de mecánicos (bio, galería, tarifa, reseñas).
 - Búsqueda por zona y GPS.
-- Solicitud directa a mecánico.
-- Hold y respuesta del mecánico.
-- Turnos de agenda.
-- Perfil público de mecánico.
+- Solicitud directa a mecánico y turnos de agenda.
+- Hold y respuesta (aceptar/rechazar) del mecánico.
+- Estado de servicio fino: pendiente → asignada → en camino → en sitio →
+  diagnóstico → reparación → espera de refacciones → terminada/cancelada.
+- Chat por solicitud, reseñas, disputas.
 - Notificaciones push y centro de notificaciones.
-- Scroll normal en la app.
-- Fondo personalizado.
+- Verificación de identidad (Didit) — implementado localmente, ver
+  README.md para qué está publicado vs. pendiente de desplegar.
+- Botón de emergencia (911) con registro de auditoría.
+- Vehículos guardados reutilizables al crear solicitud.
 
-### Pendiente para versión más completa
+### Pendiente (ver README.md → "Roadmap pendiente" para el detalle vivo)
 
-- Pago / anticipo / retención real.
-- Estado de servicio más fino:
-  - asignado
-  - en camino
-  - en sitio
-  - diagnóstico
-  - reparando
-  - terminado
+- Pago / anticipo / retención real: el modelo está **diseñado** (ver
+  README.md → "Modelo de pagos y apartado") y el esquema de datos existe,
+  pero **ningún endpoint mueve dinero real todavía**.
+- Verificación telefónica por SMS.
+- Seguimiento GPS compartido en vivo para contactos de confianza.
+- Panel administrativo completo de identidad.
+- Calendario visual de turnos (hoy es lista simple filtrable por fecha).
 
 ## Próximos pasos recomendados
 
-1. **Calendario visual**
-   - mostrar turnos por día y hora
-   - elegir slot desde una vista clara
-
-2. **Perfil público completo**
-   - descripción
-   - fotos
-   - servicios
-   - reseñas
-
-3. **Tiempo real**
-   - sockets o notificaciones push
-   - solicitudes entrantes sin polling
-
-4. **Flujo operativo del servicio**
-   - estado más detallado
-   - llegada del mecánico
-   - inicio de trabajo
-   - cierre con precio final
-
-5. **Mejor UX móvil**
-   - inputs más cortos
-   - menos texto en pantalla
-   - acciones más visuales
-
-6. **Producto final**
-   - publicar en Android
-   - branding final
-   - onboarding
+Ver README.md → "Roadmap pendiente", que es la lista viva y priorizada.
+A alto nivel, lo más urgente sigue siendo cerrar el modelo de pagos: sin
+cobro real dentro de la app, el flujo de negocio (evitar fuga a trato
+directo) no se sostiene por mucho tiempo.
 
 ## Nota final
 
-La app ya no es solo una idea: ya tiene base real de backend, auth, mecánicos, solicitudes, mapa, agenda y flujo tipo Uber + Doctoralia.  
-El siguiente salto es convertir la agenda en calendario visual y luego llevar la app a producción.
+La app ya no es solo una idea: tiene base real de backend, auth, mecánicos,
+solicitudes con ciclo de estado completo, mapa, agenda, chat, reseñas,
+disputas y flujo tipo Uber + Doctoralia. El siguiente salto grande es cerrar
+el modelo de pagos y decidir la migración de datos operativos a Supabase
+Postgres.

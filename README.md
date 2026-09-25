@@ -38,6 +38,30 @@ mantener informadas a ambas partes.
 - Mapa con modo seguro: muestra un aviso y evita un cierre inesperado cuando
   aún no existe una clave de Google Maps configurada.
 
+### Inventario de pantallas (app móvil)
+
+Numeración de referencia para reportar bugs o pedir cambios ("Pantalla 3,
+veo este bug"):
+
+| # | Nombre | Archivo | Quién la ve |
+| --- | --- | --- | --- |
+| 0 | Onboarding | `mobile/App.tsx` (inline) | Usuarios no logueados, primera vez |
+| 1 | Login/Registro | `mobile/App.tsx` (inline) | Usuarios no logueados |
+| 2 | Home | `mobile/screens/HomeScreen.tsx` | Todos |
+| 3 | Solicitudes | `mobile/screens/RequestsScreen.tsx` | Todos (lista/crear/detalle) |
+| 4 | Mecánicos | `mobile/screens/MechanicsScreen.tsx` | Customer/Admin |
+| 5 | Mapa | `mobile/screens/MapScreen.tsx` | Todos |
+| 6 | Acciones | `mobile/screens/ActionsScreen.tsx` | Mechanic/Admin |
+| 7 | Cuenta | `mobile/screens/AccountScreen.tsx` | Customer |
+
+Las pantallas 0 y 1 todavía no están extraídas como componentes propios de
+`screens/` — viven como bloques condicionales dentro de `App.tsx`.
+
+**Pendiente de UX conocido:** React Navigation está instalado
+(`mobile/index.tsx`) pero no se usa para navegar — el cambio entre
+pantallas 2-7 ocurre por estado interno (`currentScreen`) y render
+condicional, sin transición nativa entre ellas. Ver `mobile/README.md`.
+
 ### Implementado localmente y validado, pendiente de publicar
 
 - Canal WebSocket básico para eventos en tiempo real y endpoints de salud de
