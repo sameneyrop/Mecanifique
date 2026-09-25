@@ -1984,6 +1984,7 @@ export default function App() {
               setRequestsView('list');
             }}
             iconName="car-outline"
+            label="Solicitudes"
             accessibilityLabel="Solicitudes"
           />
           {currentUser && currentUser.role !== 'mechanic' && (
@@ -1991,6 +1992,7 @@ export default function App() {
               active={currentScreen === 'mechanics'}
               onPress={() => setCurrentScreen('mechanics')}
               iconName="construct-outline"
+              label="Mecánicos"
               accessibilityLabel="Mecánicos"
             />
           )}
@@ -1998,18 +2000,21 @@ export default function App() {
             active={currentScreen === 'home'}
             onPress={() => setCurrentScreen('home')}
             iconName="home-outline"
+            label="Inicio"
             accessibilityLabel="Inicio"
           />
           <BottomNavButton
             active={currentScreen === 'map'}
             onPress={() => setCurrentScreen('map')}
             iconName="map-outline"
+            label="Mapa"
             accessibilityLabel="Mapa"
           />
           <BottomNavButton
             active={currentScreen === 'actions' || currentScreen === 'account'}
             onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
             iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
+            label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
             accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
           />
         </View>

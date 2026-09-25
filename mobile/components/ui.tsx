@@ -193,11 +193,13 @@ export function BottomNavButton({
   active,
   onPress,
   iconName,
+  label,
   accessibilityLabel,
 }: {
   active: boolean;
   onPress: () => void;
   iconName: ComponentProps<typeof Ionicons>['name'];
+  label: string;
   accessibilityLabel: string;
 }) {
   const { animatedStyle, onPressIn, onPressOut } = usePressScale(0.88);
@@ -209,8 +211,12 @@ export function BottomNavButton({
       onPressOut={onPressOut}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      hitSlop={6}
     >
-      <Ionicons name={iconName} size={22} color={colors.white} />
+      <Ionicons name={iconName} size={24} color={active ? colors.white : colors.textDark} />
+      <Text style={[styles.bottomNavItem, active && styles.bottomNavItemActive]} numberOfLines={1}>
+        {label}
+      </Text>
     </AnimatedPressable>
   );
 }

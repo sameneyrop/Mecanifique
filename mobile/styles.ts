@@ -100,7 +100,7 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: 15,
   },
   heroSubtitle: {
     color: colors.textSecondary,
@@ -285,17 +285,17 @@ export const styles = StyleSheet.create({
     elevation: 2,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '800',
     color: colors.textDark,
   },
   cardSubtitle: {
     color: colors.textDark,
-    fontSize: 13,
+    fontSize: 15,
   },
   identityHint: {
     color: colors.primaryDark,
-    fontSize: 12,
+    fontSize: 14,
     marginBottom: 8,
   },
   stack: {
@@ -310,7 +310,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   label: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     color: colors.textDark,
     marginBottom: 6,
@@ -320,10 +320,11 @@ export const styles = StyleSheet.create({
     borderColor: colors.primaryLight,
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 14,
+    fontSize: 17,
     color: colors.textDark,
     backgroundColor: colors.primaryLighter,
-    minHeight: 44,
+    minHeight: 52,
   },
   segmented: {
     flexDirection: 'row',
@@ -333,7 +334,7 @@ export const styles = StyleSheet.create({
   segment: {
     flexGrow: 1,
     flexBasis: '30%',
-    minHeight: 46,
+    minHeight: 54,
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 16,
@@ -351,7 +352,7 @@ export const styles = StyleSheet.create({
     color: colors.textDark,
     fontWeight: '700',
     textAlign: 'center',
-    fontSize: 14,
+    fontSize: 15,
   },
   segmentTextActive: {
     color: colors.white,
@@ -378,25 +379,30 @@ export const styles = StyleSheet.create({
   primaryButtonText: {
     color: colors.white,
     fontWeight: '800',
+    fontSize: 17,
   },
   secondaryButton: {
     backgroundColor: colors.primaryLighter,
     borderRadius: 999,
-    paddingVertical: 13,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     alignItems: 'center',
+    minHeight: 52,
+    justifyContent: 'center',
   },
   secondaryButtonText: {
     color: colors.textDark,
     fontWeight: '700',
+    fontSize: 16,
   },
   secondaryButtonCompact: {
     paddingHorizontal: 14,
     paddingVertical: 10,
     minWidth: 120,
+    minHeight: 44,
   },
   secondaryButtonTextCompact: {
-    fontSize: 14,
+    fontSize: 15,
   },
   list: {
     gap: 12,
@@ -468,15 +474,16 @@ export const styles = StyleSheet.create({
   },
   itemTitle: {
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 17,
     color: colors.textDark,
   },
   itemText: {
     color: colors.textDark,
+    fontSize: 16,
   },
   smallText: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 14,
   },
   publicProfileBox: {
     gap: 4,
@@ -605,7 +612,7 @@ export const styles = StyleSheet.create({
   },
   toastText: {
     color: colors.white,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
   },
@@ -621,25 +628,31 @@ export const styles = StyleSheet.create({
   },
   bottomNav: {
     backgroundColor: colors.primaryLight,
-    borderRadius: 999,
+    borderRadius: 28,
     paddingVertical: 8,
-    paddingHorizontal: 18,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   bottomNavItem: {
-    color: colors.white,
-    fontSize: 12,
+    color: colors.textDark,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.4,
+    letterSpacing: 0.2,
+    marginTop: 2,
+  },
+  bottomNavItemActive: {
+    color: colors.white,
   },
   bottomNavButton: {
-    borderRadius: 999,
-    minWidth: 54,
+    borderRadius: 20,
+    minWidth: 62,
+    minHeight: 58,
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 7,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 8,
   },
   bottomNavButtonActive: {
     backgroundColor: colors.primary,
