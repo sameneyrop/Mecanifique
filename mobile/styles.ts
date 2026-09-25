@@ -619,8 +619,6 @@ export const styles = StyleSheet.create({
     position: 'relative',
   },
   navTooltip: {
-    position: 'absolute',
-    bottom: 72,
     minWidth: 120,
     maxWidth: 210,
     backgroundColor: colors.textDark,

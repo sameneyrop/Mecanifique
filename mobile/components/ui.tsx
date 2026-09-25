@@ -242,23 +242,33 @@ export function NavTooltip({
     return () => clearTimeout(timeout);
   }, [text, x]);
 
+  // El wrapper ocupa exactamente el ancho del botón (x/width medidos con
+  // onLayout) y centra la burbuja con flexbox — no hay matemática manual de
+  // por medio, así que no puede quedar descentrado respecto al botón.
+  // edgeShift solo corrige el caso borde: que la burbuja se salga de la
+  // barra en los botones de las puntas.
   const tooltipWidth = 210;
-  const idealLeft = x + width / 2 - tooltipWidth / 2;
-  const maxLeft = containerWidth > 0 ? containerWidth - tooltipWidth - 4 : idealLeft;
-  const centeredLeft = Math.min(Math.max(4, idealLeft), Math.max(4, maxLeft));
+  const buttonCenter = x + width / 2;
+  const overflowLeft = tooltipWidth / 2 - buttonCenter;
+  const overflowRight = buttonCenter + tooltipWidth / 2 - containerWidth;
+  const edgeShift = containerWidth <= 0 ? 0 : overflowLeft > 0 ? overflowLeft : overflowRight > 0 ? -overflowRight : 0;
 
   return (
-    <Animated.View
-      key={`${text}-${x}`}
-      entering={FadeInUp.duration(200).easing(Easing.out(Easing.cubic))}
-      exiting={FadeOutUp.duration(160)}
-      style={[styles.navTooltip, { left: centeredLeft }]}
+    <View
+      style={{ position: 'absolute', bottom: 72, left: x, width, alignItems: 'center' }}
       pointerEvents="none"
     >
-      <Text style={styles.navTooltipText} numberOfLines={2}>
-        {text}
-      </Text>
-    </Animated.View>
+      <Animated.View
+        key={`${text}-${x}`}
+        entering={FadeInUp.duration(200).easing(Easing.out(Easing.cubic))}
+        exiting={FadeOutUp.duration(160)}
+        style={[styles.navTooltip, { transform: [{ translateX: edgeShift }] }]}
+      >
+        <Text style={styles.navTooltipText} numberOfLines={2}>
+          {text}
+        </Text>
+      </Animated.View>
+    </View>
   );
 }
 export function PrimaryButton({
