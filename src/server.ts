@@ -3107,6 +3107,38 @@ app.post(
   })
 );
 
+// TEMPORAL: promueve una cuenta existente a admin. Protegido por una clave
+// secreta (ADMIN_SETUP_SECRET) que solo tú conoces. Quitar este bloque
+// después de usarlo una vez.
+app.get(
+  "/api/admin-setup/promote",
+  handleAsync(async (req, res) => {
+    const secret = typeof req.query.key === "string" ? req.query.key : "";
+    const email = typeof req.query.email === "string" ? req.query.email : "";
+
+    if (!process.env.ADMIN_SETUP_SECRET || secret !== process.env.ADMIN_SETUP_SECRET) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    if (!email) {
+      res.status(400).json({ error: "email requerido" });
+      return;
+    }
+
+    const updated = await run(
+      `UPDATE users SET role = 'admin', mechanic_id = NULL, customer_id = NULL WHERE login = ?`,
+      [email]
+    );
+
+    if (updated.changes === 0) {
+      res.status(404).json({ error: "Usuario no encontrado" });
+      return;
+    }
+
+    res.status(200).json({ ok: true, message: `${email} ahora es admin` });
+  })
+);
+
 app.use((_req, res) => {
   res.status(404).json({ error: "Ruta no encontrada" });
 });
