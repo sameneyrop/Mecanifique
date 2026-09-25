@@ -1988,7 +1988,6 @@ export default function App() {
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, requests: layout }))}
             iconName="car-outline"
-            label="Solicitudes"
             accessibilityLabel="Solicitudes"
           />
           {currentUser && currentUser.role !== 'mechanic' && (
@@ -2000,7 +1999,6 @@ export default function App() {
               }}
               onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, mechanics: layout }))}
               iconName="construct-outline"
-              label="Mecánicos"
               accessibilityLabel="Mecánicos"
             />
           )}
@@ -2012,7 +2010,6 @@ export default function App() {
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, home: layout }))}
             iconName="home-outline"
-            label="Inicio"
             accessibilityLabel="Inicio"
           />
           <BottomNavButton
@@ -2026,7 +2023,6 @@ export default function App() {
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, map: layout }))}
             iconName="map-outline"
-            label="Mapa"
             accessibilityLabel="Mapa"
           />
           <BottomNavButton
@@ -2040,7 +2036,6 @@ export default function App() {
             }}
             onLayoutMeasured={(layout) => setNavLayouts((current) => ({ ...current, account: layout }))}
             iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
-            label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
             accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
           />
           {navTooltip && navLayouts[navTooltip.id] && (

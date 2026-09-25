@@ -1,6 +1,7 @@
 import { useEffect, type ComponentProps, type ReactNode } from 'react';
 import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, {
+  Easing,
   FadeInUp,
   FadeOutUp,
   useSharedValue,
@@ -193,14 +194,12 @@ export function BottomNavButton({
   active,
   onPress,
   iconName,
-  label,
   accessibilityLabel,
   onLayoutMeasured,
 }: {
   active: boolean;
   onPress: () => void;
   iconName: ComponentProps<typeof Ionicons>['name'];
-  label: string;
   accessibilityLabel: string;
   onLayoutMeasured?: (layout: { x: number; width: number }) => void;
 }) {
@@ -220,9 +219,6 @@ export function BottomNavButton({
       hitSlop={6}
     >
       <Ionicons name={iconName} size={24} color={active ? colors.white : colors.textDark} />
-      <Text style={[styles.bottomNavItem, active && styles.bottomNavItemActive]} numberOfLines={1}>
-        {label}
-      </Text>
     </AnimatedPressable>
   );
 }
@@ -239,7 +235,7 @@ export function NavTooltip({
   onDismiss: () => void;
 }) {
   useEffect(() => {
-    const timeout = setTimeout(onDismiss, 1800);
+    const timeout = setTimeout(onDismiss, 2200);
     return () => clearTimeout(timeout);
   }, [text, x]);
 
@@ -248,8 +244,8 @@ export function NavTooltip({
   return (
     <Animated.View
       key={`${text}-${x}`}
-      entering={FadeInUp.duration(160)}
-      exiting={FadeOutUp.duration(140)}
+      entering={FadeInUp.duration(200).easing(Easing.out(Easing.cubic))}
+      exiting={FadeOutUp.duration(160)}
       style={[styles.navTooltip, { left: centeredLeft }]}
       pointerEvents="none"
     >

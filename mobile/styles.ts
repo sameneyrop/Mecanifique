@@ -4,6 +4,7 @@ import { colors } from './colors';
 export const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+    backgroundColor: colors.bgApp,
   },
   safeAreaInner: {
     flex: 1,
