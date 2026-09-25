@@ -30,13 +30,13 @@ import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useMemo, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   Text,
   View,
@@ -341,6 +341,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [navTooltip, setNavTooltip] = useState<{ id: string; text: string } | null>(null);
   const [navLayouts, setNavLayouts] = useState<Record<string, { x: number; width: number }>>({});
+  const [navBarWidth, setNavBarWidth] = useState(0);
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [locationAutoRequested, setLocationAutoRequested] = useState(false);
@@ -1994,7 +1995,7 @@ export default function App() {
         </ScrollView>
       </View>
       <View style={styles.bottomNavDock}>
-        <View style={styles.bottomNav}>
+        <View style={styles.bottomNav} onLayout={(event) => setNavBarWidth(event.nativeEvent.layout.width)}>
           <BottomNavButton
             active={currentScreen === 'requests'}
             onPress={() => {
@@ -2061,6 +2062,7 @@ export default function App() {
               text={navTooltip.text}
               x={navLayouts[navTooltip.id].x}
               width={navLayouts[navTooltip.id].width}
+              containerWidth={navBarWidth}
               onDismiss={() => setNavTooltip(null)}
             />
           )}
