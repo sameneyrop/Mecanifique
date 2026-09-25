@@ -1,13 +1,11 @@
 import { useEffect, type ComponentProps, type ReactNode } from 'react';
 import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, {
-  Easing,
   FadeInUp,
   FadeOutUp,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
@@ -195,97 +193,31 @@ export function BottomNavButton({
   active,
   onPress,
   iconName,
+  label,
   accessibilityLabel,
-  onLayoutMeasured,
 }: {
   active: boolean;
   onPress: () => void;
   iconName: ComponentProps<typeof Ionicons>['name'];
+  label: string;
   accessibilityLabel: string;
-  onLayoutMeasured?: (layout: { x: number; width: number }) => void;
 }) {
-  const { animatedStyle, onPressIn, onPressOut } = usePressScale(0.88);
+  const { animatedStyle, onPressIn, onPressOut } = usePressScale(0.92);
   return (
     <AnimatedPressable
-      style={[styles.bottomNavButton, active && styles.bottomNavButtonActive, animatedStyle]}
+      style={[styles.bottomNavButton, animatedStyle]}
       onPress={onPress}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
-      onLayout={(event) => {
-        const { x, width } = event.nativeEvent.layout;
-        onLayoutMeasured?.({ x, width });
-      }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       hitSlop={6}
     >
-      <Ionicons name={iconName} size={24} color={active ? colors.white : colors.textDark} />
+      <Ionicons name={iconName} size={23} color={active ? colors.primary : colors.textSecondary} />
+      <Text style={[styles.bottomNavItem, active && styles.bottomNavItemActive]} numberOfLines={1}>
+        {label}
+      </Text>
     </AnimatedPressable>
-  );
-}
-
-export function NavTooltip({
-  text,
-  x,
-  width,
-  containerWidth,
-  onDismiss,
-}: {
-  text: string;
-  x: number;
-  width: number;
-  /** Ancho real del contenedor (la barra de navegación) donde el tooltip se posiciona, medido con onLayout. */
-  containerWidth: number;
-  onDismiss: () => void;
-}) {
-  useEffect(() => {
-    const timeout = setTimeout(onDismiss, 2200);
-    return () => clearTimeout(timeout);
-  }, [text, x]);
-
-  // El "ease-in" se maneja a mano con un shared value en vez de la prop
-  // `entering`: `entering` solo se dispara cuando el componente se MONTA, y
-  // este mismo NavTooltip se reutiliza (sin desmontar) al pasar de un botón
-  // a otro para evitar el efecto "doble" de dos tooltips solapados. Al
-  // reutilizarse, `entering` nunca vuelve a disparar — por eso solo se veía
-  // el ease-out final (ese sí es un unmount real). Reiniciando el shared
-  // value en cada cambio de texto se logra el mismo ease-in cada vez.
-  const appear = useSharedValue(0);
-  useEffect(() => {
-    appear.value = 0;
-    appear.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
-  }, [text, x]);
-  const appearStyle = useAnimatedStyle(() => ({
-    opacity: appear.value,
-    transform: [{ translateY: (1 - appear.value) * -8 }],
-  }));
-
-  // El wrapper ocupa exactamente el ancho del botón (x/width medidos con
-  // onLayout) y centra la burbuja con flexbox — no hay matemática manual de
-  // por medio, así que no puede quedar descentrado respecto al botón.
-  // edgeShift solo corrige el caso borde: que la burbuja se salga de la
-  // barra en los botones de las puntas.
-  const tooltipWidth = 210;
-  const buttonCenter = x + width / 2;
-  const overflowLeft = tooltipWidth / 2 - buttonCenter;
-  const overflowRight = buttonCenter + tooltipWidth / 2 - containerWidth;
-  const edgeShift = containerWidth <= 0 ? 0 : overflowLeft > 0 ? overflowLeft : overflowRight > 0 ? -overflowRight : 0;
-
-  return (
-    <View
-      style={{ position: 'absolute', bottom: 72, left: x, width, alignItems: 'center' }}
-      pointerEvents="none"
-    >
-      <Animated.View exiting={FadeOutUp.duration(160)}>
-        <Animated.View style={appearStyle}>
-          <View style={[styles.navTooltip, { transform: [{ translateX: edgeShift }] }]}>
-            <Text style={styles.navTooltipText} numberOfLines={2}>
-              {text}
-            </Text>
-          </View>
-        </Animated.View>
-      </Animated.View>
-    </View>
   );
 }
 export function PrimaryButton({
