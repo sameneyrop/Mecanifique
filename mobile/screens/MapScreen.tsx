@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { Image, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import MapView, { Marker, type Region } from 'react-native-maps';
 
 import { styles } from '../styles';
@@ -80,6 +81,7 @@ export function MapScreen({
   }
 
   return (
+    <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
     <Card
       title={user.role === 'mechanic' ? 'Solicitud entrante' : 'Mecánicos cercanos'}
       subtitle={user.role === 'mechanic' ? 'Vista privada del mecánico' : 'Calculado por GPS'}
@@ -195,5 +197,6 @@ export function MapScreen({
         )}
       </View>
     </Card>
+    </Animated.View>
   );
 }
