@@ -769,8 +769,16 @@ app.post("/api/identity-verification", requireAuth, handleAsync(async (req, res)
 // móvil la URL hospedada donde el usuario sube su INE y se toma la selfie.
 // Requiere que ya exista consentimiento registrado (POST anterior).
 const diditSessionRequestSchema = z.object({
+  // "exp://" (y "exp+mecanifique://" en dev clients) son los esquemes que
+  // genera Linking.createURL() al correr la app en Expo Go / dev client en
+  // vez de un build standalone — sin aceptarlos, probar este flujo fuera de
+  // un APK compilado siempre falla aquí, antes de llegar a Didit.
   callbackUrl: z.string().url().refine(
-    (url) => url.startsWith("mecanifique://") || url.startsWith("https://mecanifique.onrender.com"),
+    (url) =>
+      url.startsWith("mecanifique://") ||
+      url.startsWith("exp://") ||
+      url.startsWith("exp+mecanifique://") ||
+      url.startsWith("https://mecanifique.onrender.com"),
     "callbackUrl debe ser un deep link de la app o del dominio de Mecanifique"
   )
 });
