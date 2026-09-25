@@ -3,6 +3,7 @@ process.env.MECANIFIQUE_AUTO_START = "false";
 const { startServer } = require("../src/server.ts");
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all } = require("../src/db.ts");
+const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -174,4 +175,32 @@ test("creación concurrente de usuario local no duplica la fila ni pierde el rol
     [supabaseUserId]
   );
   assert.equal(rows.length, 1, "no debe haber filas duplicadas para el mismo supabase_user_id");
+});
+
+test("calculateDepositAmount: 40% de la tarifa de mano de obra", () => {
+  assert.equal(calculateDepositAmount(500), 200);
+  assert.equal(calculateDepositAmount(333), 133.2);
+});
+
+test("calculateDepositAmount: null si el mecánico no tiene tarifa configurada", () => {
+  assert.equal(calculateDepositAmount(null), null);
+  assert.equal(calculateDepositAmount(undefined), null);
+  assert.equal(calculateDepositAmount(0), null);
+  assert.equal(calculateDepositAmount(-10), null);
+});
+
+test("getCommissionRate: baja escalonadamente con el volumen del mecánico", () => {
+  assert.equal(getCommissionRate(0), 0.15);
+  assert.equal(getCommissionRate(19), 0.15);
+  assert.equal(getCommissionRate(20), 0.12);
+  assert.equal(getCommissionRate(49), 0.12);
+  assert.equal(getCommissionRate(50), 0.1);
+  assert.equal(getCommissionRate(99), 0.1);
+  assert.equal(getCommissionRate(100), 0.08);
+  assert.equal(getCommissionRate(1000), 0.08);
+});
+
+test("calculateCommissionAmount: aplica la tasa del volumen sobre el monto final", () => {
+  assert.equal(calculateCommissionAmount(1000, 0), 150);
+  assert.equal(calculateCommissionAmount(1000, 100), 80);
 });

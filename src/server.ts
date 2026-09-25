@@ -19,6 +19,7 @@ import {
 } from "./supabaseAuth";
 import { getSupabaseDbHealth } from "./supabaseDb";
 import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
+import { calculateDepositAmount } from "./payments";
 
 const app = express();
 const port = Number(process.env.PORT ?? "4000");
@@ -1425,15 +1426,17 @@ app.post(
     const holdExpiresAt = requestedMechanicId
       ? toSqliteTimestamp(new Date(Date.now() + mechanicHoldMinutes * 60 * 1000))
       : null;
+    let requestedMechanicLaborRate: number | null = null;
     if (requestedMechanicId) {
-      const requestedMechanic = await get<{ id: number; status: string; is_online: number; is_available: number }>(
+      const requestedMechanic = await get<{ id: number; status: string; is_online: number; is_available: number; labor_rate: number | null }>(
         `
-        SELECT id, status, is_online, is_available
+        SELECT id, status, is_online, is_available, labor_rate
         FROM mechanics
         WHERE id = ?
         `,
         [requestedMechanicId]
       );
+      requestedMechanicLaborRate = requestedMechanic?.labor_rate ?? null;
 
       if (!requestedMechanic || requestedMechanic.status !== "active" || requestedMechanic.is_online !== 1 || requestedMechanic.is_available !== 1) {
         res.status(404).json({ error: "Mecánico solicitado no disponible para recibir solicitudes" });
@@ -1476,7 +1479,8 @@ app.post(
       `
       INSERT INTO service_requests (
         customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
-        preferred_time, city, zone, service_address, latitude, longitude, mechanic_id, status, schedule_slot_id
+        preferred_time, city, zone, service_address, latitude, longitude, mechanic_id, status, schedule_slot_id,
+        deposit_amount
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
@@ -1496,7 +1500,8 @@ app.post(
         payload.longitude ?? null,
         requestedMechanicId ?? null,
         "pending",
-        scheduleSlotId ?? null
+        scheduleSlotId ?? null,
+        calculateDepositAmount(requestedMechanicLaborRate)
       ]
     );
 
@@ -1550,7 +1555,8 @@ app.post(
              vehicle_year AS vehicleYear, issue_description AS issueDescription, preferred_time AS preferredTime,
              city, zone, latitude, longitude, status, mechanic_id AS mechanicId, schedule_slot_id AS scheduleSlotId, hold_expires_at AS holdExpiresAt,
              diagnosis_notes AS diagnosisNotes, repair_notes AS repairNotes,
-             estimated_price AS estimatedPrice, final_price AS finalPrice, created_at AS createdAt, updated_at AS updatedAt
+             estimated_price AS estimatedPrice, final_price AS finalPrice, deposit_amount AS depositAmount,
+             created_at AS createdAt, updated_at AS updatedAt
       FROM service_requests
       WHERE id = ?
       `,

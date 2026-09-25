@@ -118,9 +118,10 @@ estar completas sin una cuenta, credenciales o decisión operativa:
 Sin capital para financiar un fondo de refacciones prepagado, se decidió este
 modelo de "apartado + ajuste":
 
-1. Cada mecánico define su propia tarifa de mano de obra en su perfil. De ahí
-   se deriva su **apartado mínimo** (aún falta decidir la fórmula exacta:
-   ¿igual a la mano de obra base, o un porcentaje de ella?).
+1. Cada mecánico define su propia tarifa de mano de obra en su perfil. El
+   **apartado mínimo es el 40% de esa tarifa** (`DEPOSIT_PERCENTAGE` en
+   `src/payments.ts`). Si el mecánico todavía no configuró su tarifa, la
+   solicitud se crea igual sin apartado calculado.
 2. El cliente paga/autoriza el apartado al crear la solicitud con un mecánico
    específico.
 3. El mecánico diagnostica en sitio:
@@ -133,6 +134,19 @@ modelo de "apartado + ajuste":
    - Costo real < apartado → se **reembolsa la diferencia** al cliente (no
      se queda el mecánico con el excedente, por reputación/confianza).
 
+### Comisión de Mecanifique
+
+Porcentaje del monto final del servicio, escalonado por volumen histórico
+del mecánico (`getCommissionRate` en `src/payments.ts`) — mitigación a la
+fuga a trato directo (ver "Riesgos operativos" más abajo):
+
+| Servicios completados | Comisión |
+| --- | --- |
+| 0-19 | 15% |
+| 20-49 | 12% |
+| 50-99 | 10% |
+| 100+ | 8% |
+
 ### Implicación técnica
 Este modelo requiere **pre-autorización con captura manual/parcial y
 reembolso parcial** en el procesador de pagos — no es un cobro simple de una
@@ -143,25 +157,31 @@ que el procesador elegido para México soporte este flujo antes de
 comprometerse a él.
 
 ### Estado real de implementación (actualizado)
-Hoy existen únicamente las piezas de datos para este modelo, sin lógica de
-negocio ni cobro real conectados:
 
-- `mechanics.labor_rate`, y en `service_requests`: `deposit_amount`,
-  `extra_amount`, `extra_status`, `refund_amount` (columnas creadas, pero
-  **ningún endpoint de la API las lee ni las escribe todavía**).
-- Tabla `payments` para registro contable de movimientos
-  (`deposit_authorization`, `deposit_capture`, `extra_charge`, `refund`), que
-  solo se usa hoy desde `PATCH /api/admin/disputes/:id` para dejar un
-  registro manual del monto a reembolsar cuando un admin resuelve una
-  disputa — **no mueve dinero real**, no hay integración con Stripe ni con
-  ningún otro procesador de pagos.
-- La app móvil permite al mecánico capturar su tarifa de mano de obra, pero
-  el flujo de cobro al cliente (autorizar apartado, aceptar extra, recibir
-  reembolso) no está implementado en ninguna pantalla.
+- ✅ Fórmulas de apartado y comisión decididas e implementadas como
+  funciones puras y testeadas en `src/payments.ts`.
+- ✅ `deposit_amount` se calcula y guarda automáticamente al crear una
+  solicitud con un mecánico ya resuelto (directo, por turno, o auto-match)
+  que tenga tarifa de mano de obra configurada.
+- ✅ Scaffold de Stripe (`src/stripe.ts`, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET` en `.env.example`) siguiendo el mismo patrón que
+  `src/didit.ts` — `getStripeConfig()` devuelve `null` si no hay cuenta
+  configurada. **Sin cuenta de Stripe todavía, así que ningún endpoint lo
+  usa de verdad.**
+- ⬜ Falta: cuenta de Stripe (Connect, para México) con cuentas conectadas
+  por mecánico; `PaymentIntent` con `capture_method: manual` al crear la
+  solicitud; captura/reembolso parcial al cerrar el servicio; webhook de
+  Stripe para confirmar el estado del cobro; pantallas en la app móvil para
+  autorizar el apartado, aceptar el extra y ver el reembolso.
+- `extra_amount`, `extra_status`, `refund_amount` en `service_requests` y la
+  tabla `payments` siguen siendo solo esquema — ningún endpoint los conecta
+  a lógica de negocio real todavía (la única excepción es el registro
+  contable manual desde `PATCH /api/admin/disputes/:id`, que no mueve
+  dinero real).
 
-En otras palabras: el modelo de pagos está **diseñado y con el esquema de
-datos preparado**, pero el cobro real es un roadmap pendiente, no una
-función activa.
+En otras palabras: el modelo de pagos está **diseñado, con las fórmulas
+decididas y el cálculo del apartado ya funcionando**, pero el cobro real
+(mover dinero) sigue pendiente de que exista una cuenta de Stripe.
 
 ## Riesgos operativos identificados (sin resolver aún en código)
 
