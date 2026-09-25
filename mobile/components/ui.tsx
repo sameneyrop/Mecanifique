@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
@@ -242,6 +243,23 @@ export function NavTooltip({
     return () => clearTimeout(timeout);
   }, [text, x]);
 
+  // El "ease-in" se maneja a mano con un shared value en vez de la prop
+  // `entering`: `entering` solo se dispara cuando el componente se MONTA, y
+  // este mismo NavTooltip se reutiliza (sin desmontar) al pasar de un botón
+  // a otro para evitar el efecto "doble" de dos tooltips solapados. Al
+  // reutilizarse, `entering` nunca vuelve a disparar — por eso solo se veía
+  // el ease-out final (ese sí es un unmount real). Reiniciando el shared
+  // value en cada cambio de texto se logra el mismo ease-in cada vez.
+  const appear = useSharedValue(0);
+  useEffect(() => {
+    appear.value = 0;
+    appear.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+  }, [text, x]);
+  const appearStyle = useAnimatedStyle(() => ({
+    opacity: appear.value,
+    transform: [{ translateY: (1 - appear.value) * -8 }],
+  }));
+
   // El wrapper ocupa exactamente el ancho del botón (x/width medidos con
   // onLayout) y centra la burbuja con flexbox — no hay matemática manual de
   // por medio, así que no puede quedar descentrado respecto al botón.
@@ -258,12 +276,14 @@ export function NavTooltip({
       style={{ position: 'absolute', bottom: 72, left: x, width, alignItems: 'center' }}
       pointerEvents="none"
     >
-      <Animated.View entering={FadeInUp.duration(200).easing(Easing.out(Easing.cubic))} exiting={FadeOutUp.duration(160)}>
-        <View style={[styles.navTooltip, { transform: [{ translateX: edgeShift }] }]}>
-          <Text style={styles.navTooltipText} numberOfLines={2}>
-            {text}
-          </Text>
-        </View>
+      <Animated.View exiting={FadeOutUp.duration(160)}>
+        <Animated.View style={appearStyle}>
+          <View style={[styles.navTooltip, { transform: [{ translateX: edgeShift }] }]}>
+            <Text style={styles.navTooltipText} numberOfLines={2}>
+              {text}
+            </Text>
+          </View>
+        </Animated.View>
       </Animated.View>
     </View>
   );
