@@ -1,7 +1,14 @@
-import { type ComponentProps, type ReactNode } from 'react';
+import { useEffect, type ComponentProps, type ReactNode } from 'react';
 import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import Animated, {
+  FadeInUp,
+  FadeOutUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import * as Haptics from 'expo-haptics';
 
 import { colors } from '../colors';
 import { styles } from '../styles';
@@ -16,6 +23,7 @@ function usePressScale(toValue = 0.97) {
   }));
   const onPressIn = () => {
     scale.value = withSpring(toValue, { damping: 24, stiffness: 180 });
+    Haptics.selectionAsync().catch(() => undefined);
   };
   const onPressOut = () => {
     scale.value = withSpring(1, { damping: 24, stiffness: 180 });
@@ -68,6 +76,37 @@ export function RequestCard({ request }: { request: ServiceRequest }) {
           Último update: {latestUpdate.source} · {latestUpdate.message}
         </Text>
       )}
+    </View>
+  );
+}
+
+const TOAST_AUTO_DISMISS_MS = 3500;
+
+export function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+    const timeout = setTimeout(onDismiss, TOAST_AUTO_DISMISS_MS);
+    return () => clearTimeout(timeout);
+  }, [message]);
+
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <View style={styles.toastWrap} pointerEvents="box-none">
+      <Animated.View
+        key={message}
+        entering={FadeInUp.duration(220)}
+        exiting={FadeOutUp.duration(180)}
+        style={styles.toastCard}
+      >
+        <Text numberOfLines={3} style={styles.toastText}>
+          {message}
+        </Text>
+      </Animated.View>
     </View>
   );
 }

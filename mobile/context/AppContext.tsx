@@ -222,6 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [identityState, setIdentityState] = useState<IdentityVerificationState>({ status: null });
+  const [identityBusy, setIdentityBusy] = useState(false);
 
   const value: AppContextValue = {
     token,
@@ -270,6 +271,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUnreadNotifications,
     identityState,
     setIdentityState,
+    identityBusy,
+    setIdentityBusy,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

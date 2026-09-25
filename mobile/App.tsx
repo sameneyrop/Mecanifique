@@ -9,7 +9,8 @@ import { MapScreen } from './screens/MapScreen';
 import { RequestsScreen } from './screens/RequestsScreen';
 import { AccountScreen } from './screens/AccountScreen';
 import { ActionsScreen } from './screens/ActionsScreen';
-import { Card, Field, Input, CharCounter, Segmented, PrimaryButton, SecondaryButton, BottomNavButton } from './components/ui';
+import { Card, Field, Input, CharCounter, Segmented, PrimaryButton, SecondaryButton, BottomNavButton, Toast } from './components/ui';
+import * as Haptics from 'expo-haptics';
 import {
   normalizeSpecialties,
   formatError,
@@ -1274,8 +1275,10 @@ export default function App() {
       await persistSession(response.accessToken, response.user);
       await loadMyRequests(response.accessToken);
       setMessage(`Sesión iniciada como ${response.user.role}`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
       setMessage(formatError(error));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -1404,9 +1407,11 @@ export default function App() {
       setRequestLookupId(String(request.id));
       setRequestsView('detail');
       setMessage(`Solicitud #${request.id} creada. Buscando un mecánico cercano...`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       void loadMyRequests().catch((error) => setMessage(formatError(error)));
     } catch (error) {
       setMessage(formatError(error));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -1482,6 +1487,7 @@ export default function App() {
       await loadIncomingRequest();
       await loadMyRequests();
       setMessage(action === 'accept' ? 'Solicitud aceptada' : 'Solicitud rechazada');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       if (action === 'accept') {
         const fullRequest = await apiRequest<ServiceRequest>(`/service-requests/${incomingRequest.id}`, { token });
         setSelectedRequest(fullRequest);
@@ -1528,6 +1534,7 @@ export default function App() {
           text: 'Llamar al 911',
           style: 'destructive',
           onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => undefined);
             // La llamada real nunca debe esperar ni depender del backend:
             // se dispara de inmediato y, en paralelo (best-effort), se dejar
             // constancia para que un admin pueda dar seguimiento después.
@@ -1737,6 +1744,7 @@ export default function App() {
         <View style={styles.safeArea}>
           <SafeAreaView style={styles.safeAreaInner}>
             <StatusBar style="dark" />
+            <Toast message={message} onDismiss={() => setMessage('')} />
             <View style={styles.content}>
               <ScrollView
                 style={styles.scroll}
@@ -1789,6 +1797,7 @@ export default function App() {
       <View style={styles.safeArea}>
         <SafeAreaView style={styles.safeAreaInner}>
           <StatusBar style="dark" />
+          <Toast message={message} onDismiss={() => setMessage('')} />
           <View style={styles.content}>
             <ScrollView
               style={styles.scroll}
@@ -1934,9 +1943,6 @@ export default function App() {
               )}
             </Card>
             <SecondaryButton title="Ver introducción" onPress={showOnboardingAgain} />
-            <View style={styles.statusPill}>
-            <Text numberOfLines={2} style={styles.statusPillText}>{message}</Text>
-            </View>
             </LinearGradient>
             </ScrollView>
           </View>
@@ -1949,6 +1955,7 @@ export default function App() {
     <View style={styles.safeArea}>
       <SafeAreaView style={styles.safeAreaInner}>
       <StatusBar style="dark" />
+      <Toast message={message} onDismiss={() => setMessage('')} />
       <View style={styles.content}>
         <ScrollView
           style={styles.scroll}
@@ -1971,10 +1978,6 @@ export default function App() {
               />
             </View>
           )}
-
-          <View style={styles.statusPill}>
-            <Text numberOfLines={2} style={styles.statusPillText}>{message}</Text>
-          </View>
 
           {currentScreen === 'home' && unreadNotifications > 0 && (
             <Pressable style={styles.notificationBanner} onPress={() => setCurrentScreen('account')}>
