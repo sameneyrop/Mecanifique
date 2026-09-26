@@ -299,7 +299,7 @@ const ONBOARDING_STEPS = [
 function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
   switch (screen) {
     case 'home':
-      return 'Panel de servicio';
+      return role === 'mechanic' ? 'Panel de servicio' : 'Inicio';
     case 'mechanics':
       return 'Encuentra tu mecánico';
     case 'requests':
@@ -676,9 +676,6 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.role === 'mechanic' && currentScreen === 'mechanics') {
       setCurrentScreen('home');
-    }
-    if (currentUser && currentUser.role !== 'mechanic' && currentScreen === 'home') {
-      setCurrentScreen('mechanics');
     }
   }, [currentUser?.role, currentScreen]);
 
@@ -1934,7 +1931,11 @@ export default function App() {
           <Text style={styles.title}>{getScreenTitle(currentScreen, currentUser?.role)}</Text>
           {currentScreen === 'home' && (
             <View>
-              <HomeScreen onToggleMechanicConnection={handleToggleMechanicConnection} />
+              <HomeScreen
+                requestForm={requestForm}
+                setRequestForm={setRequestForm}
+                onToggleMechanicConnection={handleToggleMechanicConnection}
+              />
             </View>
           )}
 
@@ -2080,6 +2081,13 @@ export default function App() {
       <View style={styles.bottomNavDock}>
         <View style={styles.bottomNav}>
           <BottomNavButton
+            active={currentScreen === 'home'}
+            onPress={() => setCurrentScreen('home')}
+            iconName="home-outline"
+            label="Inicio"
+            accessibilityLabel="Inicio"
+          />
+          <BottomNavButton
             active={currentScreen === 'requests'}
             onPress={() => {
               setCurrentScreen('requests');
@@ -2096,15 +2104,6 @@ export default function App() {
               iconName="construct-outline"
               label="Mecánicos"
               accessibilityLabel="Mecánicos"
-            />
-          )}
-          {currentUser?.role === 'mechanic' && (
-            <BottomNavButton
-              active={currentScreen === 'home'}
-              onPress={() => setCurrentScreen('home')}
-              iconName="home-outline"
-              label="Inicio"
-              accessibilityLabel="Inicio"
             />
           )}
           <BottomNavButton

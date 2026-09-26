@@ -56,9 +56,9 @@ veo este bug"):
 
 | # | Nombre | Archivo | Quién la ve |
 | --- | --- | --- | --- |
-| 0 | Onboarding | `mobile/App.tsx` (inline) | Usuarios no logueados, primera vez |
-| 1 | Login/Registro | `mobile/App.tsx` (inline) | Usuarios no logueados |
-| 2 | Home | `mobile/screens/HomeScreen.tsx` | Todos |
+| 0 | Onboarding | `mobile/screens/OnboardingScreen.tsx` | Usuarios no logueados, primera vez |
+| 1 | Login/Registro | `mobile/screens/LoginScreen.tsx` | Usuarios no logueados |
+| 2 | Home | `mobile/screens/HomeScreen.tsx` | Todos (búsqueda/agendar para cliente, conectar/desconectar para mecánico) |
 | 3 | Solicitudes | `mobile/screens/RequestsScreen.tsx` | Todos (lista/crear/detalle) |
 | 4 | Mecánicos | `mobile/screens/MechanicsScreen.tsx` | Customer/Admin |
 | 5 | Mapa | `mobile/screens/MapScreen.tsx` | Todos |
@@ -66,12 +66,9 @@ veo este bug"):
 | 7 | Cuenta | `mobile/screens/AccountScreen.tsx` | Customer |
 | 8 | Vehículos | `mobile/screens/VehiclesScreen.tsx` | Customer |
 
-Las pantallas 0 y 1 todavía no están extraídas como componentes propios de
-`screens/` — viven como bloques condicionales dentro de `App.tsx`.
-
 **Pendiente de UX conocido:** React Navigation está instalado
 (`mobile/index.tsx`) pero no se usa para navegar — el cambio entre
-pantallas 2-7 ocurre por estado interno (`currentScreen`) y render
+pantallas ocurre por estado interno (`currentScreen`) y render
 condicional, sin transición nativa entre ellas. Ver `mobile/README.md`.
 
 ### Implementado localmente y validado, pendiente de publicar
