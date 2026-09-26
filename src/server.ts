@@ -1812,7 +1812,7 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
 
 const accountProfileSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
-  phone: z.string().trim().regex(/^[0-9+\-\s]{8,20}$/, "Teléfono inválido").optional()
+  phone: z.string().trim().regex(/^[0-9+()\-\s]{8,20}$/, "Teléfono inválido").optional()
 });
 
 // Nombre visible y teléfono. El nombre también se guarda en Supabase para
@@ -1825,7 +1825,7 @@ app.get("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
       ? await get<{ phone: string }>("SELECT phone FROM mechanics WHERE id = ?", [authUser.mechanicId])
       : undefined;
   // Los teléfonos de relleno ("sin-telefono-…", "supabase-…") no se muestran.
-  const phone = phoneRow?.phone && /^[0-9+\-\s]+$/.test(phoneRow.phone) ? phoneRow.phone : "";
+  const phone = phoneRow?.phone && /^[0-9+()\-\s]+$/.test(phoneRow.phone) ? phoneRow.phone : "";
   res.json({ fullName: authUser.fullName, email: authUser.login, phone });
 }));
 
