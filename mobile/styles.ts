@@ -39,6 +39,23 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 28,
   },
+  serverWakingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.white,
+  },
+  serverWakingText: {
+    flex: 1,
+    color: colors.textDark,
+    fontSize: 14,
+    fontFamily: fonts.semibold,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

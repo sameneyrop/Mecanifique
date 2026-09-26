@@ -15,7 +15,7 @@ import { IncomingRequestOverlay } from './components/IncomingRequestOverlay';
 import { LoginScreen } from './screens/LoginScreen';
 import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
 import { PromotionsScreen } from './screens/PromotionsScreen';
-import { BottomNavButton, Toast } from './components/ui';
+import { BottomNavButton, ServerWakingBanner, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
 import {
   normalizeSpecialties,
@@ -304,7 +304,11 @@ const AUTH_USER_KEY = 'mecanifique.auth.user';
 const AUTH_REFRESH_KEY = 'mecanifique.auth.refresh';
 const SESSION_EXPIRED_MESSAGE = 'Tu sesión expiró. Vuelve a iniciar sesión.';
 const ONBOARDING_KEY = 'mecanifique.onboarding.seen';
-const API_REQUEST_TIMEOUT_MS = 15_000;
+// El servidor (Render gratis) se duerme tras 15 min sin uso y tarda de 30 a
+// 60 s en despertar: la petición no se corta antes de eso. Si tarda más de
+// SLOW_REQUEST_NOTICE_MS, se avisa arriba que se está conectando.
+const API_REQUEST_TIMEOUT_MS = 70_000;
+const SLOW_REQUEST_NOTICE_MS = 5_000;
 const STATUS_REFRESH_INTERVAL_MS = 10_000;
 const APP_LOGO_IMAGE = require('./assets/logo.png');
 
@@ -497,6 +501,9 @@ export default function App() {
     note: '',
   });
   const [favoriteMechanics, setFavoriteMechanics] = useState<FavoriteMechanic[]>([]);
+  // Aviso "Conectando con el servidor…" mientras haya peticiones lentas.
+  const [serverWaking, setServerWaking] = useState(false);
+  const slowRequestCount = useRef(0);
   const [communityView, setCommunityView] = useState<CommunityView>({ mode: 'list' });
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
@@ -841,9 +848,15 @@ export default function App() {
 
   const refreshUserRef = useRef(refreshUserFromServer);
   refreshUserRef.current = refreshUserFromServer;
+  const wakeServerRef = useRef(() => apiRequest('/health'));
+  wakeServerRef.current = () => apiRequest('/health');
   useEffect(() => {
+    // Mientras alguien ve Onboarding o escribe su contraseña, el servidor ya
+    // se está despertando.
+    wakeServerRef.current().catch(() => undefined);
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
+        wakeServerRef.current().catch(() => undefined);
         refreshUserRef.current().catch(() => undefined);
       }
     });
@@ -1147,6 +1160,12 @@ export default function App() {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+    let countedAsSlow = false;
+    const slowNotice = setTimeout(() => {
+      countedAsSlow = true;
+      slowRequestCount.current += 1;
+      setServerWaking(true);
+    }, SLOW_REQUEST_NOTICE_MS);
     let response: Response;
     try {
       response = await fetch(`${API_BASE_URL}${path}`, {
@@ -1157,11 +1176,22 @@ export default function App() {
       });
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`El servidor no respondió en ${API_REQUEST_TIMEOUT_MS / 1000} segundos. Revisa la URL del backend.`);
+        throw new Error('El servidor no respondió. Revisa tu conexión a internet e intenta de nuevo.');
+      }
+      if (error instanceof TypeError) {
+        // "Network request failed": sin internet o sin señal.
+        throw new Error('Sin conexión a internet. Revisa tu conexión e intenta de nuevo.');
       }
       throw error;
     } finally {
       clearTimeout(timeout);
+      clearTimeout(slowNotice);
+      if (countedAsSlow) {
+        slowRequestCount.current -= 1;
+        if (slowRequestCount.current === 0) {
+          setServerWaking(false);
+        }
+      }
     }
 
     if (response.status === 401 && options.token && !isRetry) {
@@ -2503,8 +2533,10 @@ export default function App() {
     return (
       <View style={styles.safeArea}>
         <SafeAreaView style={styles.centered}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.subtitle}>Cargando sesión...</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.subtitle}>
+            {serverWaking ? 'Conectando con el servidor… puede tardar hasta un minuto.' : 'Cargando sesión…'}
+          </Text>
         </SafeAreaView>
       </View>
     );
@@ -2519,6 +2551,7 @@ export default function App() {
             <Toast message={message} onDismiss={() => setMessage('')} />
             <View style={styles.content}>
               <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+              <ServerWakingBanner visible={serverWaking} />
               <ScrollView
                 style={styles.scroll}
                 contentContainerStyle={styles.scrollContent}
@@ -2556,6 +2589,7 @@ export default function App() {
           <Toast message={message} onDismiss={() => setMessage('')} />
           <View style={styles.content}>
             <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+            <ServerWakingBanner visible={serverWaking} />
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
@@ -2605,6 +2639,7 @@ export default function App() {
             ) : null}
           </Text>
         </View>
+        <ServerWakingBanner visible={serverWaking} />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}

@@ -35,6 +35,14 @@ mantener informadas a ambas partes.
   `uploaded_photos`) y la sirve en `/uploads/<archivo>`. La foto queda
   guardada en el perfil al momento, sin tocar "Guardar". Las fotos que se
   quitan o reemplazan todavía no se borran de la tabla.
+- **Servidor dormido (Render gratis)**: Render apaga el servidor tras 15 min
+  sin uso y tarda 30–60 s en despertar. La app espera hasta 70 s (antes
+  cortaba a los 15 con un error), muestra "Conectando con el servidor…" si
+  una petición tarda más de 5 s, y despierta el servidor (`/health`) al
+  abrirse y al volver a primer plano. No reintenta peticiones: la original sí
+  llega al servidor al despertar, y repetirla podría duplicar una solicitud.
+  Para que no se duerma, un servicio externo gratuito (cron-job.org) visita
+  `/health` cada 10 minutos.
 - **Base de datos en Turso** (SQLite en la nube, vía `@libsql/client`): el
   plan gratis de Render no permite discos y borra su sistema de archivos en
   cada deploy y cada vez que el servicio se duerme, así que un archivo

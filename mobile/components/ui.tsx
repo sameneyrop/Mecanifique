@@ -208,6 +208,22 @@ export function RequestCard({
   );
 }
 
+/**
+ * Aviso mientras el servidor despierta (Render gratis se duerme sin uso y
+ * tarda hasta un minuto en responder la primera vez).
+ */
+export function ServerWakingBanner({ visible }: { visible: boolean }) {
+  if (!visible) {
+    return null;
+  }
+  return (
+    <Animated.View entering={FadeInUp.duration(200)} exiting={FadeOutUp.duration(160)} style={styles.serverWakingBanner}>
+      <ActivityIndicator color={colors.primary} />
+      <Text style={styles.serverWakingText}>Conectando con el servidor… puede tardar hasta un minuto.</Text>
+    </Animated.View>
+  );
+}
+
 const TOAST_AUTO_DISMISS_MS = 3500;
 
 export function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
