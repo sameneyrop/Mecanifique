@@ -869,6 +869,8 @@ export default function App() {
       apiRequest<ServiceRequest>(`/service-requests/${selectedRequest.id}`, { token })
         .then((request) => setSelectedRequest(request))
         .catch((error) => setMessage(`No se pudo refrescar solicitud: ${formatError(error)}`));
+      // Silencioso a propósito: un fallo puntual no debe mostrar un aviso cada 10 s.
+      loadRequestMessages(selectedRequest.id).catch(() => undefined);
 
       if (user?.role === 'mechanic' && mechanicConnection === 'online') {
         loadIncomingRequest().catch((error) => setMessage(formatError(error)));
@@ -1479,10 +1481,17 @@ export default function App() {
 
       setSelectedRequest(request);
       setRequestLookupId(String(request.id));
-      setRequestsView('detail');
-      setMessage(`Solicitud #${request.id} creada. Buscando un mecánico cercano...`);
+      setRequestsView('list');
+      // Inicio muestra el servicio en curso (progreso, espera, chat).
+      setCurrentScreen('home');
+      setMessage(
+        request.mechanicId
+          ? 'Solicitud enviada. Esperando que un mecánico la acepte.'
+          : 'Solicitud registrada, pero no hay mecánicos disponibles ahora.',
+      );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       void loadMyRequests().catch((error) => setMessage(formatError(error)));
+      void loadRequestDetailById(request.id).catch(() => undefined);
     } catch (error) {
       setMessage(formatError(error));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
@@ -1654,8 +1663,9 @@ export default function App() {
         setRequestLookupId(String(fullRequest.id));
         setServiceStatusForm((current) => ({ ...current, requestId: String(fullRequest.id) }));
         setUpdateForm((current) => ({ ...current, requestId: String(fullRequest.id) }));
-        setCurrentScreen('actions');
-        setActionsView('requestStatus');
+        // El trabajo en curso (dirección, "Cómo llegar", siguiente paso, chat)
+        // vive en Inicio.
+        setCurrentScreen('home');
       }
     } catch (error) {
       setMessage(formatError(error));
@@ -1685,6 +1695,37 @@ export default function App() {
       setMessage('Solicitud cancelada');
     } catch (error) {
       setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleAdvanceJob(requestId: number, status: string) {
+    if (status === 'completed') {
+      Alert.alert('¿Terminar el servicio?', 'Confírmalo solo cuando el trabajo esté listo. El cliente podrá calificarte.', [
+        { text: 'Todavía no', style: 'cancel' },
+        { text: 'Sí, terminar', onPress: () => void advanceJob(requestId, status) },
+      ]);
+      return;
+    }
+    void advanceJob(requestId, status);
+  }
+
+  async function advanceJob(requestId: number, status: string) {
+    setBusy(true);
+    try {
+      await apiRequest(`/api/service-requests/${requestId}/status`, {
+        method: 'PATCH',
+        token,
+        body: { status },
+      });
+      await loadRequestDetailById(requestId);
+      await loadMyRequests();
+      setMessage(status === 'completed' ? 'Servicio terminado. ¡Buen trabajo!' : `Estado: ${getServiceRequestStatusLabel(status)}`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -2039,6 +2080,13 @@ export default function App() {
                 requestForm={requestForm}
                 setRequestForm={setRequestForm}
                 onToggleMechanicConnection={handleToggleMechanicConnection}
+                onLoadRequestById={loadRequestDetailById}
+                onRefreshRequests={loadMyRequests}
+                onCancelRequest={handleCancelRequest}
+                onSearchAgain={handleSearchAgain}
+                onEmergencyCall={handleEmergencyCall}
+                onSendMessage={handleSendMessage}
+                onAdvanceJob={handleAdvanceJob}
               />
             </View>
           )}

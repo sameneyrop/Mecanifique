@@ -25,6 +25,16 @@ mantener informadas a ambas partes.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,
   reparación, espera de refacciones, terminada o cancelada.
 - Hold temporal y respuesta de aceptar/rechazar para solicitudes entrantes.
+- **Servicio en curso en Inicio**: mientras hay una solicitud activa, Inicio
+  deja de mostrar la búsqueda y muestra ese servicio. Cliente: progreso,
+  espera/reasignación, mecánico con botón "Llamar", chat, emergencia y
+  cancelar. Mecánico: cliente, dirección, "Cómo llegar", chat, emergencia y
+  **un solo botón grande de siguiente paso** (Voy en camino → Ya llegué →
+  Empezar diagnóstico → Empezar reparación → Terminar servicio, con
+  "Esperando refacciones" como desvío). Al aceptar una solicitud, el
+  mecánico llega directo ahí. Los componentes (progreso, chat, espera,
+  emergencia) están en `mobile/components/ActiveService.tsx` y también los
+  usa el detalle de Solicitudes. El chat se refresca solo cada 10 s.
 - **Reasignación automática**: si el mecánico rechaza o deja vencer el hold,
   la solicitud pasa sola al siguiente mecánico disponible en la zona (sin
   volver a ofrecérsela a quien ya no la tomó). Los holds vencidos se
@@ -68,7 +78,7 @@ veo este bug"):
 | --- | --- | --- | --- |
 | 0 | Onboarding | `mobile/screens/OnboardingScreen.tsx` | Usuarios no logueados, primera vez |
 | 1 | Login/Registro | `mobile/screens/LoginScreen.tsx` | Usuarios no logueados |
-| 2 | Home | `mobile/screens/HomeScreen.tsx` | Todos (búsqueda/agendar para cliente, conectar/desconectar para mecánico) |
+| 2 | Home | `mobile/screens/HomeScreen.tsx` | Todos. Cliente: su servicio en curso si tiene uno, si no la búsqueda. Mecánico: su trabajo en curso (con botón de siguiente paso) + conectar/desconectar |
 | 3 | Solicitudes | `mobile/screens/RequestsScreen.tsx` | Todos (lista/crear/detalle) |
 | 4 | Mecánicos | `mobile/screens/MechanicsScreen.tsx` | Customer/Admin |
 | 5 | Mapa | `mobile/screens/MapScreen.tsx` | Todos |

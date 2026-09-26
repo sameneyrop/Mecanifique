@@ -176,6 +176,78 @@ export const styles = StyleSheet.create({
     width: 44,
     height: 44,
   },
+  progressList: {
+    gap: 10,
+    paddingVertical: 4,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  progressDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressDotDone: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  progressDotActive: {
+    backgroundColor: colors.white,
+    borderWidth: 5,
+  },
+  progressLabel: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+  },
+  progressLabelDone: {
+    color: colors.textDark,
+  },
+  progressLabelActive: {
+    fontFamily: fonts.bold,
+    color: colors.primaryDark,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  callButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#16a34a',
+  },
+  callButtonText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+  },
+  nextStepButton: {
+    minHeight: 64,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    backgroundColor: colors.primary,
+  },
+  nextStepButtonText: {
+    color: colors.white,
+    fontFamily: fonts.extrabold,
+    fontSize: 19,
+    letterSpacing: 0.3,
+  },
   searchingCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

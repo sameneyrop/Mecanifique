@@ -1,12 +1,11 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { type Dispatch, type SetStateAction } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, Field, Input, CharCounter, Segmented, PrimaryButton, SecondaryButton, RequestCard } from '../components/ui';
+import { EmergencyButton, RequestChat, SearchingStatus, ServiceProgress } from '../components/ActiveService';
 import { formatError, getServiceRequestStatusLabel, formatCalendarDate } from '../utils';
 
 const ILLUST_ERROR = require('../assets/illust-error.png');
@@ -125,9 +124,6 @@ export function RequestsScreen({
     setMessage,
     vehicles,
     selectedRequest,
-    requestMessages,
-    messageDraft,
-    setMessageDraft,
   } = useAppContext();
 
   if (!user) {
@@ -434,50 +430,16 @@ export function RequestsScreen({
           {selectedRequest && (
             <View style={styles.stack}>
               <RequestCard request={selectedRequest} />
+              {selectedRequest.status !== 'cancelled' && selectedRequest.status !== 'completed' && (
+                <ServiceProgress status={selectedRequest.status} />
+              )}
               {user.role === 'customer' && selectedRequest.status === 'pending' && (
-                selectedRequest.mechanicId ? (
-                  <View style={styles.searchingCard}>
-                    <ActivityIndicator color={colors.primary} />
-                    <View style={styles.flex}>
-                      <Text style={styles.itemTitle}>Esperando respuesta</Text>
-                      <Text style={styles.smallText}>
-                        {selectedRequest.mechanicName || 'Un mecánico'} está revisando tu solicitud.
-                        {selectedRequest.assignmentMode === 'direct'
-                          ? ''
-                          : ' Si no puede tomarla, buscamos a otro automáticamente.'}
-                      </Text>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.searchingCard}>
-                    <Ionicons name="search-outline" size={22} color={colors.primary} />
-                    <View style={[styles.flex, styles.stack]}>
-                      <Text style={styles.itemTitle}>
-                        {selectedRequest.assignmentMode === 'direct'
-                          ? 'El mecánico no pudo tomar tu solicitud'
-                          : 'No hay mecánicos disponibles ahora'}
-                      </Text>
-                      <Text style={styles.smallText}>
-                        {selectedRequest.assignmentMode === 'direct'
-                          ? 'Podemos buscarte otro mecánico disponible en tu zona.'
-                          : 'Puedes intentar de nuevo en unos minutos.'}
-                      </Text>
-                      <PrimaryButton
-                        title={selectedRequest.assignmentMode === 'direct' ? 'Buscar otro mecánico' : 'Buscar de nuevo'}
-                        busy={busy}
-                        onPress={() => onSearchAgain(selectedRequest.id)}
-                      />
-                    </View>
-                  </View>
-                )
+                <SearchingStatus request={selectedRequest} busy={busy} onSearchAgain={onSearchAgain} />
               )}
               {selectedRequest.status !== 'completed' && selectedRequest.status !== 'cancelled' && (
                 <>
                   <Image source={ILLUST_EMERGENCY} resizeMode="cover" style={styles.cardIllustration} />
-                  <Pressable style={styles.emergencyButton} onPress={onEmergencyCall}>
-                    <Ionicons name="warning" size={20} color={colors.white} />
-                    <Text style={styles.emergencyButtonText}>Emergencia — Llamar al 911</Text>
-                  </Pressable>
+                  <EmergencyButton onPress={onEmergencyCall} />
                 </>
               )}
               {(user.role === 'customer' || user.role === 'admin') &&
@@ -554,44 +516,7 @@ export function RequestsScreen({
                   )}
                 </Card>
               )}
-              <Card title="Chat" subtitle="Habla con el cliente o mecánico asignado">
-                <View style={styles.stack}>
-                  {requestMessages.length === 0 ? (
-                    <Text style={styles.itemText}>Todavía no hay mensajes.</Text>
-                  ) : (
-                    requestMessages.map((chatMessage) => (
-                      <View
-                        key={chatMessage.id}
-                        style={[
-                          styles.chatBubble,
-                          chatMessage.senderRole === 'mechanic'
-                            ? styles.chatBubbleMechanic
-                            : chatMessage.senderRole === 'admin'
-                              ? styles.chatBubbleAdmin
-                              : styles.chatBubbleCustomer,
-                        ]}
-                      >
-                        <Text style={styles.chatSender}>
-                          {chatMessage.senderName} · {chatMessage.senderRole}
-                        </Text>
-                        <Text style={styles.itemText}>{chatMessage.message}</Text>
-                        <Text style={styles.smallText}>{chatMessage.createdAt}</Text>
-                      </View>
-                    ))
-                  )}
-                  <Field label="Nuevo mensaje">
-                    <Input
-                      value={messageDraft}
-                      multiline
-                      maxLength={1000}
-                      placeholder="Escribe un mensaje"
-                      onChangeText={setMessageDraft}
-                    />
-                    <CharCounter value={messageDraft} max={1000} />
-                  </Field>
-                  <PrimaryButton title="Enviar mensaje" onPress={onSendMessage} />
-                </View>
-              </Card>
+              <RequestChat onSendMessage={onSendMessage} />
             </View>
           )}
         </Card>

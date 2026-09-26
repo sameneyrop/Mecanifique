@@ -330,6 +330,20 @@ const requestStatusSchema = z.object({
   finalPrice: z.number().nonnegative().optional()
 });
 
+// Para los avisos al cliente: antes decían "tu solicitud cambió a en_route".
+const requestStatusLabels: Record<string, string> = {
+  pending: "buscando mecánico",
+  assigned: "mecánico asignado",
+  in_progress: "en progreso",
+  en_route: "tu mecánico va en camino",
+  on_site: "tu mecánico llegó",
+  diagnosing: "en diagnóstico",
+  repairing: "en reparación",
+  awaiting_parts: "esperando refacciones",
+  completed: "servicio terminado",
+  cancelled: "cancelada"
+};
+
 const allowedRequestTransitions: Record<string, string[]> = {
   pending: ["assigned", "cancelled"],
   assigned: ["en_route", "in_progress", "cancelled"],
@@ -3374,19 +3388,24 @@ app.patch(
     );
     const statusCustomerUserId = statusRequest ? await getUserIdByCustomerId(statusRequest.customer_id) : null;
     const statusMechanicUserId = existing.mechanic_id ? await getUserIdByMechanicId(existing.mechanic_id) : null;
+    const statusLabel = requestStatusLabels[payload.status] ?? payload.status;
     if (statusCustomerUserId) {
       await createNotification(
         statusCustomerUserId,
-        "Estado actualizado",
-        `Tu solicitud #${requestId} cambió a ${payload.status}`,
+        payload.status === "completed" ? "Servicio terminado" : "Novedades de tu servicio",
+        payload.status === "completed"
+          ? `Tu solicitud #${requestId} terminó. Cuéntanos cómo te fue calificando a tu mecánico.`
+          : `Solicitud #${requestId}: ${statusLabel}.`,
         { requestId, status: payload.status }
       );
     }
-    if (statusMechanicUserId) {
+    // El mecánico no necesita un aviso de un cambio que él mismo acaba de
+    // hacer; solo si lo hizo un admin.
+    if (statusMechanicUserId && req.auth?.user.role === "admin") {
       await createNotification(
         statusMechanicUserId,
         "Estado actualizado",
-        `La solicitud #${requestId} cambió a ${payload.status}`,
+        `La solicitud #${requestId} cambió a: ${statusLabel}.`,
         { requestId, status: payload.status }
       );
     }
