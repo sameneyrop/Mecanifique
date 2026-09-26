@@ -25,6 +25,14 @@ mantener informadas a ambas partes.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,
   reparación, espera de refacciones, terminada o cancelada.
 - Hold temporal y respuesta de aceptar/rechazar para solicitudes entrantes.
+- **Solicitud entrante a pantalla completa** (mecánico conectado): aparece
+  encima de cualquier pantalla (`mobile/components/IncomingRequestOverlay.tsx`)
+  con vibración, cuenta regresiva del hold, vehículo, falla, dirección,
+  distancia y horario pedido. Aceptar (verde, grande) / Rechazar (con
+  confirmación). "Ver después" o el gesto de atrás la minimizan sin
+  rechazarla; sigue en Mapa hasta que venza. Al vencer se cierra sola.
+  Se detecta con el mismo sondeo de 10 s de siempre, más la notificación
+  push.
 - **Servicio en curso en Inicio**: mientras hay una solicitud activa, Inicio
   deja de mostrar la búsqueda y muestra ese servicio. Cliente: progreso,
   espera/reasignación, mecánico con botón "Llamar", chat, emergencia y

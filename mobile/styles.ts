@@ -248,6 +248,63 @@ export const styles = StyleSheet.create({
     fontSize: 19,
     letterSpacing: 0.3,
   },
+  incomingScreen: {
+    flex: 1,
+    backgroundColor: colors.bgApp,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  incomingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  incomingTitle: {
+    fontSize: 28,
+    fontFamily: fonts.extrabold,
+    color: colors.textDark,
+  },
+  incomingCountdown: {
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    color: colors.primaryDark,
+  },
+  incomingTimerTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primaryLight,
+    overflow: 'hidden',
+  },
+  incomingTimerFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  incomingInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  acceptButton: {
+    minHeight: 68,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#16a34a',
+  },
+  incomingLaterLink: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  incomingLaterText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontFamily: fonts.semibold,
+    textDecorationLine: 'underline',
+  },
   searchingCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

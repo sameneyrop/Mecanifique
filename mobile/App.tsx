@@ -11,6 +11,7 @@ import { AccountScreen } from './screens/AccountScreen';
 import { ActionsScreen } from './screens/ActionsScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { VehiclesScreen } from './screens/VehiclesScreen';
+import { IncomingRequestOverlay } from './components/IncomingRequestOverlay';
 import { LoginScreen } from './screens/LoginScreen';
 import { BottomNavButton, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
@@ -2231,6 +2232,7 @@ export default function App() {
         </View>
         </ScrollView>
       </View>
+      <IncomingRequestOverlay onRespond={handleIncomingResponse} />
       <View style={styles.bottomNavDock}>
         <View style={styles.bottomNav}>
           <BottomNavButton

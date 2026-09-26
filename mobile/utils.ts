@@ -6,6 +6,34 @@ type Mechanic = {
 };
 
 /**
+ * El servidor guarda timestamps de SQLite en UTC sin zona ("2026-09-25
+ * 18:22:10"). new Date() los interpretaría como hora local, así que se
+ * marcan como UTC explícitamente. Devuelve null si no se puede leer.
+ */
+export function parseServerTimestamp(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T');
+  const milliseconds = Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized) ? normalized : `${normalized}Z`);
+  return Number.isNaN(milliseconds) ? null : milliseconds;
+}
+
+/** Distancia en línea recta (km) entre dos coordenadas. */
+export function distanceKm(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number },
+): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const deltaLat = toRad(to.latitude - from.latitude);
+  const deltaLon = toRad(to.longitude - from.longitude);
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRad(from.latitude)) * Math.cos(toRad(to.latitude)) * Math.sin(deltaLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
  * Abre la navegación en una app externa (Waze, si está instalada, si no
  * Google Maps) en vez de construir un sistema de mapas/rutas propio.
  */
