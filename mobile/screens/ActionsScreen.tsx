@@ -1,13 +1,14 @@
 import { type Dispatch, type SetStateAction, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import {
   Card,
   Field,
-  ImagePlaceholder,
   InfoRow,
   Input,
   CharCounter,
@@ -66,6 +67,9 @@ const DISPUTE_CATEGORY_LABELS: Record<string, string> = {
 };
 
 const ROLE_LABELS = { customer: 'Cliente', mechanic: 'Mecánico', admin: 'Administrador' } as const;
+
+// Mismo máximo que valida el servidor (galleryUrls.max(6)).
+const MAX_GALLERY_PHOTOS = 6;
 
 function ScheduleCalendar({
   scheduleDates,
@@ -148,6 +152,8 @@ export function ActionsScreen({
   onChangeServiceRequestStatus,
   onToggleAvailability,
   onSavePublicProfile,
+  onAddProfilePhoto,
+  onRemoveProfilePhoto,
   onCreateScheduleSlot,
   onResolveDispute,
   onClearSession,
@@ -183,6 +189,8 @@ export function ActionsScreen({
   onChangeServiceRequestStatus: () => void;
   onToggleAvailability: (isAvailable: boolean) => void;
   onSavePublicProfile: () => void;
+  onAddProfilePhoto: (kind: 'cover' | 'gallery') => void;
+  onRemoveProfilePhoto: (kind: 'cover' | 'gallery', url: string) => void;
   onCreateScheduleSlot: () => void;
   onResolveDispute: (disputeId: number, status: 'under_review' | 'resolved') => void;
   onClearSession: () => Promise<void>;
@@ -196,6 +204,12 @@ export function ActionsScreen({
   if (!user || (user.role !== 'admin' && user.role !== 'mechanic')) {
     return null;
   }
+
+  const coverPhotoUrl = publicProfileForm.coverPhotoUrl.trim();
+  const galleryUrls = publicProfileForm.galleryUrls
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   const calendar = (
     <ScheduleCalendar
@@ -262,9 +276,69 @@ export function ActionsScreen({
             <Animated.View entering={FadeInDown.delay(60).duration(300)} style={styles.screenStack}>
               <Card title="Tu perfil público" subtitle="Esto es lo que ven los clientes cuando te buscan.">
                 <View style={styles.stack}>
-                  {/* PLACEHOLDER: ilustración del perfil del mecánico */}
-                  <ImagePlaceholder icon="construct-outline" compact />
-                  <Field label="Sobre ti">
+                  <Text style={styles.label}>Foto principal</Text>
+                  {coverPhotoUrl ? (
+                    <View style={styles.stack}>
+                      <Image source={{ uri: coverPhotoUrl }} style={styles.coverPhoto} />
+                      <View style={styles.row}>
+                        <SecondaryButton title="Cambiar foto" compact busy={busy} onPress={() => onAddProfilePhoto('cover')} />
+                        <SecondaryButton title="Quitar" compact onPress={() => onRemoveProfilePhoto('cover', coverPhotoUrl)} />
+                      </View>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={({ pressed }) => [styles.heroPlaceholder, styles.photoAddTile, pressed && styles.buttonPressed]}
+                      onPress={() => onAddProfilePhoto('cover')}
+                      disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Agregar foto principal"
+                    >
+                      {busy ? (
+                        <ActivityIndicator color={colors.primary} />
+                      ) : (
+                        <Ionicons name="camera-outline" size={36} color={colors.primary} />
+                      )}
+                      <Text style={styles.photoAddText}>
+                        {busy ? 'Subiendo foto…' : 'Toca aquí para agregar una foto tuya o de tu taller'}
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  <Text style={styles.label}>Fotos de tus trabajos</Text>
+                  <Text style={styles.smallText}>
+                    Hasta {MAX_GALLERY_PHOTOS}. Así los clientes ven la calidad de lo que haces.
+                  </Text>
+                  <View style={styles.galleryRow}>
+                    {galleryUrls.map((url) => (
+                      <View key={url}>
+                        <Image source={{ uri: url }} style={styles.galleryPhoto} />
+                        <Pressable
+                          style={styles.photoRemoveButton}
+                          onPress={() => onRemoveProfilePhoto('gallery', url)}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel="Quitar foto"
+                        >
+                          <Ionicons name="close" size={16} color={colors.white} />
+                        </Pressable>
+                      </View>
+                    ))}
+                    {galleryUrls.length < MAX_GALLERY_PHOTOS && (
+                      <Pressable
+                        style={({ pressed }) => [styles.galleryAddTile, pressed && styles.buttonPressed]}
+                        onPress={() => onAddProfilePhoto('gallery')}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel="Agregar foto de un trabajo"
+                      >
+                        <Ionicons name="add" size={28} color={colors.primary} />
+                        <Text style={styles.galleryAddText}>Agregar</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  <Text style={styles.smallText}>Las fotos se guardan en cuanto las agregas.</Text>
+
+                  <Field label="Cuéntales sobre ti">
                     <Input
                       value={publicProfileForm.bio}
                       multiline
@@ -274,33 +348,16 @@ export function ActionsScreen({
                     />
                     <CharCounter value={publicProfileForm.bio} max={500} />
                   </Field>
-                  <Field label="Tarifa de mano de obra (MXN)">
+                  <Field label="¿Cuánto cobras de mano de obra? (pesos)">
                     <Input
                       value={publicProfileForm.laborRate}
                       keyboardType="numeric"
                       placeholder="Ej. 400"
                       onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value.replace(/[^0-9.]/g, '') })}
                     />
-                    <Text style={styles.smallText}>
-                      Es la base para calcular el apartado de tus servicios. Por ahora es informativa: el cobro dentro
-                      de la app todavía no está activo.
-                    </Text>
+                    <Text style={styles.smallText}>Los clientes la ven en tu perfil antes de pedirte un servicio.</Text>
                   </Field>
-                  <Field label="Foto principal (enlace)">
-                    <Input
-                      value={publicProfileForm.coverPhotoUrl}
-                      placeholder="https://…"
-                      onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, coverPhotoUrl: value })}
-                    />
-                  </Field>
-                  <Field label="Fotos de trabajos (enlaces separados por coma)">
-                    <Input
-                      value={publicProfileForm.galleryUrls}
-                      multiline
-                      onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, galleryUrls: value })}
-                    />
-                  </Field>
-                  <PrimaryButton title="Guardar perfil" busy={busy} onPress={onSavePublicProfile} />
+                  <PrimaryButton title="Guardar cambios" busy={busy} onPress={onSavePublicProfile} />
                 </View>
               </Card>
               <IdentityVerificationCard

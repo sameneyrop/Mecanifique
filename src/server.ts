@@ -21,6 +21,7 @@ import {
 import { getSupabaseDbHealth } from "./supabaseDb";
 import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
 import { calculateDepositAmount } from "./payments";
+import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, savePhoto, uploadsDir } from "./uploads";
 
 const app = express();
 const port = Number(process.env.PORT ?? "4000");
@@ -122,7 +123,11 @@ app.post(
   })
 );
 
-app.use(express.json({ limit: "1mb" }));
+// Las fotos llegan en base64 (ya reducidas en el teléfono): solo esa ruta
+// acepta cuerpos más grandes que el límite general.
+const jsonParser = express.json({ limit: "1mb" });
+const photoJsonParser = express.json({ limit: "6mb" });
+app.use((req, res, next) => (req.path === PHOTO_UPLOAD_PATH ? photoJsonParser : jsonParser)(req, res, next));
 app.use((req, res, next) => {
   const startedAt = Date.now();
   res.on("finish", () => {
@@ -138,6 +143,16 @@ app.use((req, res, next) => {
 });
 app.use(supabaseAuthMiddleware);
 app.use(express.static(path.resolve(process.cwd(), "public")));
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    index: false,
+    dotfiles: "deny",
+    maxAge: "30d",
+    immutable: true,
+    setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff")
+  })
+);
 app.get("/auth/callback", (_req, res) => {
   res.type("html").send(`<!doctype html>
 <html lang="es">
@@ -2434,6 +2449,39 @@ app.patch(
     }
 
     res.status(200).json({ ok: true });
+  })
+);
+
+// Sube una foto (del perfil público del mecánico) y devuelve su dirección
+// pública. El perfil guarda esa dirección con PATCH .../public-profile.
+app.post(
+  PHOTO_UPLOAD_PATH,
+  requireAuth,
+  requireRole("mechanic", "admin"),
+  handleAsync(async (req, res) => {
+    if (applyRateLimit("photo-upload", req, res, 30)) {
+      return;
+    }
+
+    const payload = z.object({ imageBase64: z.string().min(100) }).parse(req.body);
+
+    let photo: ReturnType<typeof decodePhoto>;
+    try {
+      photo = decodePhoto(payload.imageBase64);
+    } catch (error) {
+      if (error instanceof PhotoUploadError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    const fileName = await savePhoto(photo);
+    // Detrás del proxy de Render req.protocol es "http"; el original viene
+    // en x-forwarded-proto. Android bloquea imágenes por http en producción.
+    const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
+    const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`;
+    res.status(201).json({ url: `${baseUrl}/uploads/${fileName}` });
   })
 );
 

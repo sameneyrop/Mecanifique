@@ -45,6 +45,10 @@ type RequestFormShape = {
   longitude: string;
 };
 
+function formatPesos(amount: number): string {
+  return `$${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+}
+
 // Cuántos resultados se muestran antes de "Ver más".
 const PAGE_SIZE = 8;
 
@@ -224,6 +228,9 @@ export function MechanicsScreen({
                 text={`${selected.city} · ${selected.zone}${typeof selected.distanceKm === 'number' ? ` · a ${selected.distanceKm.toFixed(1)} km` : ''}`}
               />
               <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(selected)} />
+              {selected.laborRate ? (
+                <InfoRow icon="cash-outline" text={`Mano de obra: ${formatPesos(selected.laborRate)}`} />
+              ) : null}
               {selected.phone ? <InfoRow icon="call-outline" text={selected.phone} /> : null}
               {selected.bio ? <Text style={styles.itemText}>{selected.bio}</Text> : null}
 

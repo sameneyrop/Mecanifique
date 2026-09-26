@@ -40,7 +40,15 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Mecanifique usa tus fotos para que muestres tu trabajo o tu taller en tu perfil.",
+          "cameraPermission": "Mecanifique usa la cámara para que tomes fotos de tu trabajo o tu taller.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

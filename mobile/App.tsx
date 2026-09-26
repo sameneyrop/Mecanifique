@@ -30,6 +30,8 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
+import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -319,6 +321,13 @@ const ONBOARDING_STEPS = [
 // apenas hay ubicación (pero nunca pisa lo que el usuario escribió).
 const DEFAULT_REQUEST_CITY = 'Aguascalientes';
 const DEFAULT_REQUEST_ZONE = 'Norte';
+
+function splitGalleryUrls(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
   switch (screen) {
@@ -1180,35 +1189,145 @@ export default function App() {
     }
   }
 
-  async function handleSavePublicProfile() {
+  // PATCH del perfil público con todos sus campos: el endpoint reemplaza bio,
+  // foto y galería completos, así que nunca se manda solo una parte.
+  async function savePublicProfile(form: typeof publicProfileForm) {
     if (!user?.mechanicId) {
-      setMessage('No se encontró tu mechanicId');
-      return;
+      throw new Error('No encontramos tu perfil de mecánico');
     }
+    await apiRequest(`/api/mechanics/${user.mechanicId}/public-profile`, {
+      method: 'PATCH',
+      token,
+      body: {
+        bio: form.bio || undefined,
+        coverPhotoUrl: form.coverPhotoUrl || '',
+        galleryUrls: splitGalleryUrls(form.galleryUrls),
+        laborRate: form.laborRate ? Number(form.laborRate) : undefined,
+      },
+    });
+    await loadMechanics();
+  }
 
+  async function handleSavePublicProfile() {
     setBusy(true);
     try {
-      const galleryUrls = publicProfileForm.galleryUrls
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
-      await apiRequest(`/api/mechanics/${user.mechanicId}/public-profile`, {
-        method: 'PATCH',
-        token,
-        body: {
-          bio: publicProfileForm.bio || undefined,
-          coverPhotoUrl: publicProfileForm.coverPhotoUrl || '',
-          galleryUrls,
-          laborRate: publicProfileForm.laborRate ? Number(publicProfileForm.laborRate) : undefined,
-        },
-      });
-      await loadMechanics();
-      setMessage('Perfil público actualizado');
+      await savePublicProfile(publicProfileForm);
+      setMessage('Perfil guardado');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
       setMessage(formatError(error));
     } finally {
       setBusy(false);
     }
+  }
+
+  function askPhotoSource(): Promise<'camera' | 'library' | null> {
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Agregar foto',
+        '¿Quieres tomarla ahora o elegir una que ya tengas?',
+        [
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve(null) },
+          { text: 'Elegir de mis fotos', onPress: () => resolve('library') },
+          { text: 'Tomar foto', onPress: () => resolve('camera') },
+        ],
+        { cancelable: true, onDismiss: () => resolve(null) },
+      );
+    });
+  }
+
+  // Toma o elige una foto, la reduce en el teléfono (máx. 1280 px de ancho,
+  // ~200 KB) y la sube. Devuelve su dirección pública, o null si se canceló.
+  async function pickAndUploadPhoto(source: 'camera' | 'library'): Promise<string | null> {
+    if (source === 'camera') {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error('Necesitamos permiso para usar la cámara. Puedes darlo en los ajustes del teléfono.');
+      }
+    }
+    const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 1 };
+    const picked =
+      source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+    const asset = picked.canceled ? null : picked.assets[0];
+    if (!asset) {
+      return null;
+    }
+
+    const context = ImageManipulator.manipulate(asset.uri);
+    if (asset.width > 1280) {
+      context.resize({ width: 1280 });
+    }
+    const rendered = await context.renderAsync();
+    const saved = await rendered.saveAsync({ base64: true, compress: 0.7, format: SaveFormat.JPEG });
+    if (!saved.base64) {
+      throw new Error('No se pudo preparar la foto');
+    }
+
+    const uploaded = await apiRequest<{ url: string }>('/api/uploads/photo', {
+      method: 'POST',
+      token,
+      body: { imageBase64: saved.base64 },
+    });
+    return uploaded.url;
+  }
+
+  // Las fotos se guardan en el perfil en cuanto se suben: no depende de que
+  // el mecánico se acuerde de tocar "Guardar".
+  async function handleAddProfilePhoto(kind: 'cover' | 'gallery') {
+    const source = await askPhotoSource();
+    if (!source) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const url = await pickAndUploadPhoto(source);
+      if (!url) {
+        return;
+      }
+      const nextForm =
+        kind === 'cover'
+          ? { ...publicProfileForm, coverPhotoUrl: url }
+          : { ...publicProfileForm, galleryUrls: [...splitGalleryUrls(publicProfileForm.galleryUrls), url].join(', ') };
+      await savePublicProfile(nextForm);
+      setPublicProfileForm(nextForm);
+      setMessage(kind === 'cover' ? 'Foto principal guardada' : 'Foto agregada');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleRemoveProfilePhoto(kind: 'cover' | 'gallery', url: string) {
+    Alert.alert('¿Quitar esta foto?', 'Los clientes ya no la verán en tu perfil.', [
+      { text: 'No', style: 'cancel' },
+      {
+        text: 'Quitar',
+        style: 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          try {
+            const nextForm =
+              kind === 'cover'
+                ? { ...publicProfileForm, coverPhotoUrl: '' }
+                : {
+                    ...publicProfileForm,
+                    galleryUrls: splitGalleryUrls(publicProfileForm.galleryUrls)
+                      .filter((item) => item !== url)
+                      .join(', '),
+                  };
+            await savePublicProfile(nextForm);
+            setPublicProfileForm(nextForm);
+            setMessage('Foto quitada');
+          } catch (error) {
+            setMessage(formatError(error));
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
   }
 
   async function handleSubmitReview() {
@@ -2452,6 +2571,8 @@ export default function App() {
               onChangeServiceRequestStatus={handleChangeServiceRequestStatus}
               onToggleAvailability={handleToggleAvailability}
               onSavePublicProfile={handleSavePublicProfile}
+              onAddProfilePhoto={handleAddProfilePhoto}
+              onRemoveProfilePhoto={handleRemoveProfilePhoto}
               onCreateScheduleSlot={handleCreateScheduleSlot}
               onResolveDispute={handleResolveDispute}
               onClearSession={clearSession}

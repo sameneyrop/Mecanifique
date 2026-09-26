@@ -26,7 +26,15 @@ mantener informadas a ambas partes.
 - Mecánicos con disponibilidad, conexión/desconexión y búsqueda por ciudad,
   zona y cercanía GPS.
 - Perfil público de mecánico: especialidades, experiencia, foto principal,
-  galería, bio, calificación y reseñas.
+  galería, bio, tarifa de mano de obra, calificación y reseñas.
+- **Fotos desde el teléfono**: en Acciones → Mi perfil, el mecánico toca un
+  recuadro y elige "Tomar foto" o "Elegir de mis fotos" (antes había que pegar
+  enlaces https). La app reduce la foto (máx. 1280 px, JPG ~200 KB) y la sube a
+  `POST /api/uploads/photo` (solo mecánico/admin), que confirma por sus
+  primeros bytes que sea JPG o PNG, la guarda en `data/uploads/` (disco
+  persistente de Render) y la sirve en `/uploads/<archivo>`. La foto queda
+  guardada en el perfil al momento, sin tocar "Guardar". Las fotos que se
+  quitan o reemplazan no se borran del disco todavía.
 - Solicitudes inmediatas o programadas, solicitud a un mecánico específico y
   turnos de agenda.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,

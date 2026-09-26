@@ -9,6 +9,7 @@ const {
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
 const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
+const { decodePhoto, PhotoUploadError } = require("../src/uploads.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -169,6 +170,31 @@ test("renovar sesión sin refresh token devuelve 400", async () => {
   });
 
   assert.equal(response.status, 400);
+});
+
+test("subir foto sin token devuelve 401", async () => {
+  const { response } = await request("/api/uploads/photo", {
+    method: "POST",
+    body: JSON.stringify({ imageBase64: "x".repeat(200) })
+  });
+
+  assert.equal(response.status, 401);
+});
+
+test("decodePhoto: acepta JPG y PNG reconociéndolos por sus primeros bytes", () => {
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(100)]);
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100)]);
+
+  assert.equal(decodePhoto(jpeg.toString("base64")).extension, "jpg");
+  assert.equal(decodePhoto(`data:image/png;base64,${png.toString("base64")}`).extension, "png");
+});
+
+test("decodePhoto: rechaza lo que no es JPG/PNG aunque diga ser imagen, y lo demasiado grande", () => {
+  const gif = Buffer.concat([Buffer.from("GIF89a"), Buffer.alloc(100)]);
+  const huge = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(5 * 1024 * 1024)]);
+
+  assert.throws(() => decodePhoto(`data:image/jpeg;base64,${gif.toString("base64")}`), PhotoUploadError);
+  assert.throws(() => decodePhoto(huge.toString("base64")), /demasiado grande/);
 });
 
 test("creación concurrente de usuario local no duplica la fila ni pierde el rol (regresión)", async () => {

@@ -12,6 +12,7 @@ mobile/.expo/
 # Local application data
 data/*.db
 data/*.db-*
+data/uploads/
 
 # Logs and local tooling
 npm-debug.log*
