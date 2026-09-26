@@ -44,6 +44,7 @@ import {
   ScrollView,
   Text,
   View,
+  AppState,
 } from 'react-native';
 
 type Role = 'customer' | 'mechanic' | 'admin';
@@ -800,6 +801,17 @@ export default function App() {
     });
     return () => subscription.remove();
   }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep]);
+
+  const refreshUserRef = useRef(refreshUserFromServer);
+  refreshUserRef.current = refreshUserFromServer;
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        refreshUserRef.current().catch(() => undefined);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Compartida por el gesto/botón "atrás" de Android y la flecha visible del
   // encabezado, para que nunca se comporten distinto.
@@ -1891,6 +1903,21 @@ export default function App() {
     setVehicles(data.vehicles);
   }
 
+  // Vuelve a leer el usuario del servidor. La app guarda una copia local
+  // (rol, perfil de mecánico/cliente) que puede quedar vieja si algo cambió
+  // del otro lado; el servidor siempre manda.
+  async function refreshUserFromServer() {
+    const currentToken = tokenRef.current || token;
+    if (!currentToken || !user) {
+      return null;
+    }
+    const me = await apiRequest<{ user: Partial<AuthUser> }>('/auth/v2/me', { token: currentToken });
+    const refreshed = { ...user, ...me.user, fullName: me.user.fullName || user.fullName } as AuthUser;
+    setUser(refreshed);
+    await persistSession(tokenRef.current || currentToken, refreshed);
+    return refreshed;
+  }
+
   async function handleSwitchRole(payload: {
     targetRole: 'customer' | 'mechanic';
     city?: string;
@@ -1911,6 +1938,16 @@ export default function App() {
       setMessage(response.user.role === 'mechanic' ? 'Ahora estás en modo profesional' : 'Ahora estás en modo cliente');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
+      // "Completa ciudad, zona…" significa que el servidor no tiene perfil de
+      // mecánico aunque la app creía que sí: se resincroniza para que Cuenta
+      // muestre el formulario en vez de un botón que siempre falla.
+      if (error instanceof ApiError && error.status === 400 && payload.targetRole === 'mechanic' && !payload.city) {
+        const refreshed = await refreshUserFromServer().catch(() => null);
+        if (refreshed && !refreshed.mechanicId) {
+          setMessage('Completa tus datos de mecánico para activar el modo profesional.');
+          return;
+        }
+      }
       setMessage(formatError(error));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     } finally {
@@ -2329,6 +2366,7 @@ export default function App() {
             <StatusBar style="dark" />
             <Toast message={message} onDismiss={() => setMessage('')} />
             <View style={styles.content}>
+              <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
               <ScrollView
                 style={styles.scroll}
                 contentContainerStyle={styles.scrollContent}
@@ -2337,7 +2375,6 @@ export default function App() {
                 keyboardShouldPersistTaps="handled"
               >
                 <View style={styles.appShell}>
-                  <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
                   <OnboardingScreen
                     steps={ONBOARDING_STEPS}
                     currentStep={onboardingStep}
@@ -2366,6 +2403,7 @@ export default function App() {
           <StatusBar style="dark" />
           <Toast message={message} onDismiss={() => setMessage('')} />
           <View style={styles.content}>
+            <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
@@ -2374,7 +2412,6 @@ export default function App() {
               keyboardShouldPersistTaps="handled"
             >
             <View style={styles.appShell}>
-              <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
               <LoginScreen
                 authMode={authMode}
                 setAuthMode={setAuthMode}
@@ -2405,6 +2442,7 @@ export default function App() {
       <StatusBar style="dark" />
       <Toast message={message} onDismiss={() => setMessage('')} />
       <View style={styles.content}>
+        <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -2412,7 +2450,6 @@ export default function App() {
           alwaysBounceVertical
         >
         <View style={styles.appShell}>
-          <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
           <View key={currentScreen}>
           <View style={styles.screenHeader}>
             {canGoBackInApp ? (

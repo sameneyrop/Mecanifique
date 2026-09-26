@@ -40,10 +40,9 @@ export const styles = StyleSheet.create({
     fontSize: 28,
   },
   logoWordmark: {
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
     width: 130,
     height: 25,
-    marginBottom: 2,
   },
   title: {
     fontSize: 24,
