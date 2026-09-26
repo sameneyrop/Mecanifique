@@ -5,7 +5,7 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
-import { all, get, initDb, run } from "./db";
+import { all, databaseKind, get, initDb, run } from "./db";
 import { requireAuth, requireRole, type AuthUser } from "./auth";
 import { handleAsync } from "./middleware";
 import { vehiclesRouter } from "./routes/vehicles";
@@ -1114,8 +1114,15 @@ function calculateDistanceKm(
   return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// database y commit sirven para confirmar tras un deploy que corre el código
+// nuevo y que está conectado a Turso (y no a un archivo que se borra).
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "mecanifique-api" });
+  res.json({
+    ok: true,
+    service: "mecanifique-api",
+    database: databaseKind,
+    commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? null
+  });
 });
 
 // Login, registro y sesión de admin viven en Supabase (/auth/v2/*).

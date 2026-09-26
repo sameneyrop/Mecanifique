@@ -72,6 +72,8 @@ test("health responde correctamente", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
+  // Sin TURSO_DATABASE_URL (tests locales) se usa el archivo local.
+  assert.equal(body.database, "local-file");
 });
 
 test("ruta inexistente devuelve 404 JSON", async () => {
