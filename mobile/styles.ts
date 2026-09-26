@@ -157,6 +157,25 @@ export const styles = StyleSheet.create({
   whenOptionTitleActive: {
     color: colors.primaryDark,
   },
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+  },
+  backButtonSpacer: {
+    width: 44,
+    height: 44,
+  },
   searchingCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

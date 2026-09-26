@@ -703,22 +703,30 @@ export default function App() {
         return false;
       }
 
-      if (currentScreen === 'requests' && requestsView === 'create' && requestCreateStep === 'details') {
-        setRequestCreateStep('vehicle');
-        return true;
-      }
-      if (currentScreen === 'requests' && requestsView !== 'list') {
-        setRequestsView('list');
-        return true;
-      }
-      if (currentScreen !== 'home') {
-        setCurrentScreen('home');
-        return true;
-      }
-      return false;
+      return goBackInApp();
     });
     return () => subscription.remove();
   }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep]);
+
+  // Compartida por el gesto/botón "atrás" de Android y la flecha visible del
+  // encabezado, para que nunca se comporten distinto.
+  const canGoBackInApp = currentScreen !== 'home';
+
+  function goBackInApp(): boolean {
+    if (currentScreen === 'requests' && requestsView === 'create' && requestCreateStep === 'details') {
+      setRequestCreateStep('vehicle');
+      return true;
+    }
+    if (currentScreen === 'requests' && requestsView !== 'list') {
+      setRequestsView('list');
+      return true;
+    }
+    if (currentScreen !== 'home') {
+      setCurrentScreen('home');
+      return true;
+    }
+    return false;
+  }
 
   useEffect(() => {
     if (mechanics.length === 0) {
@@ -2008,7 +2016,23 @@ export default function App() {
         <View style={styles.appShell}>
           <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
           <View key={currentScreen}>
-          <Text style={styles.title}>{getScreenTitle(currentScreen, currentUser?.role)}</Text>
+          <View style={styles.screenHeader}>
+            {canGoBackInApp ? (
+              <Pressable
+                style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
+                onPress={goBackInApp}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Volver"
+              >
+                <Ionicons name="arrow-back" size={22} color={colors.textDark} />
+              </Pressable>
+            ) : (
+              <View style={styles.backButtonSpacer} />
+            )}
+            <Text style={[styles.title, styles.flex]}>{getScreenTitle(currentScreen, currentUser?.role)}</Text>
+            <View style={styles.backButtonSpacer} />
+          </View>
           {currentScreen === 'home' && (
             <View>
               <HomeScreen
