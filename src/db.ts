@@ -488,7 +488,7 @@ export async function initDb(): Promise<void> {
   `);
 
   // Comunidad: preguntas de cualquier usuario, respuestas de mecánicos
-  // verificados, y reacciones ("Me pasa lo mismo" / "Me ayudó").
+  // verificados, y reacciones (seguir una pregunta / marcar útil una respuesta).
   await run(`
     CREATE TABLE IF NOT EXISTS community_questions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

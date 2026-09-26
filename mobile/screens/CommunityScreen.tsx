@@ -47,8 +47,8 @@ type Question = {
   authorName: string;
   isMine: boolean;
   answerCount: number;
-  meTooCount: number;
-  meTooByMe: boolean;
+  followerCount: number;
+  followedByMe: boolean;
 };
 
 type Answer = {
@@ -134,7 +134,7 @@ function questionMeta(question: Question): string {
 
 function answersLabel(count: number): string {
   if (count === 0) return 'Sin respuestas todavía';
-  return count === 1 ? '1 mecánico respondió' : `${count} mecánicos respondieron`;
+  return count === 1 ? '1 respuesta de mecánico' : `${count} respuestas de mecánicos`;
 }
 
 function QuestionList({ api, setView }: { api: ApiCall; setView: (view: CommunityView) => void }) {
@@ -157,14 +157,15 @@ function QuestionList({ api, setView }: { api: ApiCall; setView: (view: Communit
     return () => clearTimeout(timeout);
   }, [scope, category, search]);
 
-  async function toggleMeToo(question: Question) {
+  async function toggleFollow(question: Question) {
     try {
-      const result = await api<{ active: boolean; count: number }>(`/api/community/questions/${question.id}/me-too`, {
+      const result = await api<{ active: boolean; count: number }>(`/api/community/questions/${question.id}/follow`, {
         method: 'POST',
       });
+      setMessage(result.active ? 'Te avisaremos cuando la respondan' : 'Dejaste de seguir la pregunta');
       setQuestions((current) =>
         (current ?? []).map((item) =>
-          item.id === question.id ? { ...item, meTooByMe: result.active, meTooCount: result.count } : item,
+          item.id === question.id ? { ...item, followedByMe: result.active, followerCount: result.count } : item,
         ),
       );
     } catch (error) {
@@ -179,7 +180,7 @@ function QuestionList({ api, setView }: { api: ApiCall; setView: (view: Communit
           value={scope}
           onBackground
           options={[
-            { key: 'public', label: 'Todas', icon: 'globe-outline' },
+            { key: 'public', label: 'Recientes', icon: 'time-outline' },
             { key: 'mine', label: 'Mis preguntas', icon: 'person-outline' },
           ]}
           onChange={(value) => setScope(value as 'public' | 'mine')}
@@ -191,7 +192,7 @@ function QuestionList({ api, setView }: { api: ApiCall; setView: (view: Communit
           <View style={styles.stack}>
             <Input value={search} onChangeText={setSearch} placeholder="Buscar preguntas" returnKeyType="search" />
             <CategoryChips value={category} onChange={setCategory} includeAll />
-            <PrimaryButton title="Publicar pregunta" onPress={() => setView({ mode: 'new' })} />
+            <PrimaryButton title="Hacer una pregunta" onPress={() => setView({ mode: 'new' })} />
           </View>
         </Card>
       </Animated.View>
@@ -225,11 +226,11 @@ function QuestionList({ api, setView }: { api: ApiCall; setView: (view: Communit
                   </View>
                   <InfoRow icon="chatbubble-ellipses-outline" text={answersLabel(question.answerCount)} />
                   <ReactionButton
-                    icon="thumbs-up-outline"
-                    label="Me pasa lo mismo"
-                    count={question.meTooCount}
-                    active={question.meTooByMe}
-                    onPress={question.isMine ? undefined : () => void toggleMeToo(question)}
+                    icon="notifications-outline"
+                    label={question.followedByMe ? 'Siguiendo' : 'Seguir'}
+                    count={question.followerCount}
+                    active={question.followedByMe}
+                    onPress={question.isMine ? undefined : () => void toggleFollow(question)}
                   />
                 </Pressable>
               ))}
@@ -331,7 +332,7 @@ function NewQuestion({ api, setView }: { api: ApiCall; setView: (view: Community
             <CharCounter value={form.body} max={2000} />
           </Field>
           <SecondaryButton title="Cancelar" onPress={() => setView({ mode: 'list' })} />
-          <PrimaryButton title="Publicar pregunta" busy={busy} onPress={() => void publish()} />
+          <PrimaryButton title="Enviar pregunta" busy={busy} onPress={() => void publish()} />
         </View>
       </Card>
     </Animated.View>
@@ -371,13 +372,14 @@ function QuestionDetail({
   }
   const { question, answers } = data;
 
-  async function toggleMeToo() {
+  async function toggleFollow() {
     try {
-      const result = await api<{ active: boolean; count: number }>(`/api/community/questions/${question.id}/me-too`, {
+      const result = await api<{ active: boolean; count: number }>(`/api/community/questions/${question.id}/follow`, {
         method: 'POST',
       });
+      setMessage(result.active ? 'Te avisaremos cuando la respondan' : 'Dejaste de seguir la pregunta');
       setData((current) =>
-        current ? { ...current, question: { ...current.question, meTooByMe: result.active, meTooCount: result.count } } : current,
+        current ? { ...current, question: { ...current.question, followedByMe: result.active, followerCount: result.count } } : current,
       );
     } catch (error) {
       setMessage(formatError(error));
@@ -457,11 +459,11 @@ function QuestionDetail({
               <Text style={styles.statusPillText}>{CATEGORY_LABELS[question.category]}</Text>
             </View>
             <ReactionButton
-              icon="thumbs-up-outline"
-              label="Me pasa lo mismo"
-              count={question.meTooCount}
-              active={question.meTooByMe}
-              onPress={question.isMine ? undefined : () => void toggleMeToo()}
+              icon="notifications-outline"
+              label={question.followedByMe ? 'Siguiendo' : 'Seguir'}
+              count={question.followerCount}
+              active={question.followedByMe}
+              onPress={question.isMine ? undefined : () => void toggleFollow()}
             />
             {(question.isMine || user.role === 'admin') && (
               <SecondaryButton
@@ -504,8 +506,8 @@ function QuestionDetail({
                   </View>
                   <Text style={styles.itemText}>{answer.body}</Text>
                   <ReactionButton
-                    icon="thumbs-up-outline"
-                    label="Me ayudó"
+                    icon="bulb-outline"
+                    label="Útil"
                     count={answer.helpfulCount}
                     active={answer.helpfulByMe}
                     onPress={answer.isMine ? undefined : () => void toggleHelpful(answer)}

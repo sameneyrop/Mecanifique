@@ -52,9 +52,11 @@ mantener informadas a ambas partes.
   cualquier usuario publica preguntas sobre su auto (título, categoría,
   vehículo, descripción); solo mecánicos verificados (`status = 'active'`)
   responden, y cada respuesta muestra su calificación y un botón para
-  pedirle el servicio. "Me pasa lo mismo" y "Me ayudó", búsqueda, filtro por
-  categoría y "Mis preguntas". Al autor le llega una notificación con cada
-  respuesta; el autor o un admin pueden borrar. Los clientes aparecen como
+  pedirle el servicio. "Seguir" una pregunta (avisa de cada respuesta
+  nueva), marcar respuestas como "Útil", búsqueda, filtro por categoría y
+  "Mis preguntas". Al autor y a quienes la siguen les llega una notificación
+  con cada respuesta; el autor o un admin pueden borrar. Textos propios, no
+  copiados de competidores. Los clientes aparecen como
   "Emilio L." (primer nombre + inicial). Rutas en `src/routes/community.ts`
   (`/api/community/*`).
 - **Promociones**: el mecánico publica, pausa y borra promociones en

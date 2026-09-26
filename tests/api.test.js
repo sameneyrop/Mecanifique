@@ -242,7 +242,7 @@ test("comunidad y promociones sin token devuelven 401", async () => {
     ["POST", "/api/community/questions", { title: "Frenos que chillan", body: "Suena el freno delantero", category: "frenos" }],
     ["GET", "/api/community/questions/1"],
     ["POST", "/api/community/questions/1/answers", { body: "Revisa las pastillas y el disco" }],
-    ["POST", "/api/community/questions/1/me-too"],
+    ["POST", "/api/community/questions/1/follow"],
     ["POST", "/api/community/answers/1/helpful"],
     ["DELETE", "/api/community/questions/1"],
     ["GET", "/api/promotions"],
@@ -491,6 +491,7 @@ test("comunidad y promociones: flujo completo con sesión simulada", async () =>
   }
   const users = {
     customer: await createUser("customer", `Emilio López ${tag}`),
+    follower: await createUser("customer", "Ana Ruiz"),
     mechanic: await createUser("mechanic", "Ricardo López", mechanicId)
   };
 
@@ -539,11 +540,16 @@ test("comunidad y promociones: flujo completo con sesión simulada", async () =>
     assert.equal(found.body.questions[0].authorName, "Emilio L.");
     assert.equal(found.body.questions[0].isMine, false);
 
+    // Otra persona sigue la pregunta; el autor no puede seguir la suya.
+    assert.deepEqual((await call("follower", "POST", `/community/questions/${questionId}/follow`)).body, { active: true, count: 1 });
+    assert.equal((await call("customer", "POST", `/community/questions/${questionId}/follow`)).status, 400);
+
     const answer = await call("mechanic", "POST", `/community/questions/${questionId}/answers`, {
       body: "Cambia las pastillas de ambos lados del eje y revisa el disco."
     });
     assert.equal(answer.status, 201);
-    assert.deepEqual(notifications.map((notification) => notification.userId), [users.customer.id]);
+    // Avisa al autor y a quien la sigue.
+    assert.deepEqual(notifications.map((notification) => notification.userId), [users.customer.id, users.follower.id]);
 
     const customerAnswer = await call("customer", "POST", `/community/questions/${questionId}/answers`, {
       body: "No soy mecánico pero quiero responder"
@@ -551,12 +557,10 @@ test("comunidad y promociones: flujo completo con sesión simulada", async () =>
     assert.equal(customerAnswer.status, 403);
 
     assert.deepEqual((await call("customer", "POST", `/community/answers/${answer.body.id}/helpful`)).body, { active: true, count: 1 });
-    assert.deepEqual((await call("mechanic", "POST", `/community/questions/${questionId}/me-too`)).body, { active: true, count: 1 });
-    assert.equal((await call("customer", "POST", `/community/questions/${questionId}/me-too`)).status, 400);
 
     const detail = await call("customer", "GET", `/community/questions/${questionId}`);
     assert.equal(detail.body.question.answerCount, 1);
-    assert.equal(detail.body.question.meTooCount, 1);
+    assert.equal(detail.body.question.followerCount, 1);
     assert.equal(detail.body.answers[0].mechanicVerified, true);
     assert.equal(detail.body.answers[0].helpfulByMe, true);
 
@@ -587,12 +591,12 @@ test("comunidad y promociones: flujo completo con sesión simulada", async () =>
   } finally {
     server.close();
     if (questionId) {
-      await run("DELETE FROM community_reactions WHERE user_id IN (?, ?)", [users.customer.id, users.mechanic.id]);
+      await run("DELETE FROM community_reactions WHERE user_id IN (?, ?, ?)", [users.customer.id, users.follower.id, users.mechanic.id]);
       await run("DELETE FROM community_answers WHERE question_id = ?", [questionId]);
       await run("DELETE FROM community_questions WHERE id = ?", [questionId]);
     }
     await run("DELETE FROM mechanic_promotions WHERE mechanic_id = ?", [mechanicId]);
-    await run("DELETE FROM users WHERE id IN (?, ?)", [users.customer.id, users.mechanic.id]);
+    await run("DELETE FROM users WHERE id IN (?, ?, ?)", [users.customer.id, users.follower.id, users.mechanic.id]);
   }
 });
 

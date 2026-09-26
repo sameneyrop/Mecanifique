@@ -5,7 +5,8 @@ import { requireAuth, requireRole } from "../auth";
 import { handleAsync } from "../middleware";
 
 /**
- * Comunidad (preguntas de clientes que responden mecánicos verificados) y
+ * Comunidad (preguntas de clientes que responden mecánicos verificados;
+ * quien "sigue" una pregunta recibe aviso de cada respuesta) y
  * promociones de mecánicos. Las dependencias que viven en server.ts
  * (notificaciones, distancia, límite de intentos) se inyectan para no
  * duplicarlas.
@@ -78,19 +79,19 @@ type QuestionRow = {
   authorUserId: number;
   authorFullName: string;
   answerCount: number;
-  meTooCount: number;
-  meTooByMe: number;
+  followerCount: number;
+  followedByMe: number;
 };
 
 const QUESTION_SELECT = `
   SELECT q.id, q.title, q.body, q.category, q.vehicle_label AS vehicleLabel, q.created_at AS createdAt,
          q.author_user_id AS authorUserId, u.full_name AS authorFullName,
          (SELECT COUNT(*) FROM community_answers a WHERE a.question_id = q.id) AS answerCount,
-         (SELECT COUNT(*) FROM community_reactions r WHERE r.target_type = 'question' AND r.target_id = q.id) AS meTooCount,
+         (SELECT COUNT(*) FROM community_reactions r WHERE r.target_type = 'question' AND r.target_id = q.id) AS followerCount,
          EXISTS (
            SELECT 1 FROM community_reactions r
            WHERE r.target_type = 'question' AND r.target_id = q.id AND r.user_id = ?
-         ) AS meTooByMe
+         ) AS followedByMe
   FROM community_questions q
   JOIN users u ON u.id = q.author_user_id
 `;
@@ -106,8 +107,8 @@ function toQuestion(row: QuestionRow, viewerUserId: number) {
     authorName: communityAuthorName(row.authorFullName),
     isMine: row.authorUserId === viewerUserId,
     answerCount: Number(row.answerCount),
-    meTooCount: Number(row.meTooCount),
-    meTooByMe: Boolean(row.meTooByMe)
+    followerCount: Number(row.followerCount),
+    followedByMe: Boolean(row.followedByMe)
   };
 }
 
@@ -299,6 +300,21 @@ export function createCommunityRouter({ createNotification, calculateDistanceKm,
         { questionId }
       );
     }
+    const followers = await all<{ userId: number }>(
+      `SELECT user_id AS userId FROM community_reactions
+       WHERE target_type = 'question' AND target_id = ? AND user_id NOT IN (?, ?)`,
+      [questionId, question.authorUserId, viewer.id]
+    );
+    await Promise.all(
+      followers.map((follower) =>
+        createNotification(
+          follower.userId,
+          "Nueva respuesta en una pregunta que sigues",
+          `${mechanic.fullName} respondió "${question.title}"`,
+          { questionId }
+        )
+      )
+    );
     res.status(201).json({ id: result.lastID });
   }));
 
@@ -326,8 +342,8 @@ export function createCommunityRouter({ createNotification, calculateDistanceKm,
     res.json({ ok: true });
   }));
 
-  // "Me pasa lo mismo" en una pregunta ajena.
-  router.post("/community/questions/:id/me-too", requireAuth, handleAsync(async (req, res) => {
+  // Seguir una pregunta ajena: avisa de cada respuesta nueva.
+  router.post("/community/questions/:id/follow", requireAuth, handleAsync(async (req, res) => {
     if (applyRateLimit("community-reaction", req, res, 60)) {
       return;
     }
@@ -340,13 +356,13 @@ export function createCommunityRouter({ createNotification, calculateDistanceKm,
       return;
     }
     if (question.authorUserId === req.auth!.user.id) {
-      res.status(400).json({ error: "Es tu propia pregunta" });
+      res.status(400).json({ error: "Ya te avisamos de las respuestas a tus preguntas" });
       return;
     }
     res.json(await toggleReaction(req.auth!.user.id, "question", questionId));
   }));
 
-  // "Me ayudó" en una respuesta ajena.
+  // Marcar como útil una respuesta ajena.
   router.post("/community/answers/:id/helpful", requireAuth, handleAsync(async (req, res) => {
     if (applyRateLimit("community-reaction", req, res, 60)) {
       return;
