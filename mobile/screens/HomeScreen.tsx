@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react';
+import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -33,7 +33,24 @@ type RequestFormShape = {
   longitude: string;
 };
 
+/** Perfil propio del mecánico (GET /api/mechanics/me), en cualquier estado. */
+export type MechanicProfile = {
+  id: number;
+  status: string;
+  isOnline: boolean;
+  isAvailable: boolean;
+  laborRate: number | null;
+  bio: string | null;
+  coverPhotoUrl: string | null;
+  gallery: string[];
+  city: string;
+  zone: string;
+};
+
 type HomeScreenProps = {
+  mechanicProfile: MechanicProfile | null;
+  onStartIdentityVerification: () => void;
+  onSaveLaborRate: (rate: string) => void;
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
   onToggleMechanicConnection: (next: 'online' | 'offline') => void;
@@ -273,6 +290,129 @@ function CustomerHome(props: HomeScreenProps) {
   );
 }
 
+function ChecklistStep({
+  number,
+  done,
+  title,
+  description,
+  children,
+}: {
+  number: number;
+  done: boolean;
+  title: string;
+  description: string;
+  children?: ReactNode;
+}) {
+  return (
+    <View style={styles.checklistStep}>
+      <View style={[styles.checklistBadge, done && styles.checklistBadgeDone]}>
+        {done ? (
+          <Ionicons name="checkmark" size={16} color={colors.white} />
+        ) : (
+          <Text style={styles.checklistBadgeText}>{number}</Text>
+        )}
+      </View>
+      <View style={[styles.flex, styles.stack]}>
+        <Text style={[styles.itemTitle, done && styles.checklistTitleDone]}>{title}</Text>
+        <Text style={styles.smallText}>{description}</Text>
+        {!done && children}
+      </View>
+    </View>
+  );
+}
+
+function identityStepDescription(status: string | null): string {
+  switch (status) {
+    case 'submitted':
+    case 'under_review':
+      return 'En revisión. Te avisaremos en cuanto esté lista.';
+    case 'rejected':
+      return 'No pudimos verificarla. Puedes intentarlo de nuevo.';
+    case 'approved':
+      return 'Aprobada. Estamos activando tu cuenta…';
+    default:
+      return 'Te pediremos una identificación oficial y una foto tuya. Tarda unos minutos.';
+  }
+}
+
+/**
+ * Pasos para que un mecánico nuevo empiece a recibir trabajo. Antes quedaba
+ * "pendiente de verificación" sin ninguna guía, y podía tocar CONECTARME
+ * sin que le llegara nada.
+ */
+function MechanicOnboarding({
+  profile,
+  onStartIdentityVerification,
+  onSaveLaborRate,
+}: {
+  profile: MechanicProfile;
+  onStartIdentityVerification: () => void;
+  onSaveLaborRate: (rate: string) => void;
+}) {
+  const { busy, identityState, identityBusy, mechanicConnection } = useAppContext();
+  const [rateDraft, setRateDraft] = useState(profile.laborRate ? String(profile.laborRate) : '');
+
+  if (profile.status === 'suspended') {
+    return <Card title="Tu cuenta está suspendida" subtitle="Escríbenos a soporte desde Cuenta para revisarla." />;
+  }
+
+  const identityDone = profile.status === 'active';
+  const rateDone = profile.laborRate != null && profile.laborRate > 0;
+  if (identityDone && rateDone) {
+    return null;
+  }
+
+  const canRetryIdentity = !identityState.status || identityState.status === 'draft' || identityState.status === 'rejected';
+  const doneCount = Number(identityDone) + Number(rateDone);
+
+  return (
+    <Animated.View entering={FadeInDown.duration(300)}>
+      <Card title="Activa tu cuenta" subtitle={`${doneCount} de 3 pasos listos`}>
+        <View style={styles.stack}>
+          <ChecklistStep
+            number={1}
+            done={identityDone}
+            title="Verifica tu identidad"
+            description={identityStepDescription(identityState.status)}
+          >
+            {canRetryIdentity && (
+              <PrimaryButton
+                title={identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
+                busy={identityBusy}
+                onPress={onStartIdentityVerification}
+              />
+            )}
+          </ChecklistStep>
+          <ChecklistStep
+            number={2}
+            done={rateDone}
+            title="Pon tu tarifa de mano de obra"
+            description="Lo que cobras por tu trabajo, en pesos. Es la base para calcular el costo de tus servicios."
+          >
+            <Field label="Tarifa (MXN)">
+              <Input
+                value={rateDraft}
+                keyboardType="numeric"
+                placeholder="Ej. 400"
+                onChangeText={(value) => setRateDraft(value.replace(/[^0-9.]/g, ''))}
+              />
+            </Field>
+            <PrimaryButton title="Guardar tarifa" busy={busy} onPress={() => onSaveLaborRate(rateDraft)} />
+          </ChecklistStep>
+          <ChecklistStep
+            number={3}
+            done={identityDone && mechanicConnection === 'online'}
+            title="Conéctate para recibir solicitudes"
+            description={
+              identityDone ? 'Toca CONECTARME aquí abajo.' : 'Se habilita en cuanto aprobemos tu identidad.'
+            }
+          />
+        </View>
+      </Card>
+    </Animated.View>
+  );
+}
+
 function MechanicHome(props: HomeScreenProps) {
   const { busy, myRequests, mechanicConnection } = useAppContext();
   const { activeId, detail } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
@@ -285,9 +425,20 @@ function MechanicHome(props: HomeScreenProps) {
   const nextStep = detail ? NEXT_JOB_STEP[detail.status] : undefined;
   const canWaitForParts = detail?.status === 'diagnosing' || detail?.status === 'repairing';
   const address = detail ? detail.serviceAddress || `${detail.city}, ${detail.zone}` : '';
+  // Una cuenta pendiente o suspendida no puede conectarse (el servidor lo
+  // rechaza igual); desconectarse siempre se permite.
+  const connectBlocked =
+    props.mechanicProfile !== null && props.mechanicProfile.status !== 'active' && mechanicConnection !== 'online';
 
   return (
     <View style={styles.stack}>
+      {props.mechanicProfile && (
+        <MechanicOnboarding
+          profile={props.mechanicProfile}
+          onStartIdentityVerification={props.onStartIdentityVerification}
+          onSaveLaborRate={props.onSaveLaborRate}
+        />
+      )}
       {activeId !== null && !detail && <LoadingServiceCard />}
       {detail && (
         <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>
@@ -338,13 +489,21 @@ function MechanicHome(props: HomeScreenProps) {
         <Card
           title="Modo conductor mecánico"
           subtitle={
-            liveLocationRequest
-              ? `Compartiendo ubicación durante la solicitud #${liveLocationRequest.id}.`
-              : 'Tu ubicación solo se comparte mientras tienes un servicio activo.'
+            connectBlocked
+              ? 'Podrás conectarte en cuanto tu cuenta esté activa.'
+              : liveLocationRequest
+                ? `Compartiendo ubicación durante la solicitud #${liveLocationRequest.id}.`
+                : 'Al conectarte compartimos tu ubicación para ofrecerte solicitudes cercanas.'
           }
         >
           <Pressable
-            style={[styles.connectionButton, mechanicConnection === 'online' ? styles.connectionOn : styles.connectionOff]}
+            style={[
+              styles.connectionButton,
+              mechanicConnection === 'online' ? styles.connectionOn : styles.connectionOff,
+              connectBlocked && styles.connectionBlocked,
+            ]}
+            disabled={connectBlocked}
+            accessibilityState={{ disabled: connectBlocked }}
             onPress={() => props.onToggleMechanicConnection(mechanicConnection === 'online' ? 'offline' : 'online')}
           >
             <Text style={styles.connectionButtonText}>

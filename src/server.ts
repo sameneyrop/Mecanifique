@@ -995,6 +995,82 @@ function stopHoldSweep(): void {
   }
 }
 
+const ACTIVE_JOB_STATUSES_SQL = "('assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts')";
+
+async function isIdentityApproved(userId: number): Promise<boolean> {
+  const verification = await get<{ status: string }>(
+    "SELECT status FROM identity_verifications WHERE user_id = ?",
+    [userId]
+  );
+  return verification?.status === "approved";
+}
+
+/**
+ * Reconciliación: un mecánico pendiente cuyo usuario ya tiene la identidad
+ * aprobada queda activo. Cubre a quien activó el modo profesional después
+ * de verificarse como cliente, antes de que switch-role lo tuviera en
+ * cuenta (quedaba pendiente para siempre, sin forma de volver a verificarse).
+ */
+export async function activateMechanicIfIdentityApproved(mechanicId: number, userId: number): Promise<boolean> {
+  if (!(await isIdentityApproved(userId))) {
+    return false;
+  }
+  const updated = await run(
+    "UPDATE mechanics SET status = 'active' WHERE id = ? AND status = 'pending_verification'",
+    [mechanicId]
+  );
+  return updated.changes > 0;
+}
+
+type MechanicConnectionResult = { ok: true; isAvailable: boolean } | { ok: false; status: number; error: string };
+
+/**
+ * Conecta/desconecta a un mecánico.
+ *
+ * Antes, conectarse conservaba is_available tal cual, y un mecánico nuevo
+ * se registra con is_available = 0: nunca recibía solicitudes automáticas,
+ * ni siquiera ya verificado (solo un admin podía destrabarlo a mano). Ahora,
+ * al conectarse queda disponible salvo que tenga un trabajo en curso.
+ *
+ * Con enforceActive (el propio mecánico), no deja conectarse a una cuenta
+ * pendiente o suspendida: antes aparecía "conectado" sin poder recibir
+ * nada, sin ninguna explicación.
+ */
+export async function applyMechanicConnection(
+  mechanicId: number,
+  isOnline: boolean,
+  enforceActive: boolean
+): Promise<MechanicConnectionResult> {
+  const mechanic = await get<{ status: string }>("SELECT status FROM mechanics WHERE id = ?", [mechanicId]);
+  if (!mechanic) {
+    return { ok: false, status: 404, error: "Mecánico no encontrado" };
+  }
+
+  if (!isOnline) {
+    await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id = ?", [mechanicId]);
+    return { ok: true, isAvailable: false };
+  }
+
+  if (enforceActive && mechanic.status !== "active") {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        mechanic.status === "suspended"
+          ? "Tu cuenta está suspendida. Escríbenos a soporte para revisarla."
+          : "Tu cuenta todavía no está activa. Verifica tu identidad para empezar a recibir solicitudes."
+    };
+  }
+
+  const activeJob = await get<{ id: number }>(
+    `SELECT id FROM service_requests WHERE mechanic_id = ? AND status IN ${ACTIVE_JOB_STATUSES_SQL} LIMIT 1`,
+    [mechanicId]
+  );
+  const isAvailable = !activeJob;
+  await run("UPDATE mechanics SET is_online = 1, is_available = ? WHERE id = ?", [isAvailable ? 1 : 0, mechanicId]);
+  return { ok: true, isAvailable };
+}
+
 function calculateDistanceKm(
   latitudeA: number,
   longitudeA: number,
@@ -1640,16 +1716,21 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
       const customerPhone = authUser.customerId
         ? (await get<{ phone: string }>("SELECT phone FROM customers WHERE id = ?", [authUser.customerId]))?.phone
         : null;
+      // Si ya verificó su identidad como cliente, el perfil de mecánico nace
+      // activo: no puede volver a verificarse (didit-session responde 409) y
+      // el webhook de Didit solo activa a un mecánico que ya existía.
+      const initialStatus = (await isIdentityApproved(authUser.id)) ? "active" : "pending_verification";
       const result = await run(
         `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 0)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           authUser.fullName,
           customerPhone || `sin-telefono-${authUser.id}`,
           payload.city,
           payload.zone,
           payload.yearsExperience,
-          JSON.stringify(payload.specialties)
+          JSON.stringify(payload.specialties),
+          initialStatus
         ]
       );
       mechanicId = result.lastID;
@@ -2491,21 +2572,66 @@ app.patch(
       return;
     }
 
-    const updated = await run(
-      `
-      UPDATE mechanics
-      SET is_online = ?, is_available = CASE WHEN ? = 1 THEN is_available ELSE 0 END
-      WHERE id = ?
-      `,
-      [payload.isOnline ? 1 : 0, payload.isOnline ? 1 : 0, mechanicId]
-    );
-
-    if (updated.changes === 0) {
-      res.status(404).json({ error: "Mecánico no encontrado" });
+    const result = await applyMechanicConnection(mechanicId, payload.isOnline, req.auth?.user.role === "mechanic");
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
       return;
     }
 
-    res.status(200).json({ ok: true, isOnline: payload.isOnline });
+    res.status(200).json({ ok: true, isOnline: payload.isOnline, isAvailable: result.isAvailable });
+  })
+);
+
+// Perfil propio del mecánico, en cualquier estado. GET /mechanics solo lista
+// mecánicos activos, así que uno pendiente de verificación no podía ver su
+// propio estado ni su tarifa desde la app.
+app.get(
+  "/api/mechanics/me",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const mechanicId = req.auth?.user.mechanicId;
+    if (!mechanicId) {
+      res.status(400).json({ error: "Mecánico autenticado inválido" });
+      return;
+    }
+    await activateMechanicIfIdentityApproved(mechanicId, req.auth!.user.id);
+    const mechanic = await get<{
+      id: number;
+      status: string;
+      isOnline: number;
+      isAvailable: number;
+      laborRate: number | null;
+      bio: string | null;
+      coverPhotoUrl: string | null;
+      galleryJson: string | null;
+      city: string;
+      zone: string;
+    }>(
+      `
+      SELECT id, status, is_online AS isOnline, is_available AS isAvailable, labor_rate AS laborRate,
+             bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, city, zone
+      FROM mechanics
+      WHERE id = ?
+      `,
+      [mechanicId]
+    );
+    if (!mechanic) {
+      res.status(404).json({ error: "Mecánico no encontrado" });
+      return;
+    }
+    res.json({
+      id: mechanic.id,
+      status: mechanic.status,
+      isOnline: mechanic.isOnline === 1,
+      isAvailable: mechanic.isAvailable === 1,
+      laborRate: mechanic.laborRate,
+      bio: mechanic.bio,
+      coverPhotoUrl: mechanic.coverPhotoUrl,
+      gallery: JSON.parse(mechanic.galleryJson || "[]"),
+      city: mechanic.city,
+      zone: mechanic.zone
+    });
   })
 );
 

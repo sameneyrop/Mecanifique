@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import { colors } from './colors';
 import { styles } from './styles';
 import { useAppContext } from './context/AppContext';
-import { HomeScreen } from './screens/HomeScreen';
+import { HomeScreen, type MechanicProfile } from './screens/HomeScreen';
 import { MechanicsScreen } from './screens/MechanicsScreen';
 import { MapScreen } from './screens/MapScreen';
 import { RequestsScreen } from './screens/RequestsScreen';
@@ -353,6 +353,7 @@ export default function App() {
     identityBusy, setIdentityBusy,
   } = useAppContext();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [mechanicProfile, setMechanicProfile] = useState<MechanicProfile | null>(null);
   const [onboardingSeen, setOnboardingSeen] = useState<boolean | null>(null);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [locationAutoRequested, setLocationAutoRequested] = useState(false);
@@ -618,6 +619,28 @@ export default function App() {
         // datos; no interrumpimos el resto de la app por esto.
       });
   }, [user, token]);
+
+  useEffect(() => {
+    if (user?.role !== 'mechanic' || !token) {
+      setMechanicProfile(null);
+      return;
+    }
+    loadMechanicProfile().catch(() => undefined);
+  }, [user, token, identityState.status]);
+
+  // La aprobación de identidad llega sola por el servidor (webhook de Didit),
+  // en cualquier momento: mientras la cuenta no esté activa se revisa cada
+  // 20 s, para que el checklist avance y CONECTARME se habilite sin tener
+  // que cerrar y abrir la app.
+  useEffect(() => {
+    if (user?.role !== 'mechanic' || !token || !mechanicProfile || mechanicProfile.status === 'active') {
+      return;
+    }
+    const intervalId = setInterval(() => {
+      loadMechanicProfile().catch(() => undefined);
+    }, 20_000);
+    return () => clearInterval(intervalId);
+  }, [user, token, mechanicProfile?.status]);
 
   useEffect(() => {
     if (!selectedRequest || !token) {
@@ -1285,6 +1308,57 @@ export default function App() {
     }
   }
 
+  /**
+   * Perfil propio del mecánico, en cualquier estado. La lista pública
+   * (GET /mechanics) solo trae mecánicos activos, así que uno pendiente de
+   * verificación no tenía de dónde saber su estado ni su tarifa.
+   */
+  async function loadMechanicProfile() {
+    if (user?.role !== 'mechanic' || !token) {
+      return;
+    }
+    const profile = await apiRequest<MechanicProfile>('/api/mechanics/me', { token });
+    setMechanicProfile(profile);
+    setMechanicConnection(profile.isOnline ? 'online' : 'offline');
+    setPublicProfileForm({
+      bio: profile.bio || '',
+      coverPhotoUrl: profile.coverPhotoUrl || '',
+      galleryUrls: profile.gallery.join(', '),
+      laborRate: profile.laborRate != null ? String(profile.laborRate) : '',
+    });
+  }
+
+  async function handleSaveLaborRate(rateText: string) {
+    const laborRate = Number(rateText);
+    if (!mechanicProfile || !Number.isFinite(laborRate) || laborRate <= 0) {
+      setMessage('Escribe tu tarifa en pesos, por ejemplo 400');
+      return;
+    }
+    setBusy(true);
+    try {
+      // Este endpoint reemplaza bio, foto y galería con lo que se le mande:
+      // se reenvían los valores actuales para no borrarlos al guardar solo
+      // la tarifa.
+      await apiRequest(`/api/mechanics/${mechanicProfile.id}/public-profile`, {
+        method: 'PATCH',
+        token,
+        body: {
+          bio: mechanicProfile.bio || undefined,
+          coverPhotoUrl: mechanicProfile.coverPhotoUrl || '',
+          galleryUrls: mechanicProfile.gallery,
+          laborRate,
+        },
+      });
+      await loadMechanicProfile();
+      setMessage('Tarifa guardada');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Al conectarse, el mecánico manda su ubicación para que lo encuentren por distancia. */
   async function sendMechanicLocation() {
     if (!user?.mechanicId) {
@@ -1721,6 +1795,7 @@ export default function App() {
         body: { isOnline: next === 'online' },
       });
       setMechanicConnection(next);
+      void loadMechanicProfile().catch(() => undefined);
       if (next === 'online') {
         void sendMechanicLocation();
         await loadIncomingRequest();
@@ -2183,6 +2258,9 @@ export default function App() {
           {currentScreen === 'home' && (
             <View>
               <HomeScreen
+                mechanicProfile={mechanicProfile}
+                onStartIdentityVerification={handleStartIdentityVerification}
+                onSaveLaborRate={handleSaveLaborRate}
                 requestForm={requestForm}
                 setRequestForm={setRequestForm}
                 onToggleMechanicConnection={handleToggleMechanicConnection}

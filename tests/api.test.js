@@ -1,6 +1,11 @@
 process.env.MECANIFIQUE_AUTO_START = "false";
 
-const { startServer, sweepExpiredHolds } = require("../src/server.ts");
+const {
+  startServer,
+  sweepExpiredHolds,
+  applyMechanicConnection,
+  activateMechanicIfIdentityApproved
+} = require("../src/server.ts");
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
 const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
@@ -338,6 +343,83 @@ test("con coordenadas: un mecánico lejano no se elige solo porque su ciudad/zon
 
   const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
   assert.equal(request.mechanicId, null, "a 100 km no es un mecánico cercano, aunque el texto de la zona coincida");
+});
+
+// --- Conexión del mecánico ---
+
+async function createRegisteredMechanic(status) {
+  // Igual que un registro real: is_available = 0, is_online = 0.
+  const result = await run(
+    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online)
+     VALUES ('Mecánico Nuevo', ?, ?, 'Centro', 1, '["Motor"]', ?, 0, 0)`,
+    [uniquePhone(), `Ciudad-${crypto.randomUUID()}`, status]
+  );
+  createdRows.mechanics.push(result.lastID);
+  return result.lastID;
+}
+
+test("mecánico nuevo y activo: al conectarse queda disponible para recibir solicitudes", async () => {
+  const mechanicId = await createRegisteredMechanic("active");
+
+  const result = await applyMechanicConnection(mechanicId, true, true);
+
+  assert.deepEqual(result, { ok: true, isAvailable: true });
+  const row = await get("SELECT is_online AS isOnline, is_available AS isAvailable FROM mechanics WHERE id = ?", [mechanicId]);
+  assert.deepEqual(row, { isOnline: 1, isAvailable: 1 }, "antes quedaba con is_available = 0 y nunca recibía nada");
+});
+
+test("mecánico pendiente de verificación: no puede conectarse y recibe una explicación", async () => {
+  const mechanicId = await createRegisteredMechanic("pending_verification");
+
+  const result = await applyMechanicConnection(mechanicId, true, true);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 409);
+  assert.match(result.error, /verifica tu identidad/i);
+  const row = await get("SELECT is_online AS isOnline FROM mechanics WHERE id = ?", [mechanicId]);
+  assert.equal(row.isOnline, 0);
+});
+
+test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {
+  const mechanicId = await createRegisteredMechanic("active");
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);
+  const request = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', 'X', 'Centro', 'repairing', ?)`,
+    [customer.lastID, mechanicId]
+  );
+  createdRows.customers.push(customer.lastID);
+  createdRows.requests.push(request.lastID);
+
+  const result = await applyMechanicConnection(mechanicId, true, true);
+
+  assert.deepEqual(result, { ok: true, isAvailable: false }, "no debe recibir otra solicitud mientras repara");
+});
+
+test("mecánico pendiente con identidad ya aprobada (se verificó como cliente): se activa", async () => {
+  const mechanicId = await createRegisteredMechanic("pending_verification");
+  const supabaseUserId = crypto.randomUUID();
+  const user = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
+     VALUES ('mechanic', ?, ?, 'Mecánico Nuevo', 'x', 'x', ?)`,
+    [`${supabaseUserId}@example.test`, supabaseUserId, mechanicId]
+  );
+  await run(
+    "INSERT INTO identity_verifications (user_id, role, status, consent_at) VALUES (?, 'customer', 'approved', CURRENT_TIMESTAMP)",
+    [user.lastID]
+  );
+
+  try {
+    const activated = await activateMechanicIfIdentityApproved(mechanicId, user.lastID);
+
+    assert.equal(activated, true);
+    const row = await get("SELECT status FROM mechanics WHERE id = ?", [mechanicId]);
+    assert.equal(row.status, "active", "antes quedaba pendiente para siempre, sin forma de volver a verificarse");
+  } finally {
+    await run("DELETE FROM identity_verifications WHERE user_id = ?", [user.lastID]);
+    await run("DELETE FROM users WHERE id = ?", [user.lastID]);
+  }
 });
 
 test("con coordenadas: si nadie tiene ubicación, se usa la ciudad/zona escrita como respaldo", async () => {

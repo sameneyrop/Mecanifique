@@ -305,6 +305,37 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.semibold,
     textDecorationLine: 'underline',
   },
+  checklistStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  checklistBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryLighter,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  checklistBadgeDone: {
+    backgroundColor: '#16a34a',
+    borderColor: '#16a34a',
+  },
+  checklistBadgeText: {
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    color: colors.primaryDark,
+  },
+  checklistTitleDone: {
+    color: colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  connectionBlocked: {
+    opacity: 0.45,
+  },
   selectionRow: {
     flexDirection: 'row',
     alignItems: 'center',

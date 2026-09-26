@@ -25,6 +25,23 @@ mantener informadas a ambas partes.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,
   reparación, espera de refacciones, terminada o cancelada.
 - Hold temporal y respuesta de aceptar/rechazar para solicitudes entrantes.
+- **Onboarding del mecánico con checklist**: mientras la cuenta no está
+  lista, Inicio del mecánico muestra "Activa tu cuenta": 1) verificar
+  identidad (con su estado: en revisión, rechazada, etc.), 2) poner su
+  tarifa de mano de obra (obligatoria: sin ella no hay apartado), 3)
+  conectarse. CONECTARME queda deshabilitado mientras la cuenta no esté
+  activa, y el servidor también lo rechaza con una explicación
+  (`applyMechanicConnection`). La app lee el perfil propio en
+  `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
+  cada 20 s mientras está pendiente, así el checklist avanza solo cuando
+  Didit aprueba.
+- **Conectarse deja al mecánico disponible** (`is_available = 1`) salvo que
+  tenga un trabajo en curso. Antes se conservaba el valor anterior, y un
+  mecánico nuevo (registrado con 0) nunca recibía solicitudes automáticas.
+- **Dual-rol + identidad**: si un cliente ya verificado activa el modo
+  profesional, su perfil de mecánico nace activo (antes quedaba pendiente
+  para siempre); `GET /api/mechanics/me` reconcilia a quien ya estaba en
+  ese caso.
 - **Emparejamiento por distancia**: si la solicitud tiene coordenadas, se
   ofrece al mecánico disponible más cercano dentro de 25 km
   (`findAvailableMechanic`, `MATCH_RADIUS_KM`). La ciudad/zona escritas son
