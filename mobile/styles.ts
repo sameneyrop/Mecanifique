@@ -305,6 +305,16 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.semibold,
     textDecorationLine: 'underline',
   },
+  selectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.primaryLighter,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+  },
   searchingCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

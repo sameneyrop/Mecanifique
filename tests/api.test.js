@@ -229,24 +229,24 @@ function uniquePhone() {
   return `55${crypto.randomInt(10_000_000, 99_999_999)}`;
 }
 
-async function createOnlineMechanic(city, zone) {
+async function createOnlineMechanic(city, zone, coords = null) {
   const result = await run(
-    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online)
-     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1)`,
-    [`Mecánico ${crypto.randomUUID().slice(0, 6)}`, uniquePhone(), city, zone]
+    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online, latitude, longitude)
+     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1, ?, ?)`,
+    [`Mecánico ${crypto.randomUUID().slice(0, 6)}`, uniquePhone(), city, zone, coords?.latitude ?? null, coords?.longitude ?? null]
   );
   createdRows.mechanics.push(result.lastID);
   return result.lastID;
 }
 
-async function createPendingRequestWithExpiredHold(city, zone, mechanicId, assignmentMode) {
+async function createPendingRequestWithExpiredHold(city, zone, mechanicId, assignmentMode, coords = null) {
   const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);
   const request = await run(
     `INSERT INTO service_requests
        (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone,
-        status, mechanic_id, hold_expires_at, assignment_mode)
-     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', ?, ?, 'pending', ?, datetime('now', '-5 minutes'), ?)`,
-    [customer.lastID, city, zone, mechanicId, assignmentMode]
+        status, mechanic_id, hold_expires_at, assignment_mode, latitude, longitude)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', ?, ?, 'pending', ?, datetime('now', '-5 minutes'), ?, ?, ?)`,
+    [customer.lastID, city, zone, mechanicId, assignmentMode, coords?.latitude ?? null, coords?.longitude ?? null]
   );
   createdRows.customers.push(customer.lastID);
   createdRows.requests.push(request.lastID);
@@ -297,4 +297,58 @@ test("hold vencido sin otro mecánico disponible: la solicitud queda sin mecáni
 
   const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
   assert.equal(request.mechanicId, null, "no debe volver a ofrecérsela al mismo mecánico que no respondió");
+});
+
+// Puntos en medio del Pacífico Sur: la búsqueda por distancia no se limita
+// a la ciudad del test, así que se usa un lugar donde no puede haber
+// mecánicos reales en la base. Cada test usa su propia longitud (cientos de
+// km de separación) para que los mecánicos de un test no queden "cerca" del
+// cliente de otro.
+function pointsAround(longitude) {
+  return {
+    cliente: { latitude: -45.0, longitude },
+    a1Km: { latitude: -44.991, longitude },
+    a100Km: { latitude: -44.1, longitude }
+  };
+}
+
+test("con coordenadas: elige al mecánico más cercano aunque su zona esté escrita distinto", async () => {
+  const { cliente, a1Km, a100Km } = pointsAround(-140);
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const firstMechanic = await createOnlineMechanic(city, "Centro", cliente);
+  const farSameText = await createOnlineMechanic(city, "Centro", a100Km);
+  const nearDifferentText = await createOnlineMechanic(city, "Zona Centro", a1Km);
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", firstMechanic, "auto", cliente);
+
+  await sweepExpiredHolds();
+
+  const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(request.mechanicId, nearDifferentText, "debe elegir al que está a 1 km, no al de 100 km con el mismo texto");
+  assert.notEqual(request.mechanicId, farSameText);
+});
+
+test("con coordenadas: un mecánico lejano no se elige solo porque su ciudad/zona coincide", async () => {
+  const { cliente, a100Km } = pointsAround(-125);
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const firstMechanic = await createOnlineMechanic(city, "Centro", cliente);
+  await createOnlineMechanic(city, "Centro", a100Km);
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", firstMechanic, "auto", cliente);
+
+  await sweepExpiredHolds();
+
+  const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(request.mechanicId, null, "a 100 km no es un mecánico cercano, aunque el texto de la zona coincida");
+});
+
+test("con coordenadas: si nadie tiene ubicación, se usa la ciudad/zona escrita como respaldo", async () => {
+  const { cliente } = pointsAround(-110);
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const firstMechanic = await createOnlineMechanic(city, "Centro");
+  const noLocationSameZone = await createOnlineMechanic(city, "Centro");
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", firstMechanic, "auto", cliente);
+
+  await sweepExpiredHolds();
+
+  const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(request.mechanicId, noLocationSameZone);
 });

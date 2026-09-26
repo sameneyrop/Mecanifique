@@ -74,6 +74,7 @@ export function RequestsScreen({
   onOpenRequestActions,
   onCancelRequest,
   onSearchAgain,
+  onUseMyLocation,
   onSaveCurrentVehicle,
   onCreateRequest,
   onLoadRequestLookup,
@@ -105,6 +106,7 @@ export function RequestsScreen({
   onOpenRequestActions: (request: any) => void;
   onCancelRequest: (id: number) => void;
   onSearchAgain: (id: number) => void;
+  onUseMyLocation: () => void;
   onSaveCurrentVehicle: () => void;
   onCreateRequest: () => void;
   onLoadRequestLookup: () => void;
@@ -124,11 +126,39 @@ export function RequestsScreen({
     setMessage,
     vehicles,
     selectedRequest,
+    mechanics,
   } = useAppContext();
 
   if (!user) {
     return null;
   }
+
+  const chosenMechanicName = requestForm.requestedMechanicId
+    ? mechanics.find((mechanic) => String(mechanic.id) === requestForm.requestedMechanicId)?.fullName ?? 'Mecánico elegido'
+    : null;
+  const hasVehicle = Boolean(requestForm.vehicleMake.trim());
+  const hasGpsLocation = Boolean(requestForm.latitude && requestForm.longitude);
+
+  function clearChosenMechanic() {
+    setRequestForm((current) => ({
+      ...current,
+      requestedMechanicId: '',
+      scheduleSlotId: '',
+      // Si el horario venía del turno de ese mecánico, ya no aplica.
+      preferredTime: current.scheduleSlotId ? '' : current.preferredTime,
+    }));
+  }
+
+  const chosenMechanicRow = chosenMechanicName ? (
+    <View style={styles.selectionRow}>
+      <View style={styles.flex}>
+        <Text style={styles.smallText}>Mecánico elegido</Text>
+        <Text style={styles.itemTitle}>{chosenMechanicName}</Text>
+        {requestForm.scheduleSlotId ? <Text style={styles.smallText}>Turno: {requestForm.preferredTime}</Text> : null}
+      </View>
+      <SecondaryButton title="Quitar" compact onPress={clearChosenMechanic} />
+    </View>
+  ) : null;
 
   return (
     <>
@@ -242,25 +272,31 @@ export function RequestsScreen({
                   <View style={styles.publicProfileBox}>
                     <Text style={styles.publicProfileTitle}>Mis vehículos</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {vehicles.map((vehicle: VehicleProfile) => (
-                        <Pressable
-                          key={vehicle.id}
-                          style={styles.calendarChip}
-                          onPress={() =>
-                            setRequestForm({
-                              ...requestForm,
-                              vehicleMake: vehicle.make,
-                              vehicleModel: vehicle.model,
-                              vehicleYear: String(vehicle.year),
-                            })
-                          }
-                        >
-                          <Text style={styles.calendarChipText}>
-                            {vehicle.nickname || `${vehicle.make} ${vehicle.model}`}
-                          </Text>
-                          <Text style={styles.smallText}>{vehicle.year}</Text>
-                        </Pressable>
-                      ))}
+                      {vehicles.map((vehicle: VehicleProfile) => {
+                        const selected =
+                          requestForm.vehicleMake === vehicle.make &&
+                          requestForm.vehicleModel === vehicle.model &&
+                          requestForm.vehicleYear === String(vehicle.year);
+                        return (
+                          <Pressable
+                            key={vehicle.id}
+                            style={[styles.calendarChip, selected && styles.calendarChipActive]}
+                            onPress={() =>
+                              setRequestForm({
+                                ...requestForm,
+                                vehicleMake: vehicle.make,
+                                vehicleModel: vehicle.model,
+                                vehicleYear: String(vehicle.year),
+                              })
+                            }
+                          >
+                            <Text style={[styles.calendarChipText, selected && styles.calendarChipTextActive]}>
+                              {vehicle.nickname || `${vehicle.make} ${vehicle.model}`}
+                            </Text>
+                            <Text style={[styles.smallText, selected && styles.calendarChipTextActive]}>{vehicle.year}</Text>
+                          </Pressable>
+                        );
+                      })}
                     </ScrollView>
                   </View>
                 )}
@@ -273,13 +309,17 @@ export function RequestsScreen({
                     />
                   </Field>
                 )}
-                <Field label="Mecánico solicitado (opcional)">
-                  <Input
-                    value={requestForm.requestedMechanicId}
-                    keyboardType="numeric"
-                    onChangeText={(value) => setRequestForm({ ...requestForm, requestedMechanicId: value })}
-                  />
-                </Field>
+                {user.role === 'admin' ? (
+                  <Field label="Mecánico solicitado (ID, opcional)">
+                    <Input
+                      value={requestForm.requestedMechanicId}
+                      keyboardType="numeric"
+                      onChangeText={(value) => setRequestForm({ ...requestForm, requestedMechanicId: value })}
+                    />
+                  </Field>
+                ) : (
+                  chosenMechanicRow
+                )}
                 <View style={styles.row}>
                   <Field label="Marca" style={styles.flex}>
                     <Input value={requestForm.vehicleMake} onChangeText={(value) => setRequestForm({ ...requestForm, vehicleMake: value })} />
@@ -302,23 +342,36 @@ export function RequestsScreen({
               </View>
             ) : (
               <View style={styles.stack}>
+                {hasVehicle && (
+                  <View style={styles.selectionRow}>
+                    <View style={styles.flex}>
+                      <Text style={styles.smallText}>Vehículo</Text>
+                      <Text style={styles.itemTitle}>
+                        {requestForm.vehicleMake} {requestForm.vehicleModel} {requestForm.vehicleYear}
+                      </Text>
+                    </View>
+                    <SecondaryButton title="Cambiar" compact onPress={() => setRequestCreateStep('vehicle')} />
+                  </View>
+                )}
+                {user.role !== 'admin' && chosenMechanicRow}
                 <Field label="Descripción de la falla">
                   <Input
                     value={requestForm.issueDescription}
                     onChangeText={(value) => setRequestForm({ ...requestForm, issueDescription: value })}
                     multiline
                     maxLength={1000}
+                    placeholder="Ej. No enciende, hace un ruido al frenar…"
                   />
                   <CharCounter value={requestForm.issueDescription} max={1000} />
                 </Field>
-                <Text style={styles.smallText}>
-                  {requestForm.requestedMechanicId
-                    ? `Agenda del mecánico #${requestForm.requestedMechanicId}`
-                    : 'Si quieres elegir un turno, primero escribe un mecánico solicitado arriba.'}
-                </Text>
+                {!requestForm.requestedMechanicId && (
+                  <Text style={styles.smallText}>
+                    ¿Quieres un mecánico o turno específico? Búscalo en la pestaña Mecánicos.
+                  </Text>
+                )}
                 {requestMechanicIdNumber && requestMechanicSlots.length > 0 && (
                   <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>Agenda del mecánico #{requestMechanicIdNumber}</Text>
+                    <Text style={styles.publicProfileTitle}>Turnos de {chosenMechanicName ?? 'este mecánico'}</Text>
                     <View style={styles.calendarStrip}>
                       {requestMechanicSlotsDates.map((date) => {
                         const label = formatCalendarDate(date);
@@ -383,27 +436,39 @@ export function RequestsScreen({
                     </View>
                   </View>
                 )}
-                <Text style={styles.smallText}>
-                  {requestForm.scheduleSlotId
-                    ? `Turno seleccionado #${requestForm.scheduleSlotId}`
-                    : 'Puedes enviar la solicitud sin turno o elegir uno disponible.'}
-                </Text>
-                <Field label="Programar visita (opcional)">
-                  <Input
-                    value={requestForm.preferredTime}
-                    onChangeText={(value) => setRequestForm({ ...requestForm, preferredTime: value })}
-                    placeholder="Déjalo vacío para solicitar ahora"
-                  />
-                </Field>
-                <Field label="Dirección del servicio">
-                  <Input
-                    value={requestForm.serviceAddress}
-                    onChangeText={(value) => setRequestForm({ ...requestForm, serviceAddress: value })}
-                    placeholder="Calle, número, colonia y referencias"
-                  />
-                </Field>
-                <Text style={styles.smallText}>El mecánico verá esta dirección como destino del servicio.</Text>
-                <Text style={styles.smallText}>Zona por defecto: {requestForm.city} · {requestForm.zone}</Text>
+                {!requestForm.scheduleSlotId && (
+                  <Field label="¿Para cuándo? (opcional)">
+                    <Input
+                      value={requestForm.preferredTime}
+                      onChangeText={(value) => setRequestForm({ ...requestForm, preferredTime: value })}
+                      placeholder="Déjalo vacío para pedirlo ahora"
+                    />
+                  </Field>
+                )}
+                <View style={styles.publicProfileBox}>
+                  <Text style={styles.publicProfileTitle}>¿Dónde está tu auto?</Text>
+                  <Text style={styles.smallText}>
+                    {hasGpsLocation
+                      ? 'Usamos tu ubicación actual para encontrarte al mecánico más cercano.'
+                      : 'Sin ubicación GPS: buscaremos por ciudad y zona.'}
+                  </Text>
+                  <Field label="Dirección">
+                    <Input
+                      value={requestForm.serviceAddress}
+                      onChangeText={(value) => setRequestForm({ ...requestForm, serviceAddress: value })}
+                      placeholder="Calle, número, colonia y referencias"
+                    />
+                  </Field>
+                  <View style={styles.row}>
+                    <Field label="Ciudad" style={styles.flex}>
+                      <Input value={requestForm.city} onChangeText={(value) => setRequestForm({ ...requestForm, city: value })} />
+                    </Field>
+                    <Field label="Zona" style={styles.flex}>
+                      <Input value={requestForm.zone} onChangeText={(value) => setRequestForm({ ...requestForm, zone: value })} />
+                    </Field>
+                  </View>
+                  <SecondaryButton title="Usar mi ubicación actual" compact busy={busy} onPress={onUseMyLocation} />
+                </View>
                 <PrimaryButton
                   title={requestForm.preferredTime.trim() ? 'Programar solicitud' : 'Solicitar mecánico ahora'}
                   onPress={onCreateRequest}

@@ -264,7 +264,7 @@ export function MechanicsScreen({
                             setCurrentScreen('requests');
                             setRequestsView('create');
                             setRequestCreateStep('vehicle');
-                            setMessage(`Turno #${slot.id} preparado para solicitud`);
+                            setMessage(`Turno del ${slot.slotDate} a las ${slot.startTime} con ${mechanic.fullName}`);
                           }}
                         />
                       )}
@@ -283,7 +283,7 @@ export function MechanicsScreen({
                   setRequestForm({ ...requestForm, requestedMechanicId: String(mechanic.id) });
                   setCurrentScreen('requests');
                   setRequestsView('create');
-                  setMessage(`Solicitud preparada para mecánico #${mechanic.id}`);
+                  setMessage(`Solicitud preparada para ${mechanic.fullName}`);
                 }}
               />
             )}

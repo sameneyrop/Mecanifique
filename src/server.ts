@@ -707,42 +707,92 @@ function parseSpecialties(raw: string): string[] {
 // buscaba a otro; si el hold vencía sin respuesta, no pasaba nada en absoluto.
 // En ambos casos el cliente veía "Pendiente" para siempre.
 
+const MATCH_RADIUS_KM = 25;
+
+// Condiciones para que un mecánico pueda recibir una oferta ahora mismo.
+// Usa dos parámetros: requestId (dos veces) para excluir a quien ya no la
+// tomó.
+const ELIGIBLE_MECHANIC_CONDITIONS = `
+  status = 'active'
+  AND is_online = 1
+  AND is_available = 1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM service_requests held
+    WHERE held.mechanic_id = mechanics.id
+      AND held.status = 'pending'
+      AND held.hold_expires_at IS NOT NULL
+      AND held.hold_expires_at > CURRENT_TIMESTAMP
+  )
+  AND (
+    ? IS NULL OR NOT EXISTS (
+      SELECT 1
+      FROM service_request_declines declined
+      WHERE declined.service_request_id = ?
+        AND declined.mechanic_id = mechanics.id
+    )
+  )
+`;
+
 /**
- * Mecánico disponible en la zona con mejor reputación. Si se pasa
- * requestId, excluye a quienes ya no tomaron esa solicitud.
+ * Siguiente mecánico para una solicitud. Si la solicitud tiene coordenadas,
+ * el más cercano dentro de MATCH_RADIUS_KM. Si no hay nadie cerca (o la
+ * solicitud no tiene coordenadas), cae a coincidencia por ciudad/zona
+ * escritas — antes era la única forma, y fallaba con cualquier diferencia de
+ * texto ("Norte" vs "Zona Norte") aunque estuvieran a 2 km. En ese respaldo,
+ * si la solicitud sí tiene coordenadas, solo cuentan mecánicos sin ubicación
+ * conocida: uno que sabemos que está lejos no se elige por el texto.
+ * Si se pasa requestId, excluye a quienes ya no tomaron esa solicitud.
  */
-async function findAvailableMechanic(city: string, zone: string, requestId: number | null): Promise<number | null> {
+async function findAvailableMechanic(
+  city: string,
+  zone: string,
+  requestId: number | null,
+  coords: { latitude: number; longitude: number } | null
+): Promise<number | null> {
+  if (coords) {
+    const candidates = await all<{ id: number; latitude: number; longitude: number; rating: number }>(
+      `
+      SELECT id, latitude, longitude, rating
+      FROM mechanics
+      WHERE latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND ${ELIGIBLE_MECHANIC_CONDITIONS}
+      `,
+      [requestId, requestId]
+    );
+    const nearest = candidates
+      .map((mechanic) => ({
+        id: mechanic.id,
+        rating: mechanic.rating,
+        distanceKm: calculateDistanceKm(coords.latitude, coords.longitude, mechanic.latitude, mechanic.longitude)
+      }))
+      .filter((mechanic) => mechanic.distanceKm <= MATCH_RADIUS_KM)
+      .sort((a, b) => a.distanceKm - b.distanceKm || b.rating - a.rating)[0];
+    if (nearest) {
+      return nearest.id;
+    }
+  }
+
   const row = await get<{ id: number }>(
     `
     SELECT id
     FROM mechanics
-    WHERE status = 'active'
-      AND is_online = 1
-      AND is_available = 1
-      AND city = ?
+    WHERE city = ?
       AND zone = ?
-      AND NOT EXISTS (
-        SELECT 1
-        FROM service_requests held
-        WHERE held.mechanic_id = mechanics.id
-          AND held.status = 'pending'
-          AND held.hold_expires_at IS NOT NULL
-          AND held.hold_expires_at > CURRENT_TIMESTAMP
-      )
-      AND (
-        ? IS NULL OR NOT EXISTS (
-          SELECT 1
-          FROM service_request_declines declined
-          WHERE declined.service_request_id = ?
-            AND declined.mechanic_id = mechanics.id
-        )
-      )
+      ${coords ? "AND (latitude IS NULL OR longitude IS NULL)" : ""}
+      AND ${ELIGIBLE_MECHANIC_CONDITIONS}
     ORDER BY rating DESC, jobs_completed DESC
     LIMIT 1
     `,
     [city, zone, requestId, requestId]
   );
   return row?.id ?? null;
+}
+
+/** Coordenadas de una fila de solicitud, o null si no las tiene. */
+function requestCoords(row: { latitude: number | null; longitude: number | null }): { latitude: number; longitude: number } | null {
+  return row.latitude != null && row.longitude != null ? { latitude: row.latitude, longitude: row.longitude } : null;
 }
 
 /** Ofrece una solicitud sin mecánico a uno nuevo, con su propio hold. */
@@ -794,9 +844,17 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
     [requestId, mechanicId, reason]
   );
 
-  const request = await get<{ city: string; zone: string; customerId: number; assignmentMode: string | null; status: string }>(
+  const request = await get<{
+    city: string;
+    zone: string;
+    latitude: number | null;
+    longitude: number | null;
+    customerId: number;
+    assignmentMode: string | null;
+    status: string;
+  }>(
     `
-    SELECT city, zone, customer_id AS customerId, assignment_mode AS assignmentMode, status
+    SELECT city, zone, latitude, longitude, customer_id AS customerId, assignment_mode AS assignmentMode, status
     FROM service_requests
     WHERE id = ?
     `,
@@ -824,7 +882,7 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
     return;
   }
 
-  const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId);
+  const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId, requestCoords(request));
   if (nextMechanicId && (await offerRequestToMechanic(requestId, nextMechanicId))) {
     return;
   }
@@ -1755,7 +1813,11 @@ app.post(
     const assignmentMode: "auto" | "direct" = requestedMechanicId || scheduleSlotId ? "direct" : "auto";
 
     if (!requestedMechanicId && !scheduleSlotId) {
-      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null)) ?? undefined;
+      const coords =
+        payload.latitude != null && payload.longitude != null
+          ? { latitude: payload.latitude, longitude: payload.longitude }
+          : null;
+      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null, coords)) ?? undefined;
     }
 
     const holdExpiresAt = requestedMechanicId
@@ -2992,9 +3054,17 @@ app.post(
       return;
     }
 
-    const request = await get<{ customerId: number; status: string; mechanicId: number | null; city: string; zone: string }>(
+    const request = await get<{
+      customerId: number;
+      status: string;
+      mechanicId: number | null;
+      city: string;
+      zone: string;
+      latitude: number | null;
+      longitude: number | null;
+    }>(
       `
-      SELECT customer_id AS customerId, status, mechanic_id AS mechanicId, city, zone
+      SELECT customer_id AS customerId, status, mechanic_id AS mechanicId, city, zone, latitude, longitude
       FROM service_requests
       WHERE id = ?
       `,
@@ -3018,7 +3088,7 @@ app.post(
     // volver a ofrecer. Quien rechazó explícitamente no se vuelve a molestar.
     await run("DELETE FROM service_request_declines WHERE service_request_id = ? AND reason = 'expired'", [requestId]);
 
-    const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId);
+    const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId, requestCoords(request));
     const found = nextMechanicId !== null && (await offerRequestToMechanic(requestId, nextMechanicId));
     res.status(200).json({ found });
   })

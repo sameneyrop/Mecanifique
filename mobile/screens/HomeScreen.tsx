@@ -44,6 +44,7 @@ type HomeScreenProps = {
   onEmergencyCall: () => void;
   onSendMessage: () => void;
   onAdvanceJob: (requestId: number, status: string) => void;
+  onUseMyLocation: () => void;
 };
 
 const TRUST_BADGES: Array<{ icon: keyof typeof Ionicons.glyphMap; label: string }> = [
@@ -121,20 +122,27 @@ function TrustBadge({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; lab
 function CustomerSearch({
   requestForm,
   setRequestForm,
+  onUseMyLocation,
 }: {
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
+  onUseMyLocation: () => void;
 }) {
-  const { user, setCurrentScreen, setRequestsView, setRequestCreateStep, setMessage } = useAppContext();
+  const { user, busy, setCurrentScreen, setRequestsView, setRequestCreateStep, setMessage } = useAppContext();
   const [when, setWhen] = useState<'now' | 'schedule'>('now');
+  const hasGpsLocation = Boolean(requestForm.latitude && requestForm.longitude);
 
   function handleSearch() {
+    // Los turnos reales viven en la agenda de cada mecánico (pestaña
+    // Mecánicos): una solicitud automática se le ofrece a alguien ahora mismo.
+    if (when === 'schedule') {
+      setCurrentScreen('mechanics');
+      setMessage('Elige un mecánico y uno de sus turnos disponibles.');
+      return;
+    }
     setRequestCreateStep('vehicle');
     setRequestsView('create');
     setCurrentScreen('requests');
-    if (when === 'schedule') {
-      setMessage('Ahora indica cuándo prefieres el servicio');
-    }
   }
 
   return (
@@ -159,7 +167,14 @@ function CustomerSearch({
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
-        <Card title="Busca un mecánico" subtitle="Escribe tu ciudad y zona para encontrarte el mejor servicio.">
+        <Card
+          title="Busca un mecánico"
+          subtitle={
+            hasGpsLocation
+              ? 'Usamos tu ubicación actual para encontrarte al mecánico más cercano.'
+              : 'Permite tu ubicación o escribe tu ciudad y zona.'
+          }
+        >
           <View style={styles.stack}>
             <View style={styles.row}>
               <Field label="Ciudad" style={styles.flex}>
@@ -169,6 +184,7 @@ function CustomerSearch({
                 <Input value={requestForm.zone} onChangeText={(value) => setRequestForm((current) => ({ ...current, zone: value }))} />
               </Field>
             </View>
+            <SecondaryButton title="Usar mi ubicación actual" compact busy={busy} onPress={onUseMyLocation} />
             <View style={styles.row}>
               <Pressable
                 style={[styles.whenOption, when === 'now' && styles.whenOptionActive, styles.flex]}
@@ -184,7 +200,7 @@ function CustomerSearch({
               >
                 <Ionicons name="calendar-outline" size={18} color={when === 'schedule' ? colors.primary : colors.textSecondary} />
                 <Text style={[styles.whenOptionTitle, when === 'schedule' && styles.whenOptionTitleActive]}>Agendar fecha</Text>
-                <Text style={styles.smallText}>Elige el día y la hora que prefieras.</Text>
+                <Text style={styles.smallText}>Elige un mecánico y uno de sus turnos.</Text>
               </Pressable>
             </View>
             <PrimaryButton title="Buscar" onPress={handleSearch} />
@@ -213,7 +229,13 @@ function CustomerHome(props: HomeScreenProps) {
   const { activeId, detail } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
 
   if (activeId === null) {
-    return <CustomerSearch requestForm={props.requestForm} setRequestForm={props.setRequestForm} />;
+    return (
+      <CustomerSearch
+        requestForm={props.requestForm}
+        setRequestForm={props.setRequestForm}
+        onUseMyLocation={props.onUseMyLocation}
+      />
+    );
   }
   if (!detail) {
     return <LoadingServiceCard />;

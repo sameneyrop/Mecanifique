@@ -25,6 +25,20 @@ mantener informadas a ambas partes.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,
   reparación, espera de refacciones, terminada o cancelada.
 - Hold temporal y respuesta de aceptar/rechazar para solicitudes entrantes.
+- **Emparejamiento por distancia**: si la solicitud tiene coordenadas, se
+  ofrece al mecánico disponible más cercano dentro de 25 km
+  (`findAvailableMechanic`, `MATCH_RADIUS_KM`). La ciudad/zona escritas son
+  solo respaldo, y solo para mecánicos sin ubicación registrada (antes era
+  la única forma, y fallaba con cualquier diferencia de texto). El mecánico
+  manda su ubicación al conectarse (CONECTARME), además de durante un
+  servicio activo.
+- **Pedir un servicio con menos pasos**: la ubicación de la solicitud se
+  llena sola con el GPS (coordenadas + ciudad/zona/dirección por
+  geocodificación inversa, todo editable, con botón "Usar mi ubicación
+  actual"); el vehículo principal se preselecciona y se salta ese paso; el
+  mecánico elegido desde Mecánicos se muestra por nombre con "Quitar" (ya no
+  se escribe su ID). "Agendar fecha" en Inicio lleva a Mecánicos, donde
+  están los turnos reales de cada mecánico.
 - **Solicitud entrante a pantalla completa** (mecánico conectado): aparece
   encima de cualquier pantalla (`mobile/components/IncomingRequestOverlay.tsx`)
   con vibración, cuenta regresiva del hold, vehículo, falla, dirección,

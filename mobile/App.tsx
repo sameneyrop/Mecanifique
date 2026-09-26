@@ -31,7 +31,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -299,6 +299,11 @@ const ONBOARDING_STEPS = [
   },
 ] as const;
 
+// Valores de relleno del formulario de solicitud; el GPS los reemplaza
+// apenas hay ubicación (pero nunca pisa lo que el usuario escribió).
+const DEFAULT_REQUEST_CITY = 'Aguascalientes';
+const DEFAULT_REQUEST_ZONE = 'Norte';
+
 function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
   switch (screen) {
     case 'home':
@@ -391,8 +396,8 @@ export default function App() {
     vehicleYear: '2020',
     issueDescription: '',
     preferredTime: '',
-    city: 'Aguascalientes',
-    zone: 'Norte',
+    city: DEFAULT_REQUEST_CITY,
+    zone: DEFAULT_REQUEST_ZONE,
     serviceAddress: '',
     customerId: '',
     requestedMechanicId: '',
@@ -666,6 +671,38 @@ export default function App() {
     }
   }, [requestsView]);
 
+  // Al entrar a crear una solicitud, si el cliente ya tiene vehículos se
+  // precarga el principal y se salta directo a los detalles (antes se le
+  // preguntaba el vehículo cada vez). Puede cambiarlo desde ahí.
+  useEffect(() => {
+    if (requestsView !== 'create' || user?.role !== 'customer') {
+      return;
+    }
+    const primaryVehicle = vehicles.find((vehicle) => vehicle.isPrimary) ?? vehicles[0];
+    if (primaryVehicle && !requestForm.vehicleMake.trim()) {
+      setRequestForm((current) => ({
+        ...current,
+        vehicleMake: primaryVehicle.make,
+        vehicleModel: primaryVehicle.model,
+        vehicleYear: String(primaryVehicle.year),
+      }));
+    }
+    if (primaryVehicle || requestForm.vehicleMake.trim()) {
+      setRequestCreateStep('details');
+    }
+  }, [requestsView]);
+
+  // La ubicación del formulario se llena sola con el GPS una vez por sesión
+  // (la geocodificación inversa no debe repetirse en cada refresco).
+  const requestLocationPrefilled = useRef(false);
+  useEffect(() => {
+    if (user?.role !== 'customer' || !currentLocation || requestLocationPrefilled.current) {
+      return;
+    }
+    requestLocationPrefilled.current = true;
+    void fillRequestLocation(currentLocation, false);
+  }, [user?.role, currentLocation]);
+
   useEffect(() => {
     if (!requestMechanicIdNumber || Number.isNaN(requestMechanicIdNumber)) {
       setRequestMechanicSlots([]);
@@ -908,6 +945,7 @@ export default function App() {
     setSelectedRequestScheduleDate('');
     setMechanicConnection('offline');
     setLocationAutoRequested(false);
+    requestLocationPrefilled.current = false;
     await Promise.all([
       SecureStore.deleteItemAsync(AUTH_TOKEN_KEY),
       SecureStore.deleteItemAsync(AUTH_USER_KEY),
@@ -1201,6 +1239,69 @@ export default function App() {
     return coords;
   }
 
+  /**
+   * Ubicación de la solicitud desde el GPS: las coordenadas (con las que el
+   * backend busca al mecánico más cercano y el mecánico usa "Cómo llegar")
+   * y, por geocodificación inversa, ciudad/zona/dirección como texto
+   * editable. Sin `overwrite` no pisa lo que el usuario ya escribió.
+   */
+  async function fillRequestLocation(coords: { latitude: number; longitude: number }, overwrite: boolean) {
+    setRequestForm((current) => ({ ...current, latitude: String(coords.latitude), longitude: String(coords.longitude) }));
+
+    let address: Location.LocationGeocodedAddress | undefined;
+    try {
+      [address] = await Location.reverseGeocodeAsync(coords);
+    } catch {
+      // Sin texto de dirección igual quedan las coordenadas, que son las que
+      // usa la búsqueda del mecánico.
+      return;
+    }
+    if (!address) {
+      return;
+    }
+
+    const city = address.city || address.subregion || '';
+    const zone = address.district || address.subregion || '';
+    const street = [address.street, address.streetNumber].filter(Boolean).join(' ');
+    const serviceAddress = [street, address.district].filter(Boolean).join(', ');
+    setRequestForm((current) => ({
+      ...current,
+      city: city && (overwrite || !current.city.trim() || current.city === DEFAULT_REQUEST_CITY) ? city : current.city,
+      zone: zone && (overwrite || !current.zone.trim() || current.zone === DEFAULT_REQUEST_ZONE) ? zone : current.zone,
+      serviceAddress: serviceAddress && (overwrite || !current.serviceAddress.trim()) ? serviceAddress : current.serviceAddress,
+    }));
+  }
+
+  async function handleUseMyLocation() {
+    setBusy(true);
+    try {
+      const coords = await requestCurrentLocation();
+      await fillRequestLocation(coords, true);
+      setMessage('Usando tu ubicación actual');
+    } catch (error) {
+      setMessage(`No se pudo obtener tu ubicación: ${formatError(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Al conectarse, el mecánico manda su ubicación para que lo encuentren por distancia. */
+  async function sendMechanicLocation() {
+    if (!user?.mechanicId) {
+      return;
+    }
+    const coords = await requestCurrentLocation().catch(() => currentLocation);
+    if (!coords) {
+      // Sin ubicación se le sigue ofreciendo trabajo por ciudad/zona.
+      return;
+    }
+    await apiRequest(`/api/mechanics/${user.mechanicId}/location`, {
+      method: 'PATCH',
+      token,
+      body: { latitude: coords.latitude, longitude: coords.longitude },
+    }).catch(() => undefined);
+  }
+
   async function loadMyRequests(nextToken = token) {
     const data = await apiRequest<RequestSummary[]>('/api/service-requests/mine', {
       token: nextToken,
@@ -1454,8 +1555,11 @@ export default function App() {
     setMessage('Creando solicitud...');
 
     try {
-      const latitude = requestForm.latitude ? Number(requestForm.latitude) : undefined;
-      const longitude = requestForm.longitude ? Number(requestForm.longitude) : undefined;
+      // Respaldo: si el formulario todavía no tiene coordenadas, se usa la
+      // ubicación actual (sin coordenadas no hay búsqueda por distancia ni
+      // "Cómo llegar" para el mecánico).
+      const latitude = requestForm.latitude ? Number(requestForm.latitude) : currentLocation?.latitude;
+      const longitude = requestForm.longitude ? Number(requestForm.longitude) : currentLocation?.longitude;
       const payload = {
         vehicleMake: requestForm.vehicleMake,
         vehicleModel: requestForm.vehicleModel,
@@ -1618,6 +1722,7 @@ export default function App() {
       });
       setMechanicConnection(next);
       if (next === 'online') {
+        void sendMechanicLocation();
         await loadIncomingRequest();
       } else {
         setIncomingRequest(null);
@@ -2088,6 +2193,7 @@ export default function App() {
                 onEmergencyCall={handleEmergencyCall}
                 onSendMessage={handleSendMessage}
                 onAdvanceJob={handleAdvanceJob}
+                onUseMyLocation={handleUseMyLocation}
               />
             </View>
           )}
@@ -2145,6 +2251,7 @@ export default function App() {
               onOpenRequestActions={openRequestActions}
               onCancelRequest={handleCancelRequest}
               onSearchAgain={handleSearchAgain}
+              onUseMyLocation={handleUseMyLocation}
               onSaveCurrentVehicle={saveCurrentVehicle}
               onCreateRequest={handleCreateRequest}
               onLoadRequestLookup={handleLoadRequest}
