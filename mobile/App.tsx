@@ -323,6 +323,16 @@ const ONBOARDING_STEPS = [
 const DEFAULT_REQUEST_CITY = 'Aguascalientes';
 const DEFAULT_REQUEST_ZONE = 'Norte';
 
+// Primer nombre para el saludo. Si la cuenta no tiene nombre, fullName es
+// el correo: se usa lo que va antes de la @.
+function getFirstName(fullName: string | undefined): string {
+  const name = (fullName || '').trim();
+  if (name.includes('@')) {
+    return name.split('@')[0];
+  }
+  return name.split(/\s+/)[0] || '';
+}
+
 function splitGalleryUrls(value: string): string[] {
   return value
     .split(',')
@@ -2442,7 +2452,12 @@ export default function App() {
       <StatusBar style="dark" />
       <Toast message={message} onDismiss={() => setMessage('')} />
       <View style={styles.content}>
-        <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+        <View style={styles.topBar}>
+          <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+          <Text style={styles.topBarGreeting} numberOfLines={1}>
+            Bienvenido, <Text style={styles.topBarGreetingName}>{getFirstName(currentUser?.fullName)}</Text>
+          </Text>
+        </View>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}

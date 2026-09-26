@@ -39,6 +39,23 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 28,
   },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  topBarGreeting: {
+    flexShrink: 1,
+    textAlign: 'right',
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: colors.textSecondary,
+  },
+  topBarGreetingName: {
+    fontFamily: fonts.bold,
+    color: colors.textDark,
+  },
   logoWordmark: {
     alignSelf: 'flex-start',
     width: 130,
