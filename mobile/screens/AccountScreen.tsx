@@ -48,7 +48,7 @@ export function AccountScreen({
     specialties?: string[];
   }) => Promise<void>;
 }) {
-  const { user, identityState, identityBusy, notifications, busy, setMessage } = useAppContext();
+  const { user, identityState, identityBusy, notifications, busy, setMessage, setCurrentScreen, vehicles } = useAppContext();
   const [expanded, setExpanded] = useState<'personal' | 'about' | 'switchToPro' | null>(null);
   const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
   const [visibleNotifications, setVisibleNotifications] = useState(NOTIFICATIONS_PAGE_SIZE);
@@ -163,6 +163,14 @@ export function AccountScreen({
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         <Card title="Mi cuenta">
           <View>
+            {user.role === 'customer' && (
+              <MenuRow
+                icon="car-sport-outline"
+                label="Mis vehículos"
+                badge={vehicles.length > 0 ? String(vehicles.length) : undefined}
+                onPress={() => setCurrentScreen('vehicles')}
+              />
+            )}
             <MenuRow icon="person-outline" label="Información personal" onPress={() => toggle('personal')} />
             {expanded === 'personal' && (
               <View style={[styles.publicProfileBox, { marginBottom: 8 }]}>

@@ -338,7 +338,7 @@ function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
     case 'requests':
       return 'Tus solicitudes';
     case 'map':
-      return role === 'mechanic' ? 'Tu zona de trabajo' : 'Mecánicos cerca de ti';
+      return 'Tu zona de trabajo';
     case 'actions':
       return 'Acciones';
     case 'account':
@@ -812,6 +812,10 @@ export default function App() {
     }
     if (currentScreen === 'requests' && requestsView !== 'list') {
       setRequestsView('list');
+      return true;
+    }
+    if (currentScreen === 'vehicles') {
+      setCurrentScreen('account');
       return true;
     }
     if (currentScreen !== 'home') {
@@ -2532,7 +2536,7 @@ export default function App() {
             </View>
           )}
 
-          {currentScreen === 'map' && currentUser && (
+          {currentScreen === 'map' && currentUser?.role === 'mechanic' && (
             <View style={styles.screenStack}>
               <MapScreen onRespondToIncoming={handleIncomingResponse} />
             </View>
@@ -2614,24 +2618,17 @@ export default function App() {
               accessibilityLabel="Mecánicos"
             />
           )}
-          <BottomNavButton
-            active={currentScreen === 'map'}
-            onPress={() => setCurrentScreen('map')}
-            iconName="map-outline"
-            label="Mapa"
-            accessibilityLabel="Mapa"
-          />
-          {currentUser?.role === 'customer' && (
+          {currentUser?.role === 'mechanic' && (
             <BottomNavButton
-              active={currentScreen === 'vehicles'}
-              onPress={() => setCurrentScreen('vehicles')}
-              iconName="car-sport-outline"
-              label="Vehículo"
-              accessibilityLabel="Mis vehículos"
+              active={currentScreen === 'map'}
+              onPress={() => setCurrentScreen('map')}
+              iconName="map-outline"
+              label="Mapa"
+              accessibilityLabel="Mapa"
             />
           )}
           <BottomNavButton
-            active={currentScreen === 'actions' || currentScreen === 'account'}
+            active={currentScreen === 'actions' || currentScreen === 'account' || currentScreen === 'vehicles'}
             onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
             iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
             label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}

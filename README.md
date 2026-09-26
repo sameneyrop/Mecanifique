@@ -134,11 +134,16 @@ veo este bug"):
 | 1 | Login/Registro | `mobile/screens/LoginScreen.tsx` | Usuarios no logueados |
 | 2 | Home | `mobile/screens/HomeScreen.tsx` | Todos. Cliente: su servicio en curso si tiene uno, si no la búsqueda. Mecánico: su trabajo en curso (con botón de siguiente paso) + conectar/desconectar |
 | 3 | Solicitudes | `mobile/screens/RequestsScreen.tsx` | Todos (lista/crear/detalle) |
-| 4 | Mecánicos | `mobile/screens/MechanicsScreen.tsx` | Customer/Admin |
-| 5 | Mapa | `mobile/screens/MapScreen.tsx` | Todos |
+| 4 | Mecánicos | `mobile/screens/MechanicsScreen.tsx` | Customer/Admin. Arriba el radar de conectados cerca (antes en Mapa), abajo búsqueda por zona y perfil |
+| 5 | Mapa | `mobile/screens/MapScreen.tsx` | Mechanic (solicitud entrante y trabajo en curso) |
 | 6 | Acciones | `mobile/screens/ActionsScreen.tsx` | Mechanic/Admin |
 | 7 | Cuenta | `mobile/screens/AccountScreen.tsx` | Customer |
-| 8 | Vehículos | `mobile/screens/VehiclesScreen.tsx` | Customer |
+| 8 | Vehículos | `mobile/screens/VehiclesScreen.tsx` | Customer, desde Cuenta → "Mis vehículos" |
+
+Barra inferior: el cliente tiene 4 botones (Inicio, Solicitudes, Mecánicos,
+Cuenta); el mecánico, 4 (Inicio, Solicitudes, Mapa, Acciones). Mapa y
+Vehículos ya no son botones del cliente: el radar vive en Mecánicos y los
+vehículos en Cuenta (y se eligen o guardan al pedir un servicio).
 
 **Pendiente de UX conocido:** React Navigation está instalado
 (`mobile/index.tsx`) pero no se usa para navegar — el cambio entre

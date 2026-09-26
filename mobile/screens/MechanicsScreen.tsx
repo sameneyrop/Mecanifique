@@ -6,7 +6,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, EmptyState, Field, ImagePlaceholder, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Card, EmptyState, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { MechanicRadar } from '../components/MechanicRadar';
 import { formatError, getMechanicPublicStatus, formatCalendarDate } from '../utils';
 
 type ScheduleSlot = {
@@ -88,6 +89,7 @@ export function MechanicsScreen({
   const {
     user,
     mechanics,
+    nearbyMechanics,
     currentLocation,
     busy,
     setBusy,
@@ -119,7 +121,6 @@ export function MechanicsScreen({
     try {
       const coords = currentLocation || (await onRequestCurrentLocation());
       await onLoadNearbyMechanics(coords.latitude, coords.longitude);
-      setMessage('Mecánicos cercanos cargados');
     } catch (error) {
       setMessage(formatError(error));
     } finally {
@@ -127,20 +128,81 @@ export function MechanicsScreen({
     }
   }
 
+  // Los cercanos vienen del radar; su perfil completo (turnos, reseñas) se
+  // abre eligiéndolo en la lista general de mecánicos.
+  function openNearbyProfile(mechanicId: number) {
+    const index = mechanics.findIndex((mechanic) => mechanic.id === mechanicId);
+    if (index >= 0) {
+      setMechanicCursor(() => index);
+      setMessage('Perfil abierto abajo');
+    }
+  }
+
   return (
     <>
       <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
         <Card
-          title="Busca por zona"
+          title="Cerca de ti ahora"
           subtitle={
-            currentLocation
-              ? 'Tenemos tu ubicación: puedes ver primero a los más cercanos.'
-              : 'Escribe tu ciudad y zona, o permite tu ubicación.'
+            !currentLocation
+              ? 'Necesitamos tu ubicación para mostrarte quién está cerca.'
+              : nearbyMechanics.length > 0
+                ? `${nearbyMechanics.length === 1 ? '1 mecánico conectado' : `${nearbyMechanics.length} mecánicos conectados`} a menos de 25 km.`
+                : 'Se actualiza solo cada pocos segundos.'
           }
         >
           <View style={styles.stack}>
-            {/* PLACEHOLDER: ilustración de búsqueda de mecánicos */}
-            <ImagePlaceholder icon="search-outline" compact />
+            {currentLocation && nearbyMechanics.length > 0 ? (
+              <>
+                <MechanicRadar userLocation={currentLocation} mechanics={nearbyMechanics} maxDistanceKm={25} />
+                <View style={styles.list}>
+                  {nearbyMechanics.map((mechanic) => (
+                    <Pressable
+                      key={`nearby-${mechanic.id}`}
+                      style={({ pressed }) => [styles.item, pressed && styles.buttonPressed]}
+                      onPress={() => openNearbyProfile(mechanic.id)}
+                      accessibilityRole="button"
+                    >
+                      <View style={styles.itemHeader}>
+                        <View style={styles.itemIcon}>
+                          <Ionicons name="person-outline" size={20} color={colors.primary} />
+                        </View>
+                        <View style={styles.flex}>
+                          <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
+                          <Text style={styles.smallText}>
+                            a {mechanic.distanceKm?.toFixed(1) ?? '?'} km · {mechanic.zone}, {mechanic.city}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <EmptyState
+                icon="map-outline"
+                title={currentLocation ? 'Nadie conectado cerca todavía' : 'Sin ubicación'}
+                text={
+                  currentLocation
+                    ? 'Puedes pedir un servicio de todos modos: te avisamos en cuanto un mecánico lo tome.'
+                    : 'Toca el botón para permitir tu ubicación.'
+                }
+              >
+                <SecondaryButton
+                  title={currentLocation ? 'Buscar de nuevo' : 'Usar mi ubicación'}
+                  busy={busy}
+                  onPress={searchNearMe}
+                />
+              </EmptyState>
+            )}
+          </View>
+        </Card>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
+        <Card title="Busca por zona" subtitle="Escribe una ciudad y una zona para ver a todos sus mecánicos.">
+          <View style={styles.stack}>
             <View style={styles.row}>
               <Field label="Ciudad" style={styles.flex}>
                 <Input
@@ -155,7 +217,6 @@ export function MechanicsScreen({
                 />
               </Field>
             </View>
-            <SecondaryButton title="Buscar cerca de mí" compact busy={busy} onPress={searchNearMe} />
             <PrimaryButton title="Buscar" onPress={searchByZone} />
           </View>
         </Card>
@@ -167,7 +228,7 @@ export function MechanicsScreen({
             <EmptyState
               icon="people-outline"
               title="Sin mecánicos por ahora"
-              text="Prueba con otra zona o busca cerca de ti."
+              text="Prueba con otra ciudad o zona."
             />
           </Card>
         ) : (
