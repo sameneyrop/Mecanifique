@@ -31,10 +31,23 @@ mantener informadas a ambas partes.
   recuadro y elige "Tomar foto" o "Elegir de mis fotos" (antes había que pegar
   enlaces https). La app reduce la foto (máx. 1280 px, JPG ~200 KB) y la sube a
   `POST /api/uploads/photo` (solo mecánico/admin), que confirma por sus
-  primeros bytes que sea JPG o PNG, la guarda en `data/uploads/` (disco
-  persistente de Render) y la sirve en `/uploads/<archivo>`. La foto queda
+  primeros bytes que sea JPG o PNG, la guarda en la base de datos (tabla
+  `uploaded_photos`) y la sirve en `/uploads/<archivo>`. La foto queda
   guardada en el perfil al momento, sin tocar "Guardar". Las fotos que se
-  quitan o reemplazan no se borran del disco todavía.
+  quitan o reemplazan todavía no se borran de la tabla.
+- **Base de datos en Turso** (SQLite en la nube, vía `@libsql/client`): el
+  plan gratis de Render no permite discos y borra su sistema de archivos en
+  cada deploy y cada vez que el servicio se duerme, así que un archivo
+  SQLite ahí perdía todo. Con `TURSO_DATABASE_URL` y `TURSO_AUTH_TOKEN` en
+  Render se usa Turso; sin ellas (desarrollo y tests) se usa
+  `data/mecanifique.db` con el mismo motor.
+- **Cuenta completa**: editar nombre y teléfono (`/api/account/profile`, el
+  nombre también se copia a Supabase), cambiar contraseña
+  (`POST /api/account/password`), mecánicos favoritos (corazón en el perfil,
+  lista en Cuenta; `/api/favorites`) y "Reportar un problema" / "Obtener
+  ayuda" desde la app (`POST /api/support`, avisa a los admins con una
+  notificación). El registro ahora manda nombre, teléfono y rol a Supabase en
+  `data` (antes iban en `user_metadata`, que Supabase ignoraba).
 - Solicitudes inmediatas o programadas, solicitud a un mecánico específico y
   turnos de agenda.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,
@@ -171,7 +184,7 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
   (`migrations/supabase/001_core_schema.sql` a `005_panic_alerts.sql`). Hoy
   Supabase solo se usa en producción para autenticación (Supabase Auth); todos
   los datos de negocio (mecánicos, solicitudes, pagos, disputas, etc.) viven
-  en SQLite con disco persistente en Render. Estas migraciones son el
+  en SQLite (Turso en producción). Estas migraciones son el
   esquema preparado para el día que se decida mover esos datos a Postgres,
   no una base de datos activa todavía.
 - Disputas de clientes sobre un servicio ya realizado (categoría,

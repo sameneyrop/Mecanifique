@@ -32,8 +32,12 @@ $env:EXPO_PUBLIC_API_BASE_URL = "https://mecanifique.onrender.com"
 ## Arquitectura y reglas estrictas
 
 - **Backend**: Node.js + TypeScript + Express (`src/server.ts`, ~3000
-  líneas) + SQLite como base de datos operativa (disco persistente en
-  Render). Validación con Zod. **Auth exclusivamente vía Supabase JWT v2**
+  líneas) + SQLite como base de datos operativa vía libSQL: **Turso** en
+  producción (`TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`) y el archivo
+  `data/mecanifique.db` en desarrollo y tests (`src/db.ts`). Render está en
+  plan gratis: **su disco no persiste** (se borra en cada deploy y al
+  dormirse), así que nada se guarda en archivos del servidor — ni la base
+  ni las fotos (van en la tabla `uploaded_photos`). Validación con Zod. **Auth exclusivamente vía Supabase JWT v2**
   (`/auth/v2/*`) — la auth manual v1 se eliminó por completo; no reintroducir
   password_hash local, tabla `sessions`, ni endpoints `/auth/register` o
   `/auth/login` sin prefijo `v2`.

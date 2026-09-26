@@ -1,56 +1,68 @@
 import fs from "node:fs";
 import path from "node:path";
-import sqlite3 from "sqlite3";
 
-type SqlValue = string | number | null;
+// @libsql/client publica sus tipos como módulo ES, pero incluye una versión
+// CommonJS (la que carga este require); por eso se importa así y no con
+// `import`, que TypeScript rechaza en un archivo CommonJS.
+type LibsqlClientModule = typeof import("@libsql/client", { with: { "resolution-mode": "import" } });
+type ResultSet = import("@libsql/client", { with: { "resolution-mode": "import" } }).ResultSet;
+type InValue = import("@libsql/client", { with: { "resolution-mode": "import" } }).InValue;
+const { createClient } = require("@libsql/client") as LibsqlClientModule;
+
+type SqlValue = string | number | null | Uint8Array;
 type SqlParams = SqlValue[];
 
-const dataDir = path.resolve(process.cwd(), "data");
-const dbPath = path.resolve(dataDir, "mecanifique.db");
+/**
+ * Base de datos operativa: SQLite, a través de libSQL.
+ *
+ * - En producción (Render) se usa Turso, SQLite en la nube, con
+ *   TURSO_DATABASE_URL y TURSO_AUTH_TOKEN. El plan gratis de Render no
+ *   permite discos: su sistema de archivos se borra en cada deploy y cada
+ *   vez que el servicio se duerme, así que un archivo local ahí no
+ *   conserva nada.
+ * - Sin esas variables (desarrollo local y tests) se usa el archivo
+ *   data/mecanifique.db, con el mismo motor y el mismo SQL.
+ */
+const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
 
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+function createDatabaseClient() {
+  if (tursoUrl) {
+    return createClient({ url: tursoUrl, authToken: process.env.TURSO_AUTH_TOKEN?.trim() });
+  }
+  const dataDir = path.resolve(process.cwd(), "data");
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  return createClient({ url: `file:${path.resolve(dataDir, "mecanifique.db")}` });
 }
 
-const db = new sqlite3.Database(dbPath);
+const db = createDatabaseClient();
 
-export function run(sql: string, params: SqlParams = []): Promise<{ changes: number; lastID: number }> {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function onResult(error) {
-      if (error) {
-        reject(error);
-        return;
-      }
+export const databaseKind: "turso" | "local-file" = tursoUrl ? "turso" : "local-file";
 
-      resolve({ changes: this.changes, lastID: this.lastID });
-    });
-  });
+function execute(sql: string, params: SqlParams): Promise<ResultSet> {
+  return db.execute({ sql, args: params as InValue[] });
 }
 
-export function get<T>(sql: string, params: SqlParams = []): Promise<T | undefined> {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (error, row) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-
-      resolve(row as T | undefined);
-    });
-  });
+// Objeto plano {columna: valor}, igual que devolvía el driver sqlite3.
+function toRow<T>(result: ResultSet, index: number): T {
+  const row = result.rows[index];
+  return Object.fromEntries(result.columns.map((column, columnIndex) => [column, row[columnIndex]])) as T;
 }
 
-export function all<T>(sql: string, params: SqlParams = []): Promise<T[]> {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (error, rows) => {
-      if (error) {
-        reject(error);
-        return;
-      }
+export async function run(sql: string, params: SqlParams = []): Promise<{ changes: number; lastID: number }> {
+  const result = await execute(sql, params);
+  return { changes: result.rowsAffected, lastID: Number(result.lastInsertRowid ?? 0) };
+}
 
-      resolve(rows as T[]);
-    });
-  });
+export async function get<T>(sql: string, params: SqlParams = []): Promise<T | undefined> {
+  const result = await execute(sql, params);
+  return result.rows.length > 0 ? toRow<T>(result, 0) : undefined;
+}
+
+export async function all<T>(sql: string, params: SqlParams = []): Promise<T[]> {
+  const result = await execute(sql, params);
+  return result.rows.map((_row, index) => toRow<T>(result, index));
 }
 
 export async function initDb(): Promise<void> {
@@ -134,7 +146,7 @@ export async function initDb(): Promise<void> {
       city TEXT NOT NULL,
       zone TEXT NOT NULL,
       service_address TEXT,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'assigned', 'in_progress', 'completed', 'cancelled')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts', 'completed', 'cancelled')),
       mechanic_id INTEGER,
       diagnosis_notes TEXT,
       repair_notes TEXT,
@@ -200,8 +212,8 @@ export async function initDb(): Promise<void> {
   ); // Si el costo real fue MENOR al apartado, la diferencia a devolver.
   await migrateRequestStatusConstraint();
   // Va DESPUÉS de migrateRequestStatusConstraint a propósito: en una base
-  // nueva esa función reconstruye la tabla, y una columna agregada antes se
-  // perdería en la reconstrucción.
+  // vieja esa función reconstruye la tabla con una lista fija de columnas, y
+  // una columna agregada antes se perdería en la reconstrucción.
   await ensureColumn(
     "service_requests",
     "assignment_mode",
@@ -449,6 +461,44 @@ export async function initDb(): Promise<void> {
     );
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_panic_alerts_created_at ON panic_alerts(created_at DESC)");
+
+  // Mecánicos guardados por un cliente (corazón en su perfil).
+  await run(`
+    CREATE TABLE IF NOT EXISTS favorite_mechanics (
+      user_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, mechanic_id),
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+
+  // "Reportar un problema" y "Obtener ayuda" desde Cuenta: quedan aquí y se
+  // avisa a los administradores con una notificación.
+  await run(`
+    CREATE TABLE IF NOT EXISTS support_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('problem', 'help')),
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  // Fotos subidas desde la app (ver src/uploads.ts): en la base y no en
+  // disco, porque el disco de Render gratis no persiste.
+  await run(`
+    CREATE TABLE IF NOT EXISTS uploaded_photos (
+      id TEXT PRIMARY KEY,
+      content_type TEXT NOT NULL CHECK(content_type IN ('image/jpeg', 'image/png')),
+      data BLOB NOT NULL,
+      uploaded_by_user_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(uploaded_by_user_id) REFERENCES users(id)
+    )
+  `);
 }
 
 async function ensureColumn(table: string, columnName: string, alterSql: string): Promise<void> {
@@ -460,6 +510,19 @@ async function ensureColumn(table: string, columnName: string, alterSql: string)
   await run(alterSql);
 }
 
+/**
+ * Solo para bases creadas antes de que existieran los estados en camino,
+ * en sitio, diagnóstico, etc.: SQLite no permite cambiar un CHECK, así que
+ * se reconstruye la tabla. Las bases nuevas ya se crean con el CHECK
+ * completo y no pasan por aquí.
+ *
+ * Receta segura de SQLite: tabla nueva → copiar → borrar la vieja →
+ * renombrar la nueva. (Antes se renombraba la VIEJA a
+ * service_requests_legacy, y SQLite reescribía hacia ese nombre las llaves
+ * foráneas de otras tablas; al borrarla quedaban apuntando a una tabla
+ * inexistente, y con llaves foráneas activas —como en libSQL/Turso— toda
+ * escritura en solicitudes fallaba.)
+ */
 async function migrateRequestStatusConstraint(): Promise<void> {
   const schema = await get<{ sql: string }>(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'service_requests'"
@@ -468,9 +531,12 @@ async function migrateRequestStatusConstraint(): Promise<void> {
     return;
   }
 
-  await run("ALTER TABLE service_requests RENAME TO service_requests_legacy");
+  const oldColumns = (await all<{ name: string }>("PRAGMA table_info(service_requests)")).map((column) => column.name);
+
+  await run("PRAGMA foreign_keys = OFF");
+  await run("DROP TABLE IF EXISTS service_requests_rebuilt");
   await run(`
-    CREATE TABLE service_requests (
+    CREATE TABLE service_requests_rebuilt (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id INTEGER NOT NULL,
       vehicle_make TEXT NOT NULL,
@@ -501,24 +567,10 @@ async function migrateRequestStatusConstraint(): Promise<void> {
       FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
     );
   `);
-  await run(`
-    INSERT INTO service_requests (
-      id, customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
-      preferred_time, city, zone, status, mechanic_id, diagnosis_notes, repair_notes,
-      estimated_price, final_price, created_at, updated_at, latitude, longitude,
-      hold_expires_at, schedule_slot_id
-    )
-    SELECT id, customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
-      preferred_time, city, zone, status, mechanic_id, diagnosis_notes, repair_notes,
-      estimated_price, final_price, created_at, updated_at, latitude, longitude,
-      hold_expires_at, schedule_slot_id
-    FROM service_requests_legacy
-  `);
-  // service_address, deposit_amount, extra_amount, extra_status y
-  // refund_amount NO se copian aquí a propósito: la tabla legacy nunca las
-  // tuvo (este migrate corre antes que los ensureColumn de más arriba en
-  // bases de datos nuevas), así que forzar su copia rompería el INSERT con
-  // "no such column". Quedan en NULL, que es el valor correcto para
-  // solicitudes que nunca pasaron por el flujo de pagos de todos modos.
-  await run("DROP TABLE service_requests_legacy");
+  const newColumns = (await all<{ name: string }>("PRAGMA table_info(service_requests_rebuilt)")).map((column) => column.name);
+  const sharedColumns = oldColumns.filter((column) => newColumns.includes(column)).join(", ");
+  await run(`INSERT INTO service_requests_rebuilt (${sharedColumns}) SELECT ${sharedColumns} FROM service_requests`);
+  await run("DROP TABLE service_requests");
+  await run("ALTER TABLE service_requests_rebuilt RENAME TO service_requests");
+  await run("PRAGMA foreign_keys = ON");
 }

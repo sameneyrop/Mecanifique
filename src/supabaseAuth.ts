@@ -56,7 +56,8 @@ export async function ensureLocalUser(supabaseUser: {
   const email = supabaseUser.email || "";
   const role: "customer" | "mechanic" | "admin" =
     metadata.role === "mechanic" ? "mechanic" : metadata.role === "admin" ? "admin" : "customer";
-  const fullName = String(metadata.full_name || email);
+  // Google manda full_name y name; el registro propio, full_name.
+  const fullName = String(metadata.full_name || metadata.name || email);
   const phone = String(metadata.phone || "");
 
   // Dos peticiones concurrentes (ej. login + la primera petición autenticada
@@ -183,7 +184,9 @@ export async function registerCustomerWithSupabase(
         email,
         password,
         email_redirect_to: emailRedirectTo,
-        user_metadata: {
+        // GoTrue lee los metadatos del usuario de `data`; con `user_metadata`
+        // los ignoraba en silencio y Supabase se quedaba sin nombre ni rol.
+        data: {
           full_name: fullName,
           phone,
           role: "customer",
@@ -265,7 +268,7 @@ export async function registerMechanicWithSupabase(
         email,
         password,
         email_redirect_to: emailRedirectTo,
-        user_metadata: {
+        data: {
           full_name: fullName,
           phone,
           role: "mechanic",
@@ -412,6 +415,29 @@ export async function refreshSupabaseSession(refreshToken: string) {
     refreshToken: String(data.refresh_token),
     expiresIn: Number(data.expires_in || 3600),
   };
+}
+
+/**
+ * Cambia datos de la cuenta en Supabase con el token del propio usuario
+ * (contraseña y/o metadatos como el nombre).
+ */
+export async function updateSupabaseUser(
+  token: string,
+  changes: { password?: string; data?: Record<string, unknown> }
+): Promise<void> {
+  const response = await supabaseFetch(`${supabaseUrl}/auth/v1/user`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(changes),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(getSupabaseError(data as Record<string, unknown>, "No se pudo actualizar la cuenta"));
+  }
 }
 
 /**

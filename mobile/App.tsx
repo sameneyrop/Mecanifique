@@ -82,6 +82,17 @@ type AuthResponse = {
   refreshToken?: string | null;
 };
 
+export type FavoriteMechanic = {
+  id: number;
+  fullName: string;
+  city: string;
+  zone: string;
+  rating: number;
+  jobsCompleted: number;
+  isOnline: boolean;
+  isAvailable: boolean;
+};
+
 type RenewedSession = {
   accessToken: string;
   refreshToken: string;
@@ -323,14 +334,15 @@ const ONBOARDING_STEPS = [
 const DEFAULT_REQUEST_CITY = 'Aguascalientes';
 const DEFAULT_REQUEST_ZONE = 'Norte';
 
-// Primer nombre para el saludo. Si la cuenta no tiene nombre, fullName es
-// el correo: se usa lo que va antes de la @.
+// Primer nombre para el saludo. Si la cuenta todavía no tiene nombre, el
+// servidor pone el correo en fullName: en ese caso no se muestra nada (el
+// nombre se agrega en Cuenta → Información personal).
 function getFirstName(fullName: string | undefined): string {
   const name = (fullName || '').trim();
-  if (name.includes('@')) {
-    return name.split('@')[0];
+  if (!name || name.includes('@')) {
+    return '';
   }
-  return name.split(/\s+/)[0] || '';
+  return name.split(/\s+/)[0];
 }
 
 function splitGalleryUrls(value: string): string[] {
@@ -472,6 +484,7 @@ export default function App() {
     endTime: '',
     note: '',
   });
+  const [favoriteMechanics, setFavoriteMechanics] = useState<FavoriteMechanic[]>([]);
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
     coverPhotoUrl: '',
@@ -709,7 +722,8 @@ export default function App() {
 
     loadNotifications().catch((error) => setMessage(formatError(error)));
     registerPushToken(token).catch(() => undefined);
-  }, [user, token]);
+    loadFavorites().catch(() => undefined);
+  }, [user?.id, token]);
 
   useEffect(() => {
     if (actionOptions.length === 0) {
@@ -1092,7 +1106,7 @@ export default function App() {
   async function apiRequest<T>(
     path: string,
     options: {
-      method?: 'GET' | 'POST' | 'PATCH';
+      method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
       body?: unknown;
       token?: string;
     } = {},
@@ -1604,6 +1618,101 @@ export default function App() {
     setMyRequests(data);
   }
 
+  async function loadFavorites() {
+    const data = await apiRequest<{ mechanics: FavoriteMechanic[] }>('/api/favorites', { token });
+    setFavoriteMechanics(data.mechanics);
+  }
+
+  async function handleToggleFavorite(mechanicId: number) {
+    const isFavorite = favoriteMechanics.some((mechanic) => mechanic.id === mechanicId);
+    try {
+      await apiRequest(`/api/favorites/${mechanicId}`, { method: isFavorite ? 'DELETE' : 'PUT', token });
+      await loadFavorites();
+      setMessage(isFavorite ? 'Quitado de tus favoritos' : 'Guardado en tus favoritos');
+      Haptics.selectionAsync().catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+    }
+  }
+
+  // Abre en Mecánicos el perfil de un mecánico (desde Favoritos). Si la
+  // lista actual está filtrada por zona y no lo incluye, se recarga completa.
+  async function openMechanicProfile(mechanicId: number) {
+    try {
+      let list = mechanics;
+      if (!list.some((mechanic) => mechanic.id === mechanicId)) {
+        list = await apiRequest<Mechanic[]>('/mechanics');
+        setMechanicsFilter({ city: '', zone: '' });
+        setMechanics(list);
+      }
+      const index = list.findIndex((mechanic) => mechanic.id === mechanicId);
+      if (index < 0) {
+        setMessage('Este mecánico ya no está disponible');
+        return;
+      }
+      setMechanicCursor(index);
+      setCurrentScreen('mechanics');
+    } catch (error) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function loadAccountProfile() {
+    return apiRequest<{ fullName: string; email: string; phone: string }>('/api/account/profile', { token });
+  }
+
+  async function handleUpdateProfile(payload: { fullName: string; phone: string }): Promise<boolean> {
+    setBusy(true);
+    try {
+      const response = await apiRequest<{ user: AuthUser }>('/api/account/profile', {
+        method: 'PATCH',
+        token,
+        body: { fullName: payload.fullName, ...(payload.phone ? { phone: payload.phone } : {}) },
+      });
+      const nextUser = { ...(user as AuthUser), fullName: response.user.fullName };
+      setUser(nextUser);
+      await persistSession(tokenRef.current || token, nextUser);
+      setMessage('Datos guardados');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      return true;
+    } catch (error) {
+      setMessage(formatError(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleChangePassword(newPassword: string): Promise<boolean> {
+    setBusy(true);
+    try {
+      await apiRequest('/api/account/password', { method: 'POST', token, body: { newPassword } });
+      setMessage('Contraseña cambiada');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      return true;
+    } catch (error) {
+      setMessage(formatError(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendSupport(kind: 'problem' | 'help', message: string): Promise<boolean> {
+    setBusy(true);
+    try {
+      await apiRequest('/api/support', { method: 'POST', token, body: { kind, message } });
+      setMessage('Recibimos tu mensaje. Te contactaremos a tu correo.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      return true;
+    } catch (error) {
+      setMessage(formatError(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadNotifications(nextToken = token) {
     const data = await apiRequest<{ notifications: AppNotification[]; unreadCount: number }>('/api/notifications', {
       token: nextToken,
@@ -1923,8 +2032,13 @@ export default function App() {
     }
     const me = await apiRequest<{ user: Partial<AuthUser> }>('/auth/v2/me', { token: currentToken });
     const refreshed = { ...user, ...me.user, fullName: me.user.fullName || user.fullName } as AuthUser;
-    setUser(refreshed);
-    await persistSession(tokenRef.current || currentToken, refreshed);
+    const changed = (['id', 'role', 'login', 'fullName', 'customerId', 'mechanicId'] as const).some(
+      (key) => refreshed[key] !== user[key],
+    );
+    if (changed) {
+      setUser(refreshed);
+      await persistSession(tokenRef.current || currentToken, refreshed);
+    }
     return refreshed;
   }
 
@@ -2455,7 +2569,12 @@ export default function App() {
         <View style={styles.topBar}>
           <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
           <Text style={styles.topBarGreeting} numberOfLines={1}>
-            Bienvenido, <Text style={styles.topBarGreetingName}>{getFirstName(currentUser?.fullName)}</Text>
+            Bienvenido
+            {getFirstName(currentUser?.fullName) ? (
+              <>
+                , <Text style={styles.topBarGreetingName}>{getFirstName(currentUser?.fullName)}</Text>
+              </>
+            ) : null}
           </Text>
         </View>
         <ScrollView
@@ -2516,6 +2635,12 @@ export default function App() {
           {currentScreen === 'account' && (
             <View style={styles.screenStack}>
               <AccountScreen
+                favoriteMechanics={favoriteMechanics}
+                onOpenMechanic={openMechanicProfile}
+                onLoadAccountProfile={loadAccountProfile}
+                onUpdateProfile={handleUpdateProfile}
+                onChangePassword={handleChangePassword}
+                onSendSupport={handleSendSupport}
                 onStartIdentityVerification={handleStartIdentityVerification}
                 onMarkNotificationRead={handleMarkNotificationRead}
                 onClearSession={clearSession}
@@ -2569,6 +2694,8 @@ export default function App() {
           {currentScreen === 'mechanics' && currentUser && currentUser.role !== 'mechanic' && (
             <View style={styles.screenStack}>
             <MechanicsScreen
+              favoriteMechanicIds={favoriteMechanics.map((mechanic) => mechanic.id)}
+              onToggleFavorite={handleToggleFavorite}
               mechanicsFilter={mechanicsFilter}
               setMechanicsFilter={setMechanicsFilter}
               requestForm={requestForm}

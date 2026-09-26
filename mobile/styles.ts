@@ -765,6 +765,30 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.primaryLighter,
   },
+  favoriteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 48,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.primaryLighter,
+  },
+  favoriteButtonActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  favoriteButtonText: {
+    color: colors.primaryDark,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+  },
+  menuPanel: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
   menuRowLabel: {
     flex: 1,
     fontSize: 16,

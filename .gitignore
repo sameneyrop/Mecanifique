@@ -13,6 +13,7 @@ mobile/.expo/
 data/*.db
 data/*.db-*
 data/uploads/
+data/*respaldo*
 
 # Logs and local tooling
 npm-debug.log*

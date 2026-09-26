@@ -9,7 +9,7 @@ const {
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
 const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
-const { decodePhoto, PhotoUploadError } = require("../src/uploads.ts");
+const { decodePhoto, PhotoUploadError, savePhoto } = require("../src/uploads.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -195,6 +195,42 @@ test("decodePhoto: rechaza lo que no es JPG/PNG aunque diga ser imagen, y lo dem
 
   assert.throws(() => decodePhoto(`data:image/jpeg;base64,${gif.toString("base64")}`), PhotoUploadError);
   assert.throws(() => decodePhoto(huge.toString("base64")), /demasiado grande/);
+});
+
+test("una foto guardada se sirve en /uploads con su tipo, y un nombre inválido da 404", async () => {
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), crypto.randomBytes(64)]);
+  const fileName = await savePhoto(decodePhoto(jpeg.toString("base64")), null);
+  const id = fileName.split(".")[0];
+
+  try {
+    const response = await fetch(`${baseUrl}/uploads/${fileName}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/jpeg");
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), jpeg);
+
+    const wrongExtension = await fetch(`${baseUrl}/uploads/${id}.png`);
+    assert.equal(wrongExtension.status, 404);
+    const traversal = await fetch(`${baseUrl}/uploads/..%2Fmecanifique.db`);
+    assert.equal(traversal.status, 404);
+  } finally {
+    await run("DELETE FROM uploaded_photos WHERE id = ?", [id]);
+  }
+});
+
+test("rutas de cuenta, favoritos y soporte sin token devuelven 401", async () => {
+  const cases = [
+    ["GET", "/api/account/profile"],
+    ["PATCH", "/api/account/profile", { fullName: "Sergio Prueba" }],
+    ["POST", "/api/account/password", { newPassword: "una-clave-nueva" }],
+    ["GET", "/api/favorites"],
+    ["PUT", "/api/favorites/1"],
+    ["DELETE", "/api/favorites/1"],
+    ["POST", "/api/support", { kind: "help", message: "Necesito ayuda con la app" }]
+  ];
+  for (const [method, path, body] of cases) {
+    const { response } = await request(path, { method, body: body ? JSON.stringify(body) : undefined });
+    assert.equal(response.status, 401, `${method} ${path}`);
+  }
 });
 
 test("creación concurrente de usuario local no duplica la fila ni pierde el rol (regresión)", async () => {

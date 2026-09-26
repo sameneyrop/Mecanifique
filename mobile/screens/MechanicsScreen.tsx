@@ -54,6 +54,8 @@ function formatPesos(amount: number): string {
 const PAGE_SIZE = 8;
 
 export function MechanicsScreen({
+  favoriteMechanicIds,
+  onToggleFavorite,
   mechanicsFilter,
   setMechanicsFilter,
   requestForm,
@@ -70,6 +72,8 @@ export function MechanicsScreen({
   onRequestCurrentLocation,
   onLoadNearbyMechanics,
 }: {
+  favoriteMechanicIds: number[];
+  onToggleFavorite: (mechanicId: number) => void;
   mechanicsFilter: { city: string; zone: string };
   setMechanicsFilter: (value: { city: string; zone: string }) => void;
   requestForm: RequestFormShape;
@@ -276,6 +280,27 @@ export function MechanicsScreen({
           >
             <View style={styles.stack}>
               {selected.coverPhotoUrl ? <Image source={{ uri: selected.coverPhotoUrl }} style={styles.coverPhoto} /> : null}
+              {user.role === 'customer' && (
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.favoriteButton,
+                    favoriteMechanicIds.includes(selected.id) && styles.favoriteButtonActive,
+                    pressed && styles.buttonPressed,
+                  ]}
+                  onPress={() => onToggleFavorite(selected.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: favoriteMechanicIds.includes(selected.id) }}
+                >
+                  <Ionicons
+                    name={favoriteMechanicIds.includes(selected.id) ? 'heart' : 'heart-outline'}
+                    size={20}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.favoriteButtonText}>
+                    {favoriteMechanicIds.includes(selected.id) ? 'En tus favoritos' : 'Guardar en favoritos'}
+                  </Text>
+                </Pressable>
+              )}
               <InfoRow
                 icon="star-outline"
                 text={

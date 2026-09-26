@@ -16,12 +16,13 @@ import {
   registerCustomerWithSupabase,
   registerMechanicWithSupabase,
   loginWithSupabase,
-  refreshSupabaseSession
+  refreshSupabaseSession,
+  updateSupabaseUser
 } from "./supabaseAuth";
 import { getSupabaseDbHealth } from "./supabaseDb";
 import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
 import { calculateDepositAmount } from "./payments";
-import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, savePhoto, uploadsDir } from "./uploads";
+import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, findPhoto, savePhoto } from "./uploads";
 
 const app = express();
 const port = Number(process.env.PORT ?? "4000");
@@ -143,14 +144,21 @@ app.use((req, res, next) => {
 });
 app.use(supabaseAuthMiddleware);
 app.use(express.static(path.resolve(process.cwd(), "public")));
-app.use(
-  "/uploads",
-  express.static(uploadsDir, {
-    index: false,
-    dotfiles: "deny",
-    maxAge: "30d",
-    immutable: true,
-    setHeaders: (res) => res.setHeader("X-Content-Type-Options", "nosniff")
+// Fotos subidas por los mecánicos, servidas desde la base de datos. El
+// nombre incluye un UUID aleatorio y nunca cambia de contenido: se puede
+// guardar en caché mucho tiempo.
+app.get(
+  "/uploads/:fileName",
+  handleAsync(async (req, res) => {
+    const photo = await findPhoto(String(req.params.fileName));
+    if (!photo) {
+      res.status(404).json({ error: "Foto no encontrada" });
+      return;
+    }
+    res.setHeader("Content-Type", photo.contentType);
+    res.setHeader("Cache-Control", "public, max-age=2592000, immutable");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.send(photo.data);
   })
 );
 app.get("/auth/callback", (_req, res) => {
@@ -1789,6 +1797,168 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
   res.json({ user: updatedUser });
 }));
 
+// ============================================================================
+// CUENTA: datos personales, contraseña, favoritos y soporte
+// ============================================================================
+
+const accountProfileSchema = z.object({
+  fullName: z.string().trim().min(2).max(120),
+  phone: z.string().trim().regex(/^[0-9+\-\s]{8,20}$/, "Teléfono inválido").optional()
+});
+
+// Nombre visible y teléfono. El nombre también se guarda en Supabase para
+// que no se pierda si hay que reconstruir el usuario local.
+app.get("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
+  const authUser = req.auth!.user;
+  const phoneRow = authUser.customerId
+    ? await get<{ phone: string }>("SELECT phone FROM customers WHERE id = ?", [authUser.customerId])
+    : authUser.mechanicId
+      ? await get<{ phone: string }>("SELECT phone FROM mechanics WHERE id = ?", [authUser.mechanicId])
+      : undefined;
+  // Los teléfonos de relleno ("sin-telefono-…", "supabase-…") no se muestran.
+  const phone = phoneRow?.phone && /^[0-9+\-\s]+$/.test(phoneRow.phone) ? phoneRow.phone : "";
+  res.json({ fullName: authUser.fullName, email: authUser.login, phone });
+}));
+
+app.patch("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
+  const authUser = req.auth!.user;
+  const payload = accountProfileSchema.parse(req.body);
+
+  try {
+    await run("UPDATE users SET full_name = ? WHERE id = ?", [payload.fullName, authUser.id]);
+    if (authUser.customerId) {
+      await run(
+        "UPDATE customers SET full_name = ?, phone = COALESCE(?, phone) WHERE id = ?",
+        [payload.fullName, payload.phone ?? null, authUser.customerId]
+      );
+    }
+    if (authUser.mechanicId) {
+      await run(
+        "UPDATE mechanics SET full_name = ?, phone = COALESCE(?, phone) WHERE id = ?",
+        [payload.fullName, payload.phone ?? null, authUser.mechanicId]
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE")) {
+      res.status(409).json({ error: "Ese teléfono ya está registrado en otra cuenta" });
+      return;
+    }
+    throw error;
+  }
+
+  // Mejor esfuerzo: si Supabase falla, el cambio local ya quedó.
+  updateSupabaseUser(req.auth!.token, {
+    data: { full_name: payload.fullName, ...(payload.phone ? { phone: payload.phone } : {}) }
+  }).catch((error) => console.error("No se pudo copiar el nombre a Supabase", error));
+
+  res.json({ user: { ...authUser, fullName: payload.fullName } });
+}));
+
+app.post("/api/account/password", requireAuth, handleAsync(async (req, res) => {
+  if (applyRateLimit("account-password", req, res)) {
+    return;
+  }
+  const payload = z.object({ newPassword: z.string().min(8).max(72) }).parse(req.body);
+
+  try {
+    await updateSupabaseUser(req.auth!.token, { password: payload.newPassword });
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    res.status(400).json({
+      error: message.includes("different")
+        ? "La nueva contraseña debe ser distinta de la actual."
+        : message.includes("reauth")
+          ? "Por seguridad, cierra sesión, vuelve a entrar y cámbiala de nuevo."
+          : "No se pudo cambiar la contraseña. Intenta de nuevo."
+    });
+    return;
+  }
+  res.json({ ok: true });
+}));
+
+app.get("/api/favorites", requireAuth, handleAsync(async (req, res) => {
+  const rows = await all<{
+    id: number;
+    fullName: string;
+    city: string;
+    zone: string;
+    rating: number;
+    jobsCompleted: number;
+    isOnline: number;
+    isAvailable: number;
+  }>(
+    `SELECT m.id, m.full_name AS fullName, m.city, m.zone, m.rating, m.jobs_completed AS jobsCompleted,
+            m.is_online AS isOnline, m.is_available AS isAvailable
+     FROM favorite_mechanics f
+     JOIN mechanics m ON m.id = f.mechanic_id
+     WHERE f.user_id = ? AND m.status = 'active'
+     ORDER BY f.created_at DESC`,
+    [req.auth!.user.id]
+  );
+  res.json({
+    mechanics: rows.map((row) => ({ ...row, isOnline: Boolean(row.isOnline), isAvailable: Boolean(row.isAvailable) }))
+  });
+}));
+
+function parseMechanicIdParam(value: unknown): number | null {
+  const mechanicId = Number(value);
+  return Number.isInteger(mechanicId) && mechanicId > 0 ? mechanicId : null;
+}
+
+app.put("/api/favorites/:mechanicId", requireAuth, handleAsync(async (req, res) => {
+  const mechanicId = parseMechanicIdParam(req.params.mechanicId);
+  if (!mechanicId) {
+    res.status(400).json({ error: "Mecánico inválido" });
+    return;
+  }
+  const mechanic = await get<{ id: number }>("SELECT id FROM mechanics WHERE id = ? AND status = 'active'", [mechanicId]);
+  if (!mechanic) {
+    res.status(404).json({ error: "Mecánico no encontrado" });
+    return;
+  }
+  await run("INSERT OR IGNORE INTO favorite_mechanics (user_id, mechanic_id) VALUES (?, ?)", [req.auth!.user.id, mechanicId]);
+  res.json({ ok: true });
+}));
+
+app.delete("/api/favorites/:mechanicId", requireAuth, handleAsync(async (req, res) => {
+  const mechanicId = parseMechanicIdParam(req.params.mechanicId);
+  if (!mechanicId) {
+    res.status(400).json({ error: "Mecánico inválido" });
+    return;
+  }
+  await run("DELETE FROM favorite_mechanics WHERE user_id = ? AND mechanic_id = ?", [req.auth!.user.id, mechanicId]);
+  res.json({ ok: true });
+}));
+
+app.post("/api/support", requireAuth, handleAsync(async (req, res) => {
+  if (applyRateLimit("support-request", req, res)) {
+    return;
+  }
+  const authUser = req.auth!.user;
+  const payload = z.object({
+    kind: z.enum(["problem", "help"]),
+    message: z.string().trim().min(5).max(2000)
+  }).parse(req.body);
+
+  const result = await run(
+    "INSERT INTO support_requests (user_id, kind, message) VALUES (?, ?, ?)",
+    [authUser.id, payload.kind, payload.message]
+  );
+
+  const title = payload.kind === "problem" ? "Reporte de problema" : "Solicitud de ayuda";
+  const preview = payload.message.length > 140 ? `${payload.message.slice(0, 140)}…` : payload.message;
+  const adminUserIds = await getAdminUserIds();
+  await Promise.all(
+    adminUserIds.map((adminUserId) =>
+      createNotification(adminUserId, title, `${authUser.fullName} (${authUser.login}): ${preview}`, {
+        supportRequestId: result.lastID
+      })
+    )
+  );
+
+  res.status(201).json({ ok: true });
+}));
+
 app.get(
   "/api/notifications",
   requireAuth,
@@ -2476,7 +2646,7 @@ app.post(
       throw error;
     }
 
-    const fileName = await savePhoto(photo);
+    const fileName = await savePhoto(photo, req.auth?.user.id ?? null);
     // Detrás del proxy de Render req.protocol es "http"; el original viene
     // en x-forwarded-proto. Android bloquea imágenes por http en producción.
     const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
