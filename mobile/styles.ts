@@ -29,20 +29,6 @@ export const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 8,
   },
-  shell: {
-    borderRadius: 30,
-    padding: 16,
-    gap: 12,
-    borderWidth: 1,
-    borderColor: colors.primaryLighter,
-    backgroundColor: colors.white,
-    width: '100%',
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 5,
-  },
   appShell: {
     gap: 14,
     width: '100%',

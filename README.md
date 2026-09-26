@@ -181,6 +181,10 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
   reemplazaron por recuadros punteados (`ImagePlaceholder` en
   `mobile/components/ui.tsx`) hasta tener las ilustraciones de marca finales;
   los archivos viejos siguen en `mobile/assets/` pero ya no se usan.
+  Onboarding y Login también: logo y contenido directo sobre el fondo (sin el
+  recuadro con degradado), "Iniciar sesión / Crear cuenta" arriba y, al crear
+  cuenta, "Soy cliente / Soy mecánico" como opciones con ícono. Los campos de
+  correo ya no ponen mayúscula inicial ni autocorrigen.
 
 Validación local realizada: `npm run build`, `npm test`, `npx tsc --noEmit` en
 `mobile` y `npx expo-doctor` (18/18).

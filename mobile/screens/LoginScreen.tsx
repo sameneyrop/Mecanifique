@@ -1,8 +1,8 @@
-import { Image, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { styles } from '../styles';
-import { Card, Field, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import { Card, ChoiceTile, Field, ImagePlaceholder, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
 
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicSignupStep = 'account' | 'work';
@@ -22,7 +22,30 @@ type MechanicForm = {
   longitude: string;
 };
 
-const APP_LOGO_IMAGE = require('../assets/logo.png');
+// Sin mayúscula automática ni autocorrector: un correo "Sergio@..." o
+// corregido por el teclado no inicia sesión.
+const EMAIL_INPUT_PROPS = {
+  autoCapitalize: 'none',
+  autoCorrect: false,
+  keyboardType: 'email-address',
+  autoComplete: 'email',
+  placeholder: 'correo@ejemplo.com',
+} as const;
+
+const HERO_COPY: Record<AuthMode, { title: string; subtitle: string }> = {
+  login: {
+    title: 'Qué gusto verte',
+    subtitle: 'Entra para pedir un mecánico, seguir tu servicio o recibir solicitudes.',
+  },
+  customer: {
+    title: 'Tu auto, en buenas manos',
+    subtitle: 'Crea tu cuenta y encuentra mecánicos verificados cerca de ti.',
+  },
+  mechanic: {
+    title: 'Más clientes, cerca de ti',
+    subtitle: 'Crea tu cuenta de mecánico y recibe solicitudes en tu zona.',
+  },
+};
 
 export function LoginScreen({
   authMode,
@@ -55,132 +78,205 @@ export function LoginScreen({
   onGoogleLogin: () => void;
   onShowOnboarding: () => void;
 }) {
+  const hero = HERO_COPY[authMode];
+  const signingUp = authMode !== 'login';
+
   return (
-    <Animated.View entering={FadeInDown.duration(280)}>
-      <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
-      <Text style={styles.title}>Inicia sesión</Text>
-      <Text style={styles.subtitle}>Accede para ver mapa, solicitudes y mecánicos.</Text>
-      <Card title="Sesión" subtitle="Inicia sesión o regístrate">
+    <View style={styles.screenStack}>
+      <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
+        {/* PLACEHOLDER: ilustración de marca para la entrada */}
+        <ImagePlaceholder icon={authMode === 'mechanic' ? 'construct-outline' : 'car-sport-outline'} />
+        <Text style={styles.title}>{hero.title}</Text>
+        <Text style={styles.subtitle}>{hero.subtitle}</Text>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
         <Segmented
-          value={authMode}
+          value={signingUp ? 'signup' : 'login'}
+          onBackground
           options={[
-            { key: 'login', label: 'Login' },
-            { key: 'customer', label: 'Cliente' },
-            { key: 'mechanic', label: 'Mecánico' },
+            { key: 'login', label: 'Iniciar sesión', icon: 'log-in-outline' },
+            { key: 'signup', label: 'Crear cuenta', icon: 'person-add-outline' },
           ]}
-          onChange={(value) => setAuthMode(value as AuthMode)}
+          onChange={(value) => setAuthMode(value === 'login' ? 'login' : signingUp ? authMode : 'customer')}
         />
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         {authMode === 'login' && (
-          <View style={styles.stack}>
-            <Field label="Email">
-              <Input value={loginForm.email} onChangeText={(value) => setLoginForm({ ...loginForm, email: value })} />
-            </Field>
-            <Field label="Contraseña">
-              <Input
-                value={loginForm.password}
-                onChangeText={(value) => setLoginForm({ ...loginForm, password: value })}
-                secureTextEntry
-              />
-            </Field>
-          </View>
+          <Card title="Inicia sesión" subtitle="Con el correo y la contraseña de tu cuenta.">
+            <View style={styles.stack}>
+              <Field label="Correo electrónico">
+                <Input
+                  {...EMAIL_INPUT_PROPS}
+                  value={loginForm.email}
+                  onChangeText={(value) => setLoginForm({ ...loginForm, email: value })}
+                />
+              </Field>
+              <Field label="Contraseña">
+                <Input
+                  value={loginForm.password}
+                  onChangeText={(value) => setLoginForm({ ...loginForm, password: value })}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </Field>
+              <PrimaryButton title="Entrar" onPress={onSubmit} busy={busy} />
+              <SecondaryButton title="Continuar con Google" onPress={onGoogleLogin} busy={busy} />
+            </View>
+          </Card>
         )}
-        {authMode === 'customer' && (
-          <View style={styles.stack}>
-            <Field label="Nombre completo">
-              <Input
-                value={customerForm.fullName}
-                onChangeText={(value) => setCustomerForm({ ...customerForm, fullName: value })}
-              />
-            </Field>
-            <Field label="Email">
-              <Input
-                value={customerForm.email}
-                onChangeText={(value) => setCustomerForm({ ...customerForm, email: value })}
-                placeholder="correo@ejemplo.com"
-              />
-            </Field>
-            <Field label="Teléfono">
-              <Input value={customerForm.phone} onChangeText={(value) => setCustomerForm({ ...customerForm, phone: value })} />
-            </Field>
-            <Field label="Contraseña">
-              <Input
-                value={customerForm.password}
-                onChangeText={(value) => setCustomerForm({ ...customerForm, password: value })}
-                secureTextEntry
-              />
-            </Field>
-          </View>
-        )}
-        {authMode === 'mechanic' && (
-          <View style={styles.stack}>
-            <Segmented
-              value={mechanicSignupStep}
-              options={[
-                { key: 'account', label: 'Cuenta' },
-                { key: 'work', label: 'Trabajo' },
-              ]}
-              onChange={(value) => setMechanicSignupStep(value as MechanicSignupStep)}
-            />
-            {mechanicSignupStep === 'account' ? (
-              <View style={styles.stack}>
-                <Field label="Nombre completo">
-                  <Input
-                    value={mechanicForm.fullName}
-                    onChangeText={(value) => setMechanicForm({ ...mechanicForm, fullName: value })}
-                  />
-                </Field>
-                <Field label="Email">
-                  <Input
-                    value={mechanicForm.email}
-                    onChangeText={(value) => setMechanicForm({ ...mechanicForm, email: value })}
-                    placeholder="correo@ejemplo.com"
-                  />
-                </Field>
-                <Field label="Teléfono">
-                  <Input value={mechanicForm.phone} onChangeText={(value) => setMechanicForm({ ...mechanicForm, phone: value })} />
-                </Field>
-                <Field label="Contraseña">
-                  <Input
-                    value={mechanicForm.password}
-                    onChangeText={(value) => setMechanicForm({ ...mechanicForm, password: value })}
-                    secureTextEntry
-                  />
-                </Field>
-                <SecondaryButton title="Continuar" onPress={() => setMechanicSignupStep('work')} />
+
+        {signingUp && (
+          <Card
+            title="Crea tu cuenta"
+            subtitle={
+              authMode === 'mechanic'
+                ? mechanicSignupStep === 'account'
+                  ? 'Paso 1 de 2 · Tus datos de contacto.'
+                  : 'Paso 2 de 2 · Dónde y en qué trabajas.'
+                : '¿Cómo vas a usar Mecanifique?'
+            }
+          >
+            <View style={styles.stack}>
+              <View style={styles.row}>
+                <ChoiceTile
+                  icon="car-sport-outline"
+                  title="Soy cliente"
+                  description="Necesito un mecánico para mi auto."
+                  active={authMode === 'customer'}
+                  onPress={() => setAuthMode('customer')}
+                  style={styles.flex}
+                />
+                <ChoiceTile
+                  icon="construct-outline"
+                  title="Soy mecánico"
+                  description="Quiero recibir solicitudes."
+                  active={authMode === 'mechanic'}
+                  onPress={() => setAuthMode('mechanic')}
+                  style={styles.flex}
+                />
               </View>
-            ) : (
-              <View style={styles.stack}>
-                <View style={styles.row}>
-                  <Field label="Ciudad" style={styles.flex}>
-                    <Input value={mechanicForm.city} onChangeText={(value) => setMechanicForm({ ...mechanicForm, city: value })} />
+
+              {authMode === 'customer' && (
+                <>
+                  <Field label="Nombre completo">
+                    <Input
+                      value={customerForm.fullName}
+                      autoComplete="name"
+                      onChangeText={(value) => setCustomerForm({ ...customerForm, fullName: value })}
+                    />
                   </Field>
-                  <Field label="Zona" style={styles.flex}>
-                    <Input value={mechanicForm.zone} onChangeText={(value) => setMechanicForm({ ...mechanicForm, zone: value })} />
+                  <Field label="Correo electrónico">
+                    <Input
+                      {...EMAIL_INPUT_PROPS}
+                      value={customerForm.email}
+                      onChangeText={(value) => setCustomerForm({ ...customerForm, email: value })}
+                    />
                   </Field>
-                </View>
-                <Field label="Años de experiencia">
-                  <Input
-                    value={mechanicForm.yearsExperience}
-                    keyboardType="numeric"
-                    onChangeText={(value) => setMechanicForm({ ...mechanicForm, yearsExperience: value })}
+                  <Field label="Teléfono">
+                    <Input
+                      value={customerForm.phone}
+                      keyboardType="phone-pad"
+                      autoComplete="tel"
+                      onChangeText={(value) => setCustomerForm({ ...customerForm, phone: value })}
+                    />
+                  </Field>
+                  <Field label="Contraseña">
+                    <Input
+                      value={customerForm.password}
+                      onChangeText={(value) => setCustomerForm({ ...customerForm, password: value })}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      placeholder="Mínimo 8 caracteres"
+                    />
+                  </Field>
+                  <PrimaryButton title="Crear cuenta" onPress={onSubmit} busy={busy} />
+                </>
+              )}
+
+              {authMode === 'mechanic' && (
+                <>
+                  <Segmented
+                    value={mechanicSignupStep}
+                    options={[
+                      { key: 'account', label: 'Tu cuenta', icon: 'person-outline' },
+                      { key: 'work', label: 'Tu trabajo', icon: 'construct-outline' },
+                    ]}
+                    onChange={(value) => setMechanicSignupStep(value as MechanicSignupStep)}
                   />
-                </Field>
-                <Field label="Especialidades (coma)">
-                  <Input
-                    value={mechanicForm.specialties}
-                    onChangeText={(value) => setMechanicForm({ ...mechanicForm, specialties: value })}
-                  />
-                </Field>
-                <Text style={styles.smallText}>La ubicación se obtiene automáticamente al abrir la app.</Text>
-                <SecondaryButton title="Volver" onPress={() => setMechanicSignupStep('account')} />
-              </View>
-            )}
-          </View>
+                  {mechanicSignupStep === 'account' ? (
+                    <>
+                      <Field label="Nombre completo">
+                        <Input
+                          value={mechanicForm.fullName}
+                          autoComplete="name"
+                          onChangeText={(value) => setMechanicForm({ ...mechanicForm, fullName: value })}
+                        />
+                      </Field>
+                      <Field label="Correo electrónico">
+                        <Input
+                          {...EMAIL_INPUT_PROPS}
+                          value={mechanicForm.email}
+                          onChangeText={(value) => setMechanicForm({ ...mechanicForm, email: value })}
+                        />
+                      </Field>
+                      <Field label="Teléfono">
+                        <Input
+                          value={mechanicForm.phone}
+                          keyboardType="phone-pad"
+                          autoComplete="tel"
+                          onChangeText={(value) => setMechanicForm({ ...mechanicForm, phone: value })}
+                        />
+                      </Field>
+                      <Field label="Contraseña">
+                        <Input
+                          value={mechanicForm.password}
+                          onChangeText={(value) => setMechanicForm({ ...mechanicForm, password: value })}
+                          secureTextEntry
+                          autoCapitalize="none"
+                          placeholder="Mínimo 8 caracteres"
+                        />
+                      </Field>
+                      <PrimaryButton title="Continuar" onPress={() => setMechanicSignupStep('work')} />
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.row}>
+                        <Field label="Ciudad" style={styles.flex}>
+                          <Input value={mechanicForm.city} onChangeText={(value) => setMechanicForm({ ...mechanicForm, city: value })} />
+                        </Field>
+                        <Field label="Zona" style={styles.flex}>
+                          <Input value={mechanicForm.zone} onChangeText={(value) => setMechanicForm({ ...mechanicForm, zone: value })} />
+                        </Field>
+                      </View>
+                      <Field label="Años de experiencia">
+                        <Input
+                          value={mechanicForm.yearsExperience}
+                          keyboardType="numeric"
+                          onChangeText={(value) => setMechanicForm({ ...mechanicForm, yearsExperience: value })}
+                        />
+                      </Field>
+                      <Field label="Especialidades (separadas por coma)">
+                        <Input
+                          value={mechanicForm.specialties}
+                          placeholder="Motor, Frenos, Eléctrico"
+                          onChangeText={(value) => setMechanicForm({ ...mechanicForm, specialties: value })}
+                        />
+                      </Field>
+                      <Text style={styles.smallText}>Tu ubicación se toma sola al abrir la app.</Text>
+                      <SecondaryButton title="Volver" onPress={() => setMechanicSignupStep('account')} />
+                      <PrimaryButton title="Crear cuenta" onPress={onSubmit} busy={busy} />
+                    </>
+                  )}
+                </>
+              )}
+            </View>
+          </Card>
         )}
-        <PrimaryButton title={authMode === 'login' ? 'Entrar' : 'Crear cuenta'} onPress={onSubmit} busy={busy} />
-        {authMode === 'login' && <SecondaryButton title="Continuar con Google" onPress={onGoogleLogin} busy={busy} />}
-      </Card>
+      </Animated.View>
+
       <SecondaryButton title="Ver introducción" onPress={onShowOnboarding} />
-    </Animated.View>
+    </View>
   );
 }

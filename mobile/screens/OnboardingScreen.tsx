@@ -26,18 +26,22 @@ export function OnboardingScreen({
   const isLastStep = currentStep === steps.length - 1;
 
   return (
-    <Animated.View key={currentStep} entering={FadeIn.duration(220)} exiting={FadeOut.duration(120)}>
-      {/* PLACEHOLDER: ilustración de marca para cada paso */}
-      <ImagePlaceholder icon={step.icon} />
-      <Text style={styles.title}>{step.title}</Text>
-      <Text style={styles.subtitle}>{step.body}</Text>
+    <Animated.View key={currentStep} entering={FadeIn.duration(220)} exiting={FadeOut.duration(120)} style={styles.screenStack}>
+      <View>
+        {/* PLACEHOLDER: ilustración de marca para cada paso */}
+        <ImagePlaceholder icon={step.icon} />
+        <Text style={styles.title}>{step.title}</Text>
+        <Text style={styles.subtitle}>{step.body}</Text>
+      </View>
       <View style={styles.onboardingDots}>
         {steps.map((_, index) => (
           <View key={index} style={[styles.onboardingDot, index === currentStep && styles.onboardingDotActive]} />
         ))}
       </View>
-      <PrimaryButton title={isLastStep ? 'Empezar' : 'Siguiente'} onPress={onNext} />
-      <SecondaryButton title="Saltar" onPress={onSkip} />
+      <View style={styles.stack}>
+        <PrimaryButton title={isLastStep ? 'Empezar' : 'Siguiente'} onPress={onNext} />
+        {!isLastStep && <SecondaryButton title="Saltar" onPress={onSkip} />}
+      </View>
     </Animated.View>
   );
 }

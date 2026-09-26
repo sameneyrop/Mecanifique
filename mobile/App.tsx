@@ -26,7 +26,6 @@ import {
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
@@ -2214,7 +2213,7 @@ export default function App() {
                 alwaysBounceVertical
                 keyboardShouldPersistTaps="handled"
               >
-                <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
+                <View style={styles.appShell}>
                   <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
                   <OnboardingScreen
                     steps={ONBOARDING_STEPS}
@@ -2230,7 +2229,7 @@ export default function App() {
                       await completeOnboarding();
                     }}
                   />
-                </LinearGradient>
+                </View>
               </ScrollView>
             </View>
           </SafeAreaView>
@@ -2251,7 +2250,8 @@ export default function App() {
               alwaysBounceVertical
               keyboardShouldPersistTaps="handled"
             >
-            <LinearGradient colors={[colors.white, colors.primaryLighter]} style={styles.shell}>
+            <View style={styles.appShell}>
+              <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
               <LoginScreen
                 authMode={authMode}
                 setAuthMode={setAuthMode}
@@ -2268,7 +2268,7 @@ export default function App() {
                 onGoogleLogin={handleGoogleLogin}
                 onShowOnboarding={showOnboardingAgain}
               />
-            </LinearGradient>
+            </View>
             </ScrollView>
           </View>
         </SafeAreaView>
