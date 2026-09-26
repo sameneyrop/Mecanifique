@@ -48,6 +48,20 @@ mantener informadas a ambas partes.
   ayuda" desde la app (`POST /api/support`, avisa a los admins con una
   notificación). El registro ahora manda nombre, teléfono y rol a Supabase en
   `data` (antes iban en `user_metadata`, que Supabase ignoraba).
+- **Comunidad** (Cuenta → Comunidad; el mecánico entra desde Acciones):
+  cualquier usuario publica preguntas sobre su auto (título, categoría,
+  vehículo, descripción); solo mecánicos verificados (`status = 'active'`)
+  responden, y cada respuesta muestra su calificación y un botón para
+  pedirle el servicio. "Me pasa lo mismo" y "Me ayudó", búsqueda, filtro por
+  categoría y "Mis preguntas". Al autor le llega una notificación con cada
+  respuesta; el autor o un admin pueden borrar. Los clientes aparecen como
+  "Emilio L." (primer nombre + inicial). Rutas en `src/routes/community.ts`
+  (`/api/community/*`).
+- **Promociones**: el mecánico publica, pausa y borra promociones en
+  Acciones → Promociones (vigencia sin fecha, 1 semana, 1 mes o 3 meses). El
+  cliente las ve en Cuenta → Promociones, las más cercanas primero, y también
+  en el perfil de cada mecánico. Solo se muestran las activas, vigentes y de
+  mecánicos activos (`/api/promotions`).
 - Solicitudes inmediatas o programadas, solicitud a un mecánico específico y
   turnos de agenda.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,

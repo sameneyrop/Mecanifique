@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useState } from 'react';
+import { type Dispatch, type SetStateAction, useEffect, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -8,6 +8,8 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, EmptyState, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
 import { MechanicRadar } from '../components/MechanicRadar';
+import { PromotionItem, type Promotion } from './PromotionsScreen';
+import type { ApiCall } from '../App';
 import { formatError, getMechanicPublicStatus, formatCalendarDate } from '../utils';
 
 type ScheduleSlot = {
@@ -54,6 +56,7 @@ function formatPesos(amount: number): string {
 const PAGE_SIZE = 8;
 
 export function MechanicsScreen({
+  api,
   favoriteMechanicIds,
   onToggleFavorite,
   mechanicsFilter,
@@ -72,6 +75,7 @@ export function MechanicsScreen({
   onRequestCurrentLocation,
   onLoadNearbyMechanics,
 }: {
+  api: ApiCall;
   favoriteMechanicIds: number[];
   onToggleFavorite: (mechanicId: number) => void;
   mechanicsFilter: { city: string; zone: string };
@@ -103,6 +107,18 @@ export function MechanicsScreen({
     setRequestCreateStep,
   } = useAppContext();
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [selectedPromotions, setSelectedPromotions] = useState<Promotion[]>([]);
+  const selectedId = mechanics[mechanicCursor]?.id;
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedPromotions([]);
+      return;
+    }
+    api<{ promotions: Promotion[] }>(`/api/promotions?mechanicId=${selectedId}`)
+      .then((data) => setSelectedPromotions(data.promotions))
+      .catch(() => setSelectedPromotions([]));
+  }, [selectedId]);
 
   if (!user || user.role === 'mechanic') {
     return null;
@@ -328,6 +344,15 @@ export function MechanicsScreen({
                       <Image key={`${selected.id}-${index}`} source={{ uri: imageUrl }} style={styles.galleryPhoto} />
                     ))}
                   </View>
+                </View>
+              )}
+
+              {selectedPromotions.length > 0 && (
+                <View style={styles.publicProfileBox}>
+                  <Text style={styles.publicProfileTitle}>Promociones</Text>
+                  {selectedPromotions.map((promotion) => (
+                    <PromotionItem key={promotion.id} promotion={promotion} />
+                  ))}
                 </View>
               )}
 

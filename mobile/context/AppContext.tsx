@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 
 type Role = 'customer' | 'mechanic' | 'admin';
-type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account' | 'vehicles';
+type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account' | 'vehicles' | 'community' | 'promotions';
 type RequestsView = 'list' | 'create' | 'detail';
 type ActionsView = 'assign' | 'status' | 'requestStatus' | 'availability' | 'update' | 'schedule';
 type RequestCreateStep = 'vehicle' | 'details';

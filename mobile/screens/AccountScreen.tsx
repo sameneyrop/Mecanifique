@@ -217,6 +217,7 @@ function SupportPanel({
 }
 
 export function AccountScreen({
+  onOpenCommunity,
   favoriteMechanics,
   onOpenMechanic,
   onLoadAccountProfile,
@@ -228,6 +229,7 @@ export function AccountScreen({
   onClearSession,
   onSwitchRole,
 }: {
+  onOpenCommunity: () => void;
   favoriteMechanics: FavoriteMechanic[];
   onOpenMechanic: (mechanicId: number) => void;
   onLoadAccountProfile: () => Promise<{ fullName: string; email: string; phone: string }>;
@@ -259,10 +261,6 @@ export function AccountScreen({
 
   function toggle(section: Section) {
     setExpanded((current) => (current === section ? null : section));
-  }
-
-  function comingSoon(feature: string) {
-    setMessage(`${feature}: todavía no está disponible.`);
   }
 
   async function handleSwitchToProfessional() {
@@ -384,8 +382,8 @@ export function AccountScreen({
               onPress={() => toggle('favorites')}
             />
             {expanded === 'favorites' && <FavoritesPanel favorites={favoriteMechanics} onOpenMechanic={onOpenMechanic} />}
-            <MenuRow icon="chatbubble-ellipses-outline" label="Comunidad" badge="Próximamente" onPress={() => comingSoon('Comunidad')} />
-            <MenuRow icon="pricetag-outline" label="Promociones" badge="Próximamente" onPress={() => comingSoon('Promociones')} />
+            <MenuRow icon="chatbubble-ellipses-outline" label="Comunidad" onPress={onOpenCommunity} />
+            <MenuRow icon="pricetag-outline" label="Promociones" onPress={() => setCurrentScreen('promotions')} />
             <MenuRow icon="information-circle-outline" label="Acerca de la aplicación" onPress={() => toggle('about')} />
             {expanded === 'about' && (
               <View style={[styles.publicProfileBox, styles.menuPanel]}>

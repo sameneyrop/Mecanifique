@@ -19,6 +19,8 @@ import {
   RequestCard,
 } from '../components/ui';
 import { formatCalendarDate, openExternalNavigation } from '../utils';
+import { MechanicPromotions } from '../components/MechanicPromotions';
+import type { ApiCall } from '../App';
 
 type ScheduleSlot = {
   id: number;
@@ -122,6 +124,9 @@ function ScheduleCalendar({
 }
 
 export function ActionsScreen({
+  api,
+  onOpenCommunity,
+  mechanicAccountActive,
   selectedActionRequest,
   actionsView,
   setActionsView,
@@ -159,6 +164,9 @@ export function ActionsScreen({
   onClearSession,
   onSwitchRole,
 }: {
+  api: ApiCall;
+  onOpenCommunity: () => void;
+  mechanicAccountActive: boolean;
   selectedActionRequest: any;
   actionsView: ActionsViewKey;
   setActionsView: Dispatch<SetStateAction<ActionsViewKey>>;
@@ -199,7 +207,7 @@ export function ActionsScreen({
   const { user, busy, identityState, identityBusy, setMessage } = useAppContext();
   // El avance de un trabajo se maneja desde Inicio (botón de siguiente paso);
   // aquí el mecánico solo administra lo que ven los clientes: perfil y agenda.
-  const [mechanicView, setMechanicView] = useState<'profile' | 'schedule'>('profile');
+  const [mechanicView, setMechanicView] = useState<'profile' | 'schedule' | 'promotions'>('profile');
 
   if (!user || (user.role !== 'admin' && user.role !== 'mechanic')) {
     return null;
@@ -267,8 +275,9 @@ export function ActionsScreen({
               options={[
                 { key: 'profile', label: 'Mi perfil', icon: 'person-outline' },
                 { key: 'schedule', label: 'Mi agenda', icon: 'calendar-outline' },
+                { key: 'promotions', label: 'Promociones', icon: 'pricetag-outline' },
               ]}
-              onChange={(value) => setMechanicView(value as 'profile' | 'schedule')}
+              onChange={(value) => setMechanicView(value as 'profile' | 'schedule' | 'promotions')}
             />
           </Animated.View>
 
@@ -368,6 +377,12 @@ export function ActionsScreen({
             </Animated.View>
           )}
 
+          {mechanicView === 'promotions' && (
+            <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
+              <MechanicPromotions api={api} accountActive={mechanicAccountActive} />
+            </Animated.View>
+          )}
+
           {mechanicView === 'schedule' && (
             <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
               <Card title="Tu agenda" subtitle="Publica los horarios en que puedes atender. Los clientes pueden apartarlos.">
@@ -384,6 +399,12 @@ export function ActionsScreen({
           )}
 
           <Animated.View entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
+            <Card title="Comunidad" subtitle="Responde dudas de clientes: es una forma de que te conozcan y te contraten.">
+              <PrimaryButton title="Ver preguntas" onPress={onOpenCommunity} />
+            </Card>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(150).duration(300)} needsOffscreenAlphaCompositing>
             <Card title="Modo cliente" subtitle="¿Necesitas un mecánico para tu auto? Usa esta misma cuenta.">
               <PrimaryButton title="Cambiar a modo cliente" busy={busy} onPress={() => onSwitchRole({ targetRole: 'customer' })} />
             </Card>

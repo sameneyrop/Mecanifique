@@ -13,6 +13,8 @@ import { OnboardingScreen } from './screens/OnboardingScreen';
 import { VehiclesScreen } from './screens/VehiclesScreen';
 import { IncomingRequestOverlay } from './components/IncomingRequestOverlay';
 import { LoginScreen } from './screens/LoginScreen';
+import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
+import { PromotionsScreen } from './screens/PromotionsScreen';
 import { BottomNavButton, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
 import {
@@ -50,7 +52,7 @@ import {
 type Role = 'customer' | 'mechanic' | 'admin';
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicStatus = 'pending_verification' | 'active' | 'suspended';
-type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account' | 'vehicles';
+type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account' | 'vehicles' | 'community' | 'promotions';
 type RequestsView = 'list' | 'create' | 'detail';
 type ActionsView = 'assign' | 'status' | 'requestStatus' | 'availability' | 'update' | 'schedule';
 type MechanicSignupStep = 'account' | 'work';
@@ -81,6 +83,12 @@ type AuthResponse = {
   accessToken: string;
   refreshToken?: string | null;
 };
+
+/** apiRequest con la sesión ya puesta, para que las pantallas llamen al servidor. */
+export type ApiCall = <T>(
+  path: string,
+  options?: { method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'; body?: unknown },
+) => Promise<T>;
 
 export type FavoriteMechanic = {
   id: number;
@@ -368,6 +376,10 @@ function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
       return 'Tu cuenta';
     case 'vehicles':
       return 'Mis vehículos';
+    case 'community':
+      return 'Comunidad';
+    case 'promotions':
+      return 'Promociones';
     default:
       return 'Mecanifique';
   }
@@ -485,6 +497,7 @@ export default function App() {
     note: '',
   });
   const [favoriteMechanics, setFavoriteMechanics] = useState<FavoriteMechanic[]>([]);
+  const [communityView, setCommunityView] = useState<CommunityView>({ mode: 'list' });
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
     coverPhotoUrl: '',
@@ -824,7 +837,7 @@ export default function App() {
       return goBackInApp();
     });
     return () => subscription.remove();
-  }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep]);
+  }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep, communityView]);
 
   const refreshUserRef = useRef(refreshUserFromServer);
   refreshUserRef.current = refreshUserFromServer;
@@ -852,6 +865,14 @@ export default function App() {
     }
     if (currentScreen === 'vehicles') {
       setCurrentScreen('account');
+      return true;
+    }
+    if (currentScreen === 'community' && communityView.mode !== 'list') {
+      setCommunityView({ mode: 'list' });
+      return true;
+    }
+    if (currentScreen === 'community' || currentScreen === 'promotions') {
+      setCurrentScreen(user?.role === 'customer' ? 'account' : 'actions');
       return true;
     }
     if (currentScreen !== 'home') {
@@ -1616,6 +1637,13 @@ export default function App() {
       token: nextToken,
     });
     setMyRequests(data);
+  }
+
+  const api: ApiCall = (path, options = {}) => apiRequest(path, { ...options, token: tokenRef.current || token });
+
+  function openCommunity() {
+    setCommunityView({ mode: 'list' });
+    setCurrentScreen('community');
   }
 
   async function loadFavorites() {
@@ -2635,6 +2663,7 @@ export default function App() {
           {currentScreen === 'account' && (
             <View style={styles.screenStack}>
               <AccountScreen
+                onOpenCommunity={openCommunity}
                 favoriteMechanics={favoriteMechanics}
                 onOpenMechanic={openMechanicProfile}
                 onLoadAccountProfile={loadAccountProfile}
@@ -2694,6 +2723,7 @@ export default function App() {
           {currentScreen === 'mechanics' && currentUser && currentUser.role !== 'mechanic' && (
             <View style={styles.screenStack}>
             <MechanicsScreen
+              api={api}
               favoriteMechanicIds={favoriteMechanics.map((mechanic) => mechanic.id)}
               onToggleFavorite={handleToggleFavorite}
               mechanicsFilter={mechanicsFilter}
@@ -2721,9 +2751,29 @@ export default function App() {
             </View>
           )}
 
+          {currentScreen === 'community' && currentUser && (
+            <View style={styles.screenStack}>
+              <CommunityScreen
+                api={api}
+                view={communityView}
+                setView={setCommunityView}
+                onOpenMechanic={openMechanicProfile}
+              />
+            </View>
+          )}
+
+          {currentScreen === 'promotions' && currentUser && (
+            <View style={styles.screenStack}>
+              <PromotionsScreen api={api} onOpenMechanic={openMechanicProfile} />
+            </View>
+          )}
+
           {currentScreen === 'actions' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
             <View style={styles.screenStack}>
             <ActionsScreen
+              api={api}
+              onOpenCommunity={openCommunity}
+              mechanicAccountActive={mechanicProfile?.status === 'active'}
               selectedActionRequest={selectedActionRequest}
               actionsView={actionsView}
               setActionsView={setActionsView}
@@ -2807,7 +2857,7 @@ export default function App() {
             />
           )}
           <BottomNavButton
-            active={currentScreen === 'actions' || currentScreen === 'account' || currentScreen === 'vehicles'}
+            active={['actions', 'account', 'vehicles', 'community', 'promotions'].includes(currentScreen)}
             onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
             iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
             label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}

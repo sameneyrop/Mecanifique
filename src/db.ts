@@ -487,6 +487,61 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // Comunidad: preguntas de cualquier usuario, respuestas de mecánicos
+  // verificados, y reacciones ("Me pasa lo mismo" / "Me ayudó").
+  await run(`
+    CREATE TABLE IF NOT EXISTS community_questions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      author_user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      category TEXT NOT NULL CHECK(category IN ('frenos', 'suspension', 'transmision', 'motor', 'electrico', 'llantas', 'otro')),
+      vehicle_label TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(author_user_id) REFERENCES users(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_community_questions_created_at ON community_questions(created_at DESC)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS community_answers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      question_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      author_user_id INTEGER NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(question_id) REFERENCES community_questions(id),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id),
+      FOREIGN KEY(author_user_id) REFERENCES users(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_community_answers_question ON community_answers(question_id)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS community_reactions (
+      user_id INTEGER NOT NULL,
+      target_type TEXT NOT NULL CHECK(target_type IN ('question', 'answer')),
+      target_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, target_type, target_id),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+
+  // Promociones que publica cada mecánico (ej. "revisión gratis al
+  // contratar mi servicio"). valid_until es AAAA-MM-DD o NULL (sin fecha).
+  await run(`
+    CREATE TABLE IF NOT EXISTS mechanic_promotions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mechanic_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      valid_until TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+
   // Fotos subidas desde la app (ver src/uploads.ts): en la base y no en
   // disco, porque el disco de Render gratis no persiste.
   await run(`

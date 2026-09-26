@@ -9,6 +9,7 @@ import { all, databaseKind, get, initDb, run } from "./db";
 import { requireAuth, requireRole, type AuthUser } from "./auth";
 import { handleAsync } from "./middleware";
 import { vehiclesRouter } from "./routes/vehicles";
+import { createCommunityRouter } from "./routes/community";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -1140,6 +1141,7 @@ app.get(
 // Perfiles de vehículos del cliente (metadata únicamente; las fotos son
 // URLs externas, nunca binarios). Rutas completas en routes/vehicles.ts.
 app.use("/api", vehiclesRouter);
+app.use("/api", createCommunityRouter({ createNotification, calculateDistanceKm, applyRateLimit }));
 
 // ============================================================================
 // IDENTITY VERIFICATION (document binaries remain in private object storage)

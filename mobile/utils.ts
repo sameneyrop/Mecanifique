@@ -43,6 +43,16 @@ export function formatServerDate(value: string | null | undefined): string {
   return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}${year}, ${time}`;
 }
 
+/** Fecha sin hora ("2026-09-30") como "30 sep" (con año si no es el actual). */
+export function formatDateOnly(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const year = date.getFullYear() === new Date().getFullYear() ? '' : ` ${date.getFullYear()}`;
+  return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}${year}`;
+}
+
 /** Distancia en línea recta (km) entre dos coordenadas. */
 export function distanceKm(
   from: { latitude: number; longitude: number },

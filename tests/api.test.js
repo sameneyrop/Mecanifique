@@ -10,6 +10,7 @@ const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
 const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
 const { decodePhoto, PhotoUploadError, savePhoto } = require("../src/uploads.ts");
+const { communityAuthorName } = require("../src/routes/community.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -235,6 +236,34 @@ test("rutas de cuenta, favoritos y soporte sin token devuelven 401", async () =>
   }
 });
 
+test("comunidad y promociones sin token devuelven 401", async () => {
+  const cases = [
+    ["GET", "/api/community/questions"],
+    ["POST", "/api/community/questions", { title: "Frenos que chillan", body: "Suena el freno delantero", category: "frenos" }],
+    ["GET", "/api/community/questions/1"],
+    ["POST", "/api/community/questions/1/answers", { body: "Revisa las pastillas y el disco" }],
+    ["POST", "/api/community/questions/1/me-too"],
+    ["POST", "/api/community/answers/1/helpful"],
+    ["DELETE", "/api/community/questions/1"],
+    ["GET", "/api/promotions"],
+    ["GET", "/api/promotions/mine"],
+    ["POST", "/api/promotions", { title: "Revisión gratis", description: "Al contratar mi servicio" }],
+    ["PATCH", "/api/promotions/1", { isActive: false }],
+    ["DELETE", "/api/promotions/1"]
+  ];
+  for (const [method, path, body] of cases) {
+    const { response } = await request(path, { method, body: body ? JSON.stringify(body) : undefined });
+    assert.equal(response.status, 401, `${method} ${path}`);
+  }
+});
+
+test("communityAuthorName: primer nombre + inicial, y nunca el correo", () => {
+  assert.equal(communityAuthorName("Emilio López Pérez"), "Emilio L.");
+  assert.equal(communityAuthorName("Cristóbal"), "Cristóbal");
+  assert.equal(communityAuthorName("sgapo123@gmail.com"), "Usuario");
+  assert.equal(communityAuthorName(""), "Usuario");
+});
+
 test("creación concurrente de usuario local no duplica la fila ni pierde el rol (regresión)", async () => {
   // Regresión del bug confirmado en producción el 2026-09-05 (commit
   // 366a6d1): dos peticiones concurrentes que resuelven el mismo usuario de
@@ -440,6 +469,132 @@ async function createRegisteredMechanic(status) {
   createdRows.mechanics.push(result.lastID);
   return result.lastID;
 }
+
+test("comunidad y promociones: flujo completo con sesión simulada", async () => {
+  // Las rutas reales con la base real; solo la sesión se simula (en los tests
+  // no hay tokens de Supabase).
+  const express = require("express");
+  const { ZodError } = require("zod");
+  const { createCommunityRouter } = require("../src/routes/community.ts");
+
+  const tag = crypto.randomUUID().slice(0, 8);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro", { latitude: -40, longitude: -150 });
+  async function createUser(role, fullName, linkedMechanicId = null) {
+    const supabaseUserId = crypto.randomUUID();
+    const login = `${supabaseUserId}@example.test`;
+    const result = await run(
+      `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
+       VALUES (?, ?, ?, ?, 'x', 'x', ?)`,
+      [role, login, supabaseUserId, fullName, linkedMechanicId]
+    );
+    return { id: result.lastID, role, login, fullName, customerId: null, mechanicId: linkedMechanicId };
+  }
+  const users = {
+    customer: await createUser("customer", `Emilio López ${tag}`),
+    mechanic: await createUser("mechanic", "Ricardo López", mechanicId)
+  };
+
+  const notifications = [];
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    const who = req.header("x-test-user");
+    if (who) req.auth = { user: users[who], token: "test" };
+    next();
+  });
+  app.use("/api", createCommunityRouter({
+    createNotification: async (userId, title) => { notifications.push({ userId, title }); },
+    calculateDistanceKm: (latA, lngA, latB, lngB) => Math.hypot(latA - latB, lngA - lngB) * 111,
+    applyRateLimit: () => false
+  }));
+  app.use((error, _req, res, _next) => {
+    res.status(error instanceof ZodError ? 400 : 500).json({ error: String(error?.message ?? error) });
+  });
+  const server = await new Promise((resolve) => {
+    const listening = app.listen(0, () => resolve(listening));
+  });
+  const base = `http://localhost:${server.address().port}/api`;
+  async function call(who, method, path, body) {
+    const response = await fetch(`${base}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json", "x-test-user": who },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    return { status: response.status, body: await response.json() };
+  }
+
+  let questionId = null;
+  try {
+    const created = await call("customer", "POST", "/community/questions", {
+      title: `Frenos que chillan ${tag}`,
+      body: "Suena solo el freno delantero izquierdo al frenar.",
+      category: "frenos",
+      vehicleLabel: "Toyota 4Runner 2004"
+    });
+    assert.equal(created.status, 201);
+    questionId = created.body.id;
+
+    const found = await call("mechanic", "GET", `/community/questions?q=${encodeURIComponent(tag)}&category=frenos`);
+    assert.equal(found.body.questions.length, 1);
+    assert.equal(found.body.questions[0].authorName, "Emilio L.");
+    assert.equal(found.body.questions[0].isMine, false);
+
+    const answer = await call("mechanic", "POST", `/community/questions/${questionId}/answers`, {
+      body: "Cambia las pastillas de ambos lados del eje y revisa el disco."
+    });
+    assert.equal(answer.status, 201);
+    assert.deepEqual(notifications.map((notification) => notification.userId), [users.customer.id]);
+
+    const customerAnswer = await call("customer", "POST", `/community/questions/${questionId}/answers`, {
+      body: "No soy mecánico pero quiero responder"
+    });
+    assert.equal(customerAnswer.status, 403);
+
+    assert.deepEqual((await call("customer", "POST", `/community/answers/${answer.body.id}/helpful`)).body, { active: true, count: 1 });
+    assert.deepEqual((await call("mechanic", "POST", `/community/questions/${questionId}/me-too`)).body, { active: true, count: 1 });
+    assert.equal((await call("customer", "POST", `/community/questions/${questionId}/me-too`)).status, 400);
+
+    const detail = await call("customer", "GET", `/community/questions/${questionId}`);
+    assert.equal(detail.body.question.answerCount, 1);
+    assert.equal(detail.body.question.meTooCount, 1);
+    assert.equal(detail.body.answers[0].mechanicVerified, true);
+    assert.equal(detail.body.answers[0].helpfulByMe, true);
+
+    const mine = await call("customer", "GET", "/community/questions?scope=mine");
+    assert.ok(mine.body.questions.some((question) => question.id === questionId));
+
+    const promotion = await call("mechanic", "POST", "/promotions", {
+      title: "Revisión de frenos gratis",
+      description: "Al contratar cualquier servicio conmigo."
+    });
+    assert.equal(promotion.status, 201);
+    const nearby = await call("customer", "GET", `/promotions?latitude=-40.01&longitude=-150&mechanicId=${mechanicId}`);
+    assert.equal(nearby.body.promotions.length, 1);
+    assert.ok(nearby.body.promotions[0].distanceKm < 5);
+    const expired = await call("mechanic", "POST", "/promotions", {
+      title: "Promoción vieja",
+      description: "Esta fecha ya pasó hace mucho.",
+      validUntil: "2020-01-01"
+    });
+    assert.equal(expired.status, 400);
+    assert.equal((await call("mechanic", "PATCH", `/promotions/${promotion.body.id}`, { isActive: false })).status, 200);
+    assert.equal((await call("customer", "GET", `/promotions?mechanicId=${mechanicId}`)).body.promotions.length, 0);
+    assert.equal((await call("mechanic", "GET", "/promotions/mine")).body.promotions[0].isActive, false);
+
+    assert.equal((await call("customer", "DELETE", `/community/questions/${questionId}`)).status, 200);
+    assert.equal((await call("customer", "GET", `/community/questions/${questionId}`)).status, 404);
+    questionId = null;
+  } finally {
+    server.close();
+    if (questionId) {
+      await run("DELETE FROM community_reactions WHERE user_id IN (?, ?)", [users.customer.id, users.mechanic.id]);
+      await run("DELETE FROM community_answers WHERE question_id = ?", [questionId]);
+      await run("DELETE FROM community_questions WHERE id = ?", [questionId]);
+    }
+    await run("DELETE FROM mechanic_promotions WHERE mechanic_id = ?", [mechanicId]);
+    await run("DELETE FROM users WHERE id IN (?, ?)", [users.customer.id, users.mechanic.id]);
+  }
+});
 
 test("mecánico nuevo y activo: al conectarse queda disponible para recibir solicitudes", async () => {
   const mechanicId = await createRegisteredMechanic("active");
