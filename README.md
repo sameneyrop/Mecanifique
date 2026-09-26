@@ -80,6 +80,10 @@ veo este bug"):
 (`mobile/index.tsx`) pero no se usa para navegar — el cambio entre
 pantallas ocurre por estado interno (`currentScreen`) y render
 condicional, sin transición nativa entre ellas. Ver `mobile/README.md`.
+El botón "atrás" de Android se maneja a mano con `BackHandler` en
+`App.tsx`: retrocede una sub-vista (detalle/creación de solicitud), luego
+vuelve a Inicio, y desde Inicio sale de la app. Si se agrega una pantalla
+con sub-vistas nuevas, hay que sumarla a ese handler.
 
 ### Implementado localmente y validado, pendiente de publicar
 

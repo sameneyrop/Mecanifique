@@ -35,6 +35,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Image,
   Platform,
   Pressable,
@@ -679,6 +680,45 @@ export default function App() {
       setCurrentScreen('home');
     }
   }, [currentUser?.role, currentScreen]);
+
+  // Sin esto, el botón "atrás" de Android cerraba la app desde cualquier
+  // pantalla: la navegación es por estado (currentScreen), no un stack
+  // nativo. Convención de Android para apps con pestañas: atrás retrocede
+  // una sub-vista, luego vuelve a Inicio, y desde Inicio sale de la app.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!user) {
+        if (onboardingSeen === false && onboardingStep > 0) {
+          setOnboardingStep((step) => step - 1);
+          return true;
+        }
+        if (authMode === 'mechanic' && mechanicSignupStep === 'work') {
+          setMechanicSignupStep('account');
+          return true;
+        }
+        if (onboardingSeen !== false && authMode !== 'login') {
+          setAuthMode('login');
+          return true;
+        }
+        return false;
+      }
+
+      if (currentScreen === 'requests' && requestsView === 'create' && requestCreateStep === 'details') {
+        setRequestCreateStep('vehicle');
+        return true;
+      }
+      if (currentScreen === 'requests' && requestsView !== 'list') {
+        setRequestsView('list');
+        return true;
+      }
+      if (currentScreen !== 'home') {
+        setCurrentScreen('home');
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep]);
 
   useEffect(() => {
     if (mechanics.length === 0) {
@@ -1572,7 +1612,18 @@ export default function App() {
     }
   }
 
-  async function handleIncomingResponse(action: 'accept' | 'reject') {
+  function handleIncomingResponse(action: 'accept' | 'reject') {
+    if (action === 'accept') {
+      void respondToIncomingRequest('accept');
+      return;
+    }
+    Alert.alert('¿Rechazar esta solicitud?', 'No podrás volver a aceptarla después.', [
+      { text: 'No', style: 'cancel' },
+      { text: 'Sí, rechazar', style: 'destructive', onPress: () => void respondToIncomingRequest('reject') },
+    ]);
+  }
+
+  async function respondToIncomingRequest(action: 'accept' | 'reject') {
     if (!incomingRequest) {
       return;
     }
@@ -1605,7 +1656,14 @@ export default function App() {
     }
   }
 
-  async function handleCancelRequest(requestId: number) {
+  function handleCancelRequest(requestId: number) {
+    Alert.alert('¿Cancelar la solicitud?', 'El mecánico dejará de atenderla y no se puede deshacer.', [
+      { text: 'No, mantenerla', style: 'cancel' },
+      { text: 'Sí, cancelar', style: 'destructive', onPress: () => void cancelRequest(requestId) },
+    ]);
+  }
+
+  async function cancelRequest(requestId: number) {
     setBusy(true);
     try {
       await apiRequest(`/api/service-requests/${requestId}/cancel`, {
