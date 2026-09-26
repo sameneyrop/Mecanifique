@@ -1,8 +1,8 @@
 process.env.MECANIFIQUE_AUTO_START = "false";
 
-const { startServer } = require("../src/server.ts");
+const { startServer, sweepExpiredHolds } = require("../src/server.ts");
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
-const { all } = require("../src/db.ts");
+const { all, get, run } = require("../src/db.ts");
 const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -35,7 +35,24 @@ test.before(async () => {
   await ensureServer();
 });
 
+const createdRows = { mechanics: [], customers: [], requests: [] };
+
+async function cleanupCreatedRows() {
+  for (const requestId of createdRows.requests) {
+    await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM service_requests WHERE id = ?", [requestId]);
+  }
+  for (const customerId of createdRows.customers) {
+    await run("DELETE FROM customers WHERE id = ?", [customerId]);
+  }
+  for (const mechanicId of createdRows.mechanics) {
+    await run("DELETE FROM mechanics WHERE id = ?", [mechanicId]);
+  }
+}
+
 test.after(async () => {
+  await cleanupCreatedRows();
   if (!global.__mecanifiqueServer) {
     return;
   }
@@ -203,4 +220,81 @@ test("getCommissionRate: baja escalonadamente con el volumen del mecánico", () 
 test("calculateCommissionAmount: aplica la tasa del volumen sobre el monto final", () => {
   assert.equal(calculateCommissionAmount(1000, 0), 150);
   assert.equal(calculateCommissionAmount(1000, 100), 80);
+});
+
+// --- Emparejamiento: qué pasa cuando un mecánico no responde a tiempo ---
+// Cada test usa una ciudad única para no chocar con otros datos de la base.
+
+function uniquePhone() {
+  return `55${crypto.randomInt(10_000_000, 99_999_999)}`;
+}
+
+async function createOnlineMechanic(city, zone) {
+  const result = await run(
+    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online)
+     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1)`,
+    [`Mecánico ${crypto.randomUUID().slice(0, 6)}`, uniquePhone(), city, zone]
+  );
+  createdRows.mechanics.push(result.lastID);
+  return result.lastID;
+}
+
+async function createPendingRequestWithExpiredHold(city, zone, mechanicId, assignmentMode) {
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);
+  const request = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone,
+        status, mechanic_id, hold_expires_at, assignment_mode)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', ?, ?, 'pending', ?, datetime('now', '-5 minutes'), ?)`,
+    [customer.lastID, city, zone, mechanicId, assignmentMode]
+  );
+  createdRows.customers.push(customer.lastID);
+  createdRows.requests.push(request.lastID);
+  return request.lastID;
+}
+
+test("hold vencido en solicitud automática: se ofrece al siguiente mecánico disponible", async () => {
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const firstMechanic = await createOnlineMechanic(city, "Centro");
+  const secondMechanic = await createOnlineMechanic(city, "Centro");
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", firstMechanic, "auto");
+
+  await sweepExpiredHolds();
+
+  const request = await get(
+    "SELECT mechanic_id AS mechanicId, hold_expires_at > CURRENT_TIMESTAMP AS holdActive FROM service_requests WHERE id = ?",
+    [requestId]
+  );
+  assert.equal(request.mechanicId, secondMechanic, "debe pasar al segundo mecánico");
+  assert.equal(request.holdActive, 1, "el nuevo mecánico debe tener su propio hold vigente");
+
+  const declines = await all(
+    "SELECT mechanic_id AS mechanicId, reason FROM service_request_declines WHERE service_request_id = ?",
+    [requestId]
+  );
+  assert.deepEqual(declines, [{ mechanicId: firstMechanic, reason: "expired" }]);
+});
+
+test("hold vencido en solicitud dirigida: no se reasigna a otro mecánico", async () => {
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const chosenMechanic = await createOnlineMechanic(city, "Centro");
+  await createOnlineMechanic(city, "Centro");
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", chosenMechanic, "direct");
+
+  await sweepExpiredHolds();
+
+  const request = await get("SELECT mechanic_id AS mechanicId, status FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(request.mechanicId, null, "el cliente eligió a ese mecánico: no se cambia por otro sin preguntarle");
+  assert.equal(request.status, "pending");
+});
+
+test("hold vencido sin otro mecánico disponible: la solicitud queda sin mecánico y no se vuelve a ofrecer al mismo", async () => {
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const onlyMechanic = await createOnlineMechanic(city, "Centro");
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", onlyMechanic, "auto");
+
+  await sweepExpiredHolds();
+
+  const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(request.mechanicId, null, "no debe volver a ofrecérsela al mismo mecánico que no respondió");
 });

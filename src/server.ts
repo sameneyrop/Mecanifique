@@ -686,6 +686,243 @@ function parseSpecialties(raw: string): string[] {
   }
 }
 
+// ============================================================================
+// EMPAREJAMIENTO: buscar al siguiente mecánico cuando uno no toma la solicitud
+// ============================================================================
+// Antes, si el mecánico rechazaba, la solicitud quedaba sin mecánico y nadie
+// buscaba a otro; si el hold vencía sin respuesta, no pasaba nada en absoluto.
+// En ambos casos el cliente veía "Pendiente" para siempre.
+
+/**
+ * Mecánico disponible en la zona con mejor reputación. Si se pasa
+ * requestId, excluye a quienes ya no tomaron esa solicitud.
+ */
+async function findAvailableMechanic(city: string, zone: string, requestId: number | null): Promise<number | null> {
+  const row = await get<{ id: number }>(
+    `
+    SELECT id
+    FROM mechanics
+    WHERE status = 'active'
+      AND is_online = 1
+      AND is_available = 1
+      AND city = ?
+      AND zone = ?
+      AND NOT EXISTS (
+        SELECT 1
+        FROM service_requests held
+        WHERE held.mechanic_id = mechanics.id
+          AND held.status = 'pending'
+          AND held.hold_expires_at IS NOT NULL
+          AND held.hold_expires_at > CURRENT_TIMESTAMP
+      )
+      AND (
+        ? IS NULL OR NOT EXISTS (
+          SELECT 1
+          FROM service_request_declines declined
+          WHERE declined.service_request_id = ?
+            AND declined.mechanic_id = mechanics.id
+        )
+      )
+    ORDER BY rating DESC, jobs_completed DESC
+    LIMIT 1
+    `,
+    [city, zone, requestId, requestId]
+  );
+  return row?.id ?? null;
+}
+
+/** Ofrece una solicitud sin mecánico a uno nuevo, con su propio hold. */
+async function offerRequestToMechanic(requestId: number, mechanicId: number): Promise<boolean> {
+  const mechanic = await get<{ fullName: string; laborRate: number | null }>(
+    "SELECT full_name AS fullName, labor_rate AS laborRate FROM mechanics WHERE id = ?",
+    [mechanicId]
+  );
+  if (!mechanic) {
+    return false;
+  }
+
+  const holdExpiresAt = toSqliteTimestamp(new Date(Date.now() + mechanicHoldMinutes * 60 * 1000));
+  // El apartado depende de la tarifa de cada mecánico, así que se recalcula
+  // al cambiar de mecánico. Todavía no se cobra nada (no hay Stripe), por lo
+  // que recalcular es seguro.
+  const offered = await run(
+    `
+    UPDATE service_requests
+    SET mechanic_id = ?, hold_expires_at = ?, deposit_amount = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND status = 'pending' AND mechanic_id IS NULL
+    `,
+    [mechanicId, holdExpiresAt, calculateDepositAmount(mechanic.laborRate), requestId]
+  );
+  if (offered.changes === 0) {
+    return false;
+  }
+
+  await run(
+    "INSERT INTO service_request_updates (service_request_id, source, message) VALUES (?, 'system', ?)",
+    [requestId, `Solicitud enviada a ${mechanic.fullName}. Tiene ${mechanicHoldMinutes} min para responder.`]
+  );
+  const mechanicUserId = await getUserIdByMechanicId(mechanicId);
+  if (mechanicUserId) {
+    await createNotification(mechanicUserId, "Nueva solicitud", `Tienes una solicitud pendiente #${requestId}`, { requestId });
+  }
+  notifyRequest(requestId, "request.offered", { requestId, mechanicId });
+  return true;
+}
+
+/**
+ * Se llama cuando un mecánico ya no tiene la solicitud (rechazó o dejó
+ * vencer el hold) y el caller ya limpió mechanic_id/hold. Registra el
+ * rechazo y, si la solicitud es automática, busca al siguiente mecánico.
+ */
+async function handleMechanicDeclined(requestId: number, mechanicId: number, reason: "rejected" | "expired"): Promise<void> {
+  await run(
+    "INSERT OR IGNORE INTO service_request_declines (service_request_id, mechanic_id, reason) VALUES (?, ?, ?)",
+    [requestId, mechanicId, reason]
+  );
+
+  const request = await get<{ city: string; zone: string; customerId: number; assignmentMode: string | null; status: string }>(
+    `
+    SELECT city, zone, customer_id AS customerId, assignment_mode AS assignmentMode, status
+    FROM service_requests
+    WHERE id = ?
+    `,
+    [requestId]
+  );
+  if (!request || request.status !== "pending") {
+    return;
+  }
+  const customerUserId = await getUserIdByCustomerId(request.customerId);
+
+  if (request.assignmentMode === "direct") {
+    await run(
+      "INSERT INTO service_request_updates (service_request_id, source, message) VALUES (?, 'system', ?)",
+      [requestId, "El mecánico elegido no pudo tomar la solicitud."]
+    );
+    if (customerUserId) {
+      await createNotification(
+        customerUserId,
+        "El mecánico no pudo tomar tu solicitud",
+        `Puedes buscar otro mecánico disponible desde el detalle de la solicitud #${requestId}.`,
+        { requestId }
+      );
+    }
+    notifyRequest(requestId, "request.unassigned", { requestId });
+    return;
+  }
+
+  const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId);
+  if (nextMechanicId && (await offerRequestToMechanic(requestId, nextMechanicId))) {
+    return;
+  }
+
+  await run(
+    "INSERT INTO service_request_updates (service_request_id, source, message) VALUES (?, 'system', ?)",
+    [requestId, "No hay otro mecánico disponible en la zona por ahora."]
+  );
+  if (customerUserId) {
+    await createNotification(
+      customerUserId,
+      "No hay mecánicos disponibles ahora",
+      `No encontramos otro mecánico en tu zona para la solicitud #${requestId}. Puedes intentar de nuevo en unos minutos.`,
+      { requestId }
+    );
+  }
+  notifyRequest(requestId, "request.unassigned", { requestId });
+}
+
+/** Libera un turno reservado por una solicitud que perdió a su mecánico. */
+async function releaseScheduleSlot(scheduleSlotId: number | null): Promise<void> {
+  if (!scheduleSlotId) {
+    return;
+  }
+  await run(
+    "UPDATE mechanic_schedule_slots SET status = 'available', service_request_id = NULL WHERE id = ?",
+    [scheduleSlotId]
+  );
+}
+
+/**
+ * Nadie llama a un endpoint cuando un hold vence, así que esto corre
+ * periódicamente (ver startHoldSweep) y trata cada hold vencido igual que
+ * un rechazo.
+ */
+export async function sweepExpiredHolds(): Promise<number> {
+  const expired = await all<{ id: number; mechanicId: number; scheduleSlotId: number | null }>(
+    `
+    SELECT id, mechanic_id AS mechanicId, schedule_slot_id AS scheduleSlotId
+    FROM service_requests
+    WHERE status = 'pending'
+      AND mechanic_id IS NOT NULL
+      AND hold_expires_at IS NOT NULL
+      AND hold_expires_at <= CURRENT_TIMESTAMP
+    `
+  );
+
+  let handled = 0;
+  for (const row of expired) {
+    // Condicional: si el mecánico aceptó o rechazó justo ahora, no hacer nada.
+    const cleared = await run(
+      `
+      UPDATE service_requests
+      SET mechanic_id = NULL, hold_expires_at = NULL, schedule_slot_id = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND status = 'pending'
+        AND mechanic_id = ?
+        AND hold_expires_at IS NOT NULL
+        AND hold_expires_at <= CURRENT_TIMESTAMP
+      `,
+      [row.id, row.mechanicId]
+    );
+    if (cleared.changes === 0) {
+      continue;
+    }
+    await releaseScheduleSlot(row.scheduleSlotId);
+
+    const mechanicUserId = await getUserIdByMechanicId(row.mechanicId);
+    if (mechanicUserId) {
+      await createNotification(
+        mechanicUserId,
+        "Solicitud vencida",
+        `No respondiste a tiempo la solicitud #${row.id}.`,
+        { requestId: row.id }
+      );
+    }
+    await handleMechanicDeclined(row.id, row.mechanicId, "expired");
+    handled += 1;
+  }
+  return handled;
+}
+
+const HOLD_SWEEP_INTERVAL_MS = 20_000;
+let holdSweepTimer: NodeJS.Timeout | null = null;
+let holdSweepRunning = false;
+
+function startHoldSweep(): void {
+  if (holdSweepTimer) {
+    return;
+  }
+  holdSweepTimer = setInterval(() => {
+    if (holdSweepRunning) {
+      return;
+    }
+    holdSweepRunning = true;
+    sweepExpiredHolds()
+      .catch((error) => console.error("Hold sweep failed:", error))
+      .finally(() => {
+        holdSweepRunning = false;
+      });
+  }, HOLD_SWEEP_INTERVAL_MS);
+  // No mantener vivo el proceso solo por este timer (tests, apagado limpio).
+  holdSweepTimer.unref();
+}
+
+function stopHoldSweep(): void {
+  if (holdSweepTimer) {
+    clearInterval(holdSweepTimer);
+    holdSweepTimer = null;
+  }
+}
+
 function calculateDistanceKm(
   latitudeA: number,
   longitudeA: number,
@@ -1499,46 +1736,30 @@ app.post(
       }
     }
 
+    // Se decide antes de auto-asignar: si el cliente eligió mecánico o turno,
+    // la solicitud es 'direct' y no se reasigna sola a otro mecánico.
+    const assignmentMode: "auto" | "direct" = requestedMechanicId || scheduleSlotId ? "direct" : "auto";
+
     if (!requestedMechanicId && !scheduleSlotId) {
-      const nearbyMechanic = await get<{ id: number }>(
-        `
-        SELECT id
-        FROM mechanics
-        WHERE status = 'active'
-          AND is_online = 1
-          AND is_available = 1
-          AND city = ?
-          AND zone = ?
-          AND NOT EXISTS (
-            SELECT 1
-            FROM service_requests held
-            WHERE held.mechanic_id = mechanics.id
-              AND held.status = 'pending'
-              AND held.hold_expires_at IS NOT NULL
-              AND held.hold_expires_at > CURRENT_TIMESTAMP
-          )
-        ORDER BY rating DESC, jobs_completed DESC
-        LIMIT 1
-        `,
-        [payload.city, payload.zone]
-      );
-      requestedMechanicId = nearbyMechanic?.id;
+      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null)) ?? undefined;
     }
 
     const holdExpiresAt = requestedMechanicId
       ? toSqliteTimestamp(new Date(Date.now() + mechanicHoldMinutes * 60 * 1000))
       : null;
     let requestedMechanicLaborRate: number | null = null;
+    let requestedMechanicName: string | null = null;
     if (requestedMechanicId) {
-      const requestedMechanic = await get<{ id: number; status: string; is_online: number; is_available: number; labor_rate: number | null }>(
+      const requestedMechanic = await get<{ id: number; status: string; is_online: number; is_available: number; labor_rate: number | null; full_name: string }>(
         `
-        SELECT id, status, is_online, is_available, labor_rate
+        SELECT id, status, is_online, is_available, labor_rate, full_name
         FROM mechanics
         WHERE id = ?
         `,
         [requestedMechanicId]
       );
       requestedMechanicLaborRate = requestedMechanic?.labor_rate ?? null;
+      requestedMechanicName = requestedMechanic?.full_name ?? null;
 
       if (!requestedMechanic || requestedMechanic.status !== "active" || requestedMechanic.is_online !== 1 || requestedMechanic.is_available !== 1) {
         res.status(404).json({ error: "Mecánico solicitado no disponible para recibir solicitudes" });
@@ -1582,9 +1803,9 @@ app.post(
       INSERT INTO service_requests (
         customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
         preferred_time, city, zone, service_address, latitude, longitude, mechanic_id, status, schedule_slot_id,
-        deposit_amount
+        deposit_amount, assignment_mode
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         customerId,
@@ -1603,7 +1824,8 @@ app.post(
         requestedMechanicId ?? null,
         "pending",
         scheduleSlotId ?? null,
-        calculateDepositAmount(requestedMechanicLaborRate)
+        calculateDepositAmount(requestedMechanicLaborRate),
+        assignmentMode
       ]
     );
 
@@ -1631,12 +1853,23 @@ app.post(
 
     const customerUserId = await getUserIdByCustomerId(customerId);
     if (customerUserId) {
-      await createNotification(
-        customerUserId,
-        "Solicitud creada",
-        `Tu solicitud #${result.lastID} fue registrada`,
-        { requestId: result.lastID }
-      );
+      if (requestedMechanicId) {
+        await createNotification(
+          customerUserId,
+          "Solicitud creada",
+          `Tu solicitud #${result.lastID} fue registrada`,
+          { requestId: result.lastID }
+        );
+      } else {
+        // Antes esto era silencioso: la solicitud quedaba "Pendiente" sin
+        // mecánico y el cliente no sabía que nadie la iba a recibir.
+        await createNotification(
+          customerUserId,
+          "No hay mecánicos disponibles ahora",
+          `Registramos tu solicitud #${result.lastID}, pero no hay mecánicos disponibles en tu zona en este momento. Puedes intentar de nuevo en unos minutos.`,
+          { requestId: result.lastID }
+        );
+      }
     }
 
     if (requestedMechanicId) {
@@ -1665,18 +1898,18 @@ app.post(
       [result.lastID]
     );
 
-    if (requestedMechanicId) {
-      await run(
-        `
-        INSERT INTO service_request_updates (service_request_id, source, message)
-        VALUES (?, 'system', ?)
-        `,
-        [
-          result.lastID,
-          `Solicitud enviada directamente al mecánico ${requestedMechanicId}. Hold de ${mechanicHoldMinutes} minutos`
-        ]
-      );
-    }
+    await run(
+      `
+      INSERT INTO service_request_updates (service_request_id, source, message)
+      VALUES (?, 'system', ?)
+      `,
+      [
+        result.lastID,
+        requestedMechanicId
+          ? `Solicitud enviada a ${requestedMechanicName ?? "un mecánico"}. Tiene ${mechanicHoldMinutes} min para responder.`
+          : "No hay mecánicos disponibles en la zona por ahora."
+      ]
+    );
 
     res.status(201).json(created);
   })
@@ -2655,11 +2888,14 @@ app.post(
       );
       const customerUserId = await getUserIdByCustomerId((await get<{ customer_id: number }>("SELECT customer_id FROM service_requests WHERE id = ?", [requestId]))?.customer_id ?? 0);
       const mechanicUserId = await getUserIdByMechanicId(mechanicId);
+      const acceptingMechanicName =
+        (await get<{ fullName: string }>("SELECT full_name AS fullName FROM mechanics WHERE id = ?", [mechanicId]))?.fullName ??
+        "Tu mecánico";
       if (customerUserId) {
         await createNotification(
           customerUserId,
           "Solicitud aceptada",
-          `El mecánico ${mechanicId} aceptó tu solicitud #${requestId}`,
+          `${acceptingMechanicName} aceptó tu solicitud #${requestId}`,
           { requestId, mechanicId }
         );
       }
@@ -2676,7 +2912,7 @@ app.post(
         INSERT INTO service_request_updates (service_request_id, source, message)
         VALUES (?, 'system', ?)
         `,
-        [requestId, `Mecánico ${mechanicId} aceptó la solicitud`]
+        [requestId, `${acceptingMechanicName} aceptó la solicitud`]
       );
 
       res.status(200).json({ ok: true, status: "assigned" });
@@ -2691,16 +2927,6 @@ app.post(
       `,
       [requestId]
     );
-    if (slotRelease?.schedule_slot_id) {
-      await run(
-        `
-        UPDATE mechanic_schedule_slots
-        SET status = 'available', service_request_id = NULL
-        WHERE id = ?
-        `,
-        [slotRelease.schedule_slot_id]
-      );
-    }
 
     const rejectResult = await run(
       `
@@ -2708,36 +2934,21 @@ app.post(
       SET mechanic_id = NULL, hold_expires_at = NULL, schedule_slot_id = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
         AND status = 'pending'
+        AND mechanic_id = ?
         AND hold_expires_at IS NOT NULL
         AND hold_expires_at > CURRENT_TIMESTAMP
       `,
-      [requestId]
+      [requestId, mechanicId]
     );
     if (rejectResult.changes === 0) {
       res.status(409).json({ error: "El hold ya expiró o la solicitud cambió de estado" });
       return;
     }
+    // El turno se libera solo si el rechazo realmente se aplicó (antes se
+    // liberaba incluso cuando el hold ya había vencido y se respondía 409).
+    await releaseScheduleSlot(slotRelease?.schedule_slot_id ?? null);
 
-    const rejectedCustomerId = await get<{ customer_id: number }>(
-      `
-      SELECT customer_id
-      FROM service_requests
-      WHERE id = ?
-      `,
-      [requestId]
-    );
-    const rejectedCustomerUserId = rejectedCustomerId
-      ? await getUserIdByCustomerId(rejectedCustomerId.customer_id)
-      : null;
     const rejectedMechanicUserId = await getUserIdByMechanicId(mechanicId);
-    if (rejectedCustomerUserId) {
-      await createNotification(
-        rejectedCustomerUserId,
-        "Solicitud rechazada",
-        `El mecánico ${mechanicId} rechazó tu solicitud #${requestId}`,
-        { requestId, mechanicId }
-      );
-    }
     if (rejectedMechanicUserId) {
       await createNotification(
         rejectedMechanicUserId,
@@ -2747,15 +2958,55 @@ app.post(
       );
     }
 
-    await run(
-      `
-      INSERT INTO service_request_updates (service_request_id, source, message)
-      VALUES (?, 'system', ?)
-      `,
-      [requestId, `Mecánico ${mechanicId} rechazó la solicitud en hold`]
-    );
+    await handleMechanicDeclined(requestId, mechanicId, "rejected");
 
     res.status(200).json({ ok: true, status: "pending" });
+  })
+);
+
+// El cliente pide volver a buscar mecánico para una solicitud que quedó sin
+// ninguno (nadie disponible, o el mecánico que eligió no pudo tomarla). La
+// solicitud pasa a 'auto' desde este momento.
+app.post(
+  "/api/service-requests/:id/search-again",
+  requireAuth,
+  requireRole("customer"),
+  handleAsync(async (req, res) => {
+    const requestId = Number(req.params.id);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      res.status(400).json({ error: "requestId inválido" });
+      return;
+    }
+
+    const request = await get<{ customerId: number; status: string; mechanicId: number | null; city: string; zone: string }>(
+      `
+      SELECT customer_id AS customerId, status, mechanic_id AS mechanicId, city, zone
+      FROM service_requests
+      WHERE id = ?
+      `,
+      [requestId]
+    );
+    if (!request || request.customerId !== req.auth?.user.customerId) {
+      res.status(404).json({ error: "Solicitud no encontrada" });
+      return;
+    }
+    if (request.status !== "pending") {
+      res.status(409).json({ error: "Esta solicitud ya no está buscando mecánico" });
+      return;
+    }
+    if (request.mechanicId) {
+      res.status(409).json({ error: "Un mecánico ya está revisando tu solicitud" });
+      return;
+    }
+
+    await run("UPDATE service_requests SET assignment_mode = 'auto', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [requestId]);
+    // Quien no respondió a tiempo puede estar libre ahora, así que se le puede
+    // volver a ofrecer. Quien rechazó explícitamente no se vuelve a molestar.
+    await run("DELETE FROM service_request_declines WHERE service_request_id = ? AND reason = 'expired'", [requestId]);
+
+    const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId);
+    const found = nextMechanicId !== null && (await offerRequestToMechanic(requestId, nextMechanicId));
+    res.status(200).json({ found });
   })
 );
 
@@ -2875,6 +3126,7 @@ app.get(
              sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.service_address AS serviceAddress, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt, sr.diagnosis_notes AS diagnosisNotes,
              sr.repair_notes AS repairNotes, sr.estimated_price AS estimatedPrice, sr.final_price AS finalPrice,
+             sr.assignment_mode AS assignmentMode,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt,
              c.full_name AS customerName, c.phone AS customerPhone,
              m.full_name AS mechanicName, m.phone AS mechanicPhone
@@ -3299,6 +3551,8 @@ export async function startServer(): Promise<typeof httpServer> {
     };
     const onListening = () => {
       httpServer.off("error", onError);
+      startHoldSweep();
+      httpServer.once("close", stopHoldSweep);
       console.log(`Mecanifique API escuchando en http://localhost:${port}`);
       resolve(httpServer);
     };

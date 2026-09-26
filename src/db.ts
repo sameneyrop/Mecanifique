@@ -199,6 +199,30 @@ export async function initDb(): Promise<void> {
     "ALTER TABLE service_requests ADD COLUMN refund_amount REAL"
   ); // Si el costo real fue MENOR al apartado, la diferencia a devolver.
   await migrateRequestStatusConstraint();
+  // Va DESPUÉS de migrateRequestStatusConstraint a propósito: en una base
+  // nueva esa función reconstruye la tabla, y una columna agregada antes se
+  // perdería en la reconstrucción.
+  await ensureColumn(
+    "service_requests",
+    "assignment_mode",
+    "ALTER TABLE service_requests ADD COLUMN assignment_mode TEXT CHECK(assignment_mode IN ('auto', 'direct'))"
+  ); // 'auto': la app eligió al mecánico y puede reasignar si no responde.
+     // 'direct': el cliente eligió a ese mecánico (o su turno); no se
+     // reasigna a otro sin que el cliente lo pida. NULL (solicitudes viejas)
+     // se trata como 'auto'.
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS service_request_declines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      reason TEXT NOT NULL CHECK(reason IN ('rejected', 'expired')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(service_request_id, mechanic_id),
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    );
+  `);
 
   await run(`
     CREATE TABLE IF NOT EXISTS service_request_updates (

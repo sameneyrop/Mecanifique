@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type Dispatch, type SetStateAction } from 'react';
-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { colors } from '../colors';
@@ -74,6 +74,7 @@ export function RequestsScreen({
   onLoadRequestById,
   onOpenRequestActions,
   onCancelRequest,
+  onSearchAgain,
   onSaveCurrentVehicle,
   onCreateRequest,
   onLoadRequestLookup,
@@ -104,6 +105,7 @@ export function RequestsScreen({
   onLoadRequestById: (id: number) => Promise<void>;
   onOpenRequestActions: (request: any) => void;
   onCancelRequest: (id: number) => void;
+  onSearchAgain: (id: number) => void;
   onSaveCurrentVehicle: () => void;
   onCreateRequest: () => void;
   onLoadRequestLookup: () => void;
@@ -183,8 +185,10 @@ export function RequestsScreen({
                     <Text style={styles.itemText}>Mecánico: {request.mechanicName || 'sin asignar'}</Text>
                     <Text style={styles.smallText}>Actualizada: {request.updatedAt}</Text>
                     {request.scheduleSlotId && <Text style={styles.smallText}>Turno #{request.scheduleSlotId}</Text>}
-                    {request.holdExpiresAt && request.status === 'pending' && (
-                      <Text style={styles.smallText}>En hold hasta: {request.holdExpiresAt}</Text>
+                    {request.status === 'pending' && (
+                      <Text style={styles.smallText}>
+                        {request.holdExpiresAt ? 'Esperando respuesta del mecánico' : 'Sin mecánico asignado todavía'}
+                      </Text>
                     )}
                     <SecondaryButton
                       title="Ver detalle"
@@ -430,6 +434,43 @@ export function RequestsScreen({
           {selectedRequest && (
             <View style={styles.stack}>
               <RequestCard request={selectedRequest} />
+              {user.role === 'customer' && selectedRequest.status === 'pending' && (
+                selectedRequest.mechanicId ? (
+                  <View style={styles.searchingCard}>
+                    <ActivityIndicator color={colors.primary} />
+                    <View style={styles.flex}>
+                      <Text style={styles.itemTitle}>Esperando respuesta</Text>
+                      <Text style={styles.smallText}>
+                        {selectedRequest.mechanicName || 'Un mecánico'} está revisando tu solicitud.
+                        {selectedRequest.assignmentMode === 'direct'
+                          ? ''
+                          : ' Si no puede tomarla, buscamos a otro automáticamente.'}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.searchingCard}>
+                    <Ionicons name="search-outline" size={22} color={colors.primary} />
+                    <View style={[styles.flex, styles.stack]}>
+                      <Text style={styles.itemTitle}>
+                        {selectedRequest.assignmentMode === 'direct'
+                          ? 'El mecánico no pudo tomar tu solicitud'
+                          : 'No hay mecánicos disponibles ahora'}
+                      </Text>
+                      <Text style={styles.smallText}>
+                        {selectedRequest.assignmentMode === 'direct'
+                          ? 'Podemos buscarte otro mecánico disponible en tu zona.'
+                          : 'Puedes intentar de nuevo en unos minutos.'}
+                      </Text>
+                      <PrimaryButton
+                        title={selectedRequest.assignmentMode === 'direct' ? 'Buscar otro mecánico' : 'Buscar de nuevo'}
+                        busy={busy}
+                        onPress={() => onSearchAgain(selectedRequest.id)}
+                      />
+                    </View>
+                  </View>
+                )
+              )}
               {selectedRequest.status !== 'completed' && selectedRequest.status !== 'cancelled' && (
                 <>
                   <Image source={ILLUST_EMERGENCY} resizeMode="cover" style={styles.cardIllustration} />

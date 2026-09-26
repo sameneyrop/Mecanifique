@@ -25,6 +25,16 @@ mantener informadas a ambas partes.
 - Ciclo del servicio: pendiente, asignada, en camino, en sitio, diagnóstico,
   reparación, espera de refacciones, terminada o cancelada.
 - Hold temporal y respuesta de aceptar/rechazar para solicitudes entrantes.
+- **Reasignación automática**: si el mecánico rechaza o deja vencer el hold,
+  la solicitud pasa sola al siguiente mecánico disponible en la zona (sin
+  volver a ofrecérsela a quien ya no la tomó). Los holds vencidos se
+  detectan con un barrido cada 20 s en el servidor (`sweepExpiredHolds`).
+  Solo aplica a solicitudes automáticas (`assignment_mode = 'auto'`); si el
+  cliente eligió a un mecánico o turno específico (`'direct'`), no se cambia
+  de mecánico sin su permiso. Si no hay nadie disponible, se le avisa al
+  cliente y puede pedir "Buscar de nuevo" (`POST
+  /api/service-requests/:id/search-again`), que también convierte una
+  solicitud dirigida en automática.
 - Dirección textual del servicio, además de coordenadas cuando hay permiso de
   ubicación.
 - Actualizaciones de avance, chat entre las partes, notificaciones push y

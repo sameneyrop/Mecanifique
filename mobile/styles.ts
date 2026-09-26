@@ -157,6 +157,16 @@ export const styles = StyleSheet.create({
   whenOptionTitleActive: {
     color: colors.primaryDark,
   },
+  searchingCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLighter,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+  },
   mechanicBanner: {
     flexDirection: 'row',
     alignItems: 'center',

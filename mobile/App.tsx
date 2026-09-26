@@ -191,6 +191,7 @@ type ServiceRequest = {
   longitude?: number | null;
   holdExpiresAt?: string | null;
   scheduleSlotId?: number | null;
+  assignmentMode?: 'auto' | 'direct' | null;
   updates?: RequestUpdate[];
 };
 
@@ -1623,6 +1624,27 @@ export default function App() {
     }
   }
 
+  async function handleSearchAgain(requestId: number) {
+    setBusy(true);
+    try {
+      const result = await apiRequest<{ found: boolean }>(`/api/service-requests/${requestId}/search-again`, {
+        method: 'POST',
+        token,
+      });
+      await loadRequestDetailById(requestId);
+      await loadMyRequests();
+      setMessage(
+        result.found
+          ? 'Encontramos un mecánico. Esperando su respuesta.'
+          : 'Todavía no hay mecánicos disponibles. Intenta de nuevo en unos minutos.',
+      );
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function handleEmergencyCall() {
     Alert.alert(
       'Llamar al 911',
@@ -1991,6 +2013,7 @@ export default function App() {
               onLoadRequestById={loadRequestDetailById}
               onOpenRequestActions={openRequestActions}
               onCancelRequest={handleCancelRequest}
+              onSearchAgain={handleSearchAgain}
               onSaveCurrentVehicle={saveCurrentVehicle}
               onCreateRequest={handleCreateRequest}
               onLoadRequestLookup={handleLoadRequest}

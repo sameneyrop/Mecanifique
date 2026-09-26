@@ -79,6 +79,7 @@ type ServiceRequest = {
   longitude?: number | null;
   holdExpiresAt?: string | null;
   scheduleSlotId?: number | null;
+  assignmentMode?: 'auto' | 'direct' | null;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 
