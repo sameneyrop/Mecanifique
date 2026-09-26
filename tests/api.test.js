@@ -152,6 +152,25 @@ test("token inválido/no reconocido devuelve 401 en ruta protegida", async () =>
   assert.equal(response.status, 401);
 });
 
+test("renovar sesión con refresh token inválido devuelve 401 con mensaje para volver a entrar", async () => {
+  const { response, body } = await request("/auth/v2/refresh", {
+    method: "POST",
+    body: JSON.stringify({ refreshToken: "refresh-token-invalido-de-prueba" })
+  });
+
+  assert.equal(response.status, 401);
+  assert.match(body.error, /sesión expiró/);
+});
+
+test("renovar sesión sin refresh token devuelve 400", async () => {
+  const { response } = await request("/auth/v2/refresh", {
+    method: "POST",
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 400);
+});
+
 test("creación concurrente de usuario local no duplica la fila ni pierde el rol (regresión)", async () => {
   // Regresión del bug confirmado en producción el 2026-09-05 (commit
   // 366a6d1): dos peticiones concurrentes que resuelven el mismo usuario de

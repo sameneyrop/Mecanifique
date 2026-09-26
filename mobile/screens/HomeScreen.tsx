@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, Field, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Card, ChoiceTile, Field, ImagePlaceholder, Input, PrimaryButton, SecondaryButton } from '../components/ui';
 import {
   ACTIVE_REQUEST_STATUSES,
   ContactRow,
@@ -166,9 +166,7 @@ function CustomerSearch({
     <View style={styles.stack}>
       <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
         {/* PLACEHOLDER: reemplazar por ilustración de marca final (mascota) */}
-        <View style={styles.heroPlaceholder}>
-          <Ionicons name="car-sport-outline" size={40} color={colors.primary} />
-        </View>
+        <ImagePlaceholder icon="car-sport-outline" />
         <Text style={styles.title}>Tu auto, en buenas manos</Text>
         <Text style={styles.subtitle}>
           Encuentra mecánicos verificados, cerca de ti o agenda para cuando lo necesites.
@@ -203,22 +201,22 @@ function CustomerSearch({
             </View>
             <SecondaryButton title="Usar mi ubicación actual" compact busy={busy} onPress={onUseMyLocation} />
             <View style={styles.row}>
-              <Pressable
-                style={[styles.whenOption, when === 'now' && styles.whenOptionActive, styles.flex]}
+              <ChoiceTile
+                icon="flash-outline"
+                title="Ahora mismo"
+                description="Un mecánico cerca de ti, listo para ayudarte."
+                active={when === 'now'}
                 onPress={() => setWhen('now')}
-              >
-                <Ionicons name="flash-outline" size={18} color={when === 'now' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.whenOptionTitle, when === 'now' && styles.whenOptionTitleActive]}>Ahora mismo</Text>
-                <Text style={styles.smallText}>Un mecánico cerca de ti, listo para ayudarte.</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.whenOption, when === 'schedule' && styles.whenOptionActive, styles.flex]}
+                style={styles.flex}
+              />
+              <ChoiceTile
+                icon="calendar-outline"
+                title="Agendar fecha"
+                description="Elige un mecánico y uno de sus turnos."
+                active={when === 'schedule'}
                 onPress={() => setWhen('schedule')}
-              >
-                <Ionicons name="calendar-outline" size={18} color={when === 'schedule' ? colors.primary : colors.textSecondary} />
-                <Text style={[styles.whenOptionTitle, when === 'schedule' && styles.whenOptionTitleActive]}>Agendar fecha</Text>
-                <Text style={styles.smallText}>Elige un mecánico y uno de sus turnos.</Text>
-              </Pressable>
+                style={styles.flex}
+              />
             </View>
             <PrimaryButton title="Buscar" onPress={handleSearch} />
           </View>

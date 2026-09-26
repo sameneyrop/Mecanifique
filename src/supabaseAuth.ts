@@ -385,6 +385,36 @@ export async function loginWithSupabase(email: string, password: string) {
 }
 
 /**
+ * Renueva una sesión de Supabase con su refresh token. El access token de
+ * Supabase vence a la hora; sin esto, la app queda con un token muerto y
+ * todas las rutas protegidas responden 401 hasta cerrar sesión a mano.
+ * Supabase rota el refresh token en cada uso: siempre hay que guardar el
+ * nuevo que devuelve esta función.
+ */
+export async function refreshSupabaseSession(refreshToken: string) {
+  const response = await supabaseFetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: supabaseAnonKey,
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.access_token || !data.refresh_token) {
+    throw new Error(getSupabaseError(data, "La sesión ya no es válida"));
+  }
+
+  return {
+    accessToken: String(data.access_token),
+    refreshToken: String(data.refresh_token),
+    expiresIn: Number(data.expires_in || 3600),
+  };
+}
+
+/**
  * Verify JWT token from Supabase
  */
 export async function verifySupabaseToken(token: string) {

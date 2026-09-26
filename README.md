@@ -13,6 +13,13 @@ mantener informadas a ambas partes.
 
 - API TypeScript/Express desplegada en `https://mecanifique.onrender.com`.
 - Registro e inicio de sesión con Supabase mediante email y contraseña.
+- **Sesión que se renueva sola**: el access token de Supabase vence a la hora.
+  El login (y el callback de Google) entregan también un refresh token, que la
+  app guarda en SecureStore; cuando una petición responde 401, la app llama a
+  `POST /auth/v2/refresh`, guarda el token nuevo y repite la petición sin que
+  el usuario note nada. Si la renovación ya no es posible, cierra la sesión
+  con el aviso "Tu sesión expiró. Vuelve a iniciar sesión." (antes la app
+  quedaba con un token muerto y todo respondía "Autenticación requerida").
 - Flujo preparado para Google OAuth: botón móvil, deep link
   `mecanifique://auth/callback` y endpoint `GET /auth/v2/google`.
 - Registro de clientes y mecánicos, con roles `customer`, `mechanic` y `admin`.
@@ -162,8 +169,18 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
   /api/alerts/panic`).
 - Actualización de ubicación del mecánico en primer plano cada 15 segundos o
   50 metros, solo mientras está conectado y tiene un servicio activo.
-- Flujo más directo para mecánicos: desde una solicitud o al aceptarla, la app
-  abre Acciones con el ID ya cargado y muestra vehículo, falla y destino.
+- Al aceptar una solicitud, el mecánico vuelve a Inicio, donde vive el trabajo
+  en curso (dirección, "Cómo llegar", botón de siguiente paso y chat). Acciones
+  del mecánico quedó solo para lo que ven los clientes: perfil público
+  (bio, tarifa, fotos) y agenda de turnos. Cambiar estados por número de
+  solicitud o asignar mecánicos es una herramienta de admin.
+- **Mismo lenguaje visual en todas las pantallas** (el de Inicio): bloques
+  separados, selección suave (borde azul y fondo claro, no relleno sólido),
+  datos con ícono en vez de "Etiqueta: valor", fechas legibles ("Hoy, 09:52")
+  y un solo botón principal al final de cada tarjeta. Las ilustraciones se
+  reemplazaron por recuadros punteados (`ImagePlaceholder` en
+  `mobile/components/ui.tsx`) hasta tener las ilustraciones de marca finales;
+  los archivos viejos siguen en `mobile/assets/` pero ya no se usan.
 
 Validación local realizada: `npm run build`, `npm test`, `npx tsc --noEmit` en
 `mobile` y `npx expo-doctor` (18/18).

@@ -1,13 +1,13 @@
-import { type Dispatch, type SetStateAction } from 'react';
+import { type Dispatch, type SetStateAction, useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, Field, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Card, EmptyState, Field, ImagePlaceholder, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
 import { formatError, getMechanicPublicStatus, formatCalendarDate } from '../utils';
-
-const ILLUST_SEARCH = require('../assets/illust-search.png');
 
 type ScheduleSlot = {
   id: number;
@@ -44,6 +44,9 @@ type RequestFormShape = {
   latitude: string;
   longitude: string;
 };
+
+// Cuántos resultados se muestran antes de "Ver más".
+const PAGE_SIZE = 8;
 
 export function MechanicsScreen({
   mechanicsFilter,
@@ -89,215 +92,242 @@ export function MechanicsScreen({
     setRequestsView,
     setRequestCreateStep,
   } = useAppContext();
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   if (!user || user.role === 'mechanic') {
     return null;
   }
 
-  return (
-    <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-    <Card title="Buscar mecánicos">
-      <Image source={ILLUST_SEARCH} resizeMode="contain" style={styles.cardIllustration} />
-      <View style={styles.stack}>
-        <View style={styles.row}>
-          <Field label="Ciudad" style={styles.flex}>
-            <Input
-              value={mechanicsFilter.city}
-              onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, city: value })}
-            />
-          </Field>
-          <Field label="Zona" style={styles.flex}>
-            <Input
-              value={mechanicsFilter.zone}
-              onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, zone: value })}
-            />
-          </Field>
-        </View>
-        <PrimaryButton
-          title="Buscar"
-          onPress={async () => {
-            try {
-              await onLoadMechanics();
-              setMessage('Mecánicos cargados');
-            } catch (error) {
-              setMessage(formatError(error));
-            }
-          }}
-        />
-        <SecondaryButton
-          title="Buscar cerca de mí"
-          busy={busy}
-          onPress={async () => {
-            setBusy(true);
-            try {
-              const coords = currentLocation || (await onRequestCurrentLocation());
-              await onLoadNearbyMechanics(coords.latitude, coords.longitude);
-              setMessage('Mecánicos cercanos cargados');
-            } catch (error) {
-              setMessage(formatError(error));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
-        {currentLocation && (
-          <Text style={styles.smallText}>
-            Ubicación actual: {currentLocation.latitude.toFixed(5)}, {currentLocation.longitude.toFixed(5)}
-          </Text>
-        )}
-      </View>
+  const selected = mechanics[mechanicCursor];
+  const canRequest = user.role === 'customer' || user.role === 'admin';
 
-      <View style={styles.list}>
-        {mechanics.slice(mechanicCursor, mechanicCursor + 1).map((mechanic) => (
-          <View key={mechanic.id} style={styles.item}>
-            <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
-            <Text style={styles.itemText}>{mechanic.city} · {mechanic.zone}</Text>
-            <Text style={styles.itemText}>⭐ {mechanic.rating.toFixed(1)} · {mechanic.jobsCompleted} trabajos</Text>
-            <Text style={styles.itemText}>{mechanic.specialties.join(', ')}</Text>
-            <Text style={styles.itemText}>
-              Estado de conexión: {mechanic.isOnline ? 'Conectado' : 'Desconectado'} · {mechanic.isAvailable ? 'Disponible' : 'Ocupado'}
-            </Text>
-            {typeof mechanic.distanceKm === 'number' && (
-              <Text style={styles.itemText}>A {mechanic.distanceKm.toFixed(1)} km</Text>
-            )}
-            <View style={styles.publicProfileBox}>
-              <Text style={styles.publicProfileTitle}>Perfil público</Text>
-              {mechanic.coverPhotoUrl ? (
-                <Image source={{ uri: mechanic.coverPhotoUrl }} style={styles.coverPhoto} />
-              ) : null}
-              <Text style={styles.smallText}>Teléfono: {mechanic.phone}</Text>
-              {mechanic.bio ? <Text style={styles.smallText}>{mechanic.bio}</Text> : null}
-              <Text style={styles.smallText}>Zona de atención: {mechanic.city} · {mechanic.zone}</Text>
-              <Text style={styles.smallText}>Estado actual: {getMechanicPublicStatus(mechanic)}</Text>
-              <Text style={styles.smallText}>
-                Agenda rápida: {mechanic.isOnline ? (mechanic.isAvailable ? 'Acepta solicitudes ahora' : 'Conectado, esperando turno') : 'Sin turno activo'}
-              </Text>
-              <Text style={styles.smallText}>
-                Reseñas: {selectedMechanicReviewStats.averageRating ? selectedMechanicReviewStats.averageRating.toFixed(1) : 'N/D'} · {selectedMechanicReviewStats.reviewCount}
-              </Text>
+  async function searchByZone() {
+    try {
+      await onLoadMechanics();
+      setMessage('Mecánicos cargados');
+    } catch (error) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function searchNearMe() {
+    setBusy(true);
+    try {
+      const coords = currentLocation || (await onRequestCurrentLocation());
+      await onLoadNearbyMechanics(coords.latitude, coords.longitude);
+      setMessage('Mecánicos cercanos cargados');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
+        <Card
+          title="Busca por zona"
+          subtitle={
+            currentLocation
+              ? 'Tenemos tu ubicación: puedes ver primero a los más cercanos.'
+              : 'Escribe tu ciudad y zona, o permite tu ubicación.'
+          }
+        >
+          <View style={styles.stack}>
+            {/* PLACEHOLDER: ilustración de búsqueda de mecánicos */}
+            <ImagePlaceholder icon="search-outline" compact />
+            <View style={styles.row}>
+              <Field label="Ciudad" style={styles.flex}>
+                <Input
+                  value={mechanicsFilter.city}
+                  onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, city: value })}
+                />
+              </Field>
+              <Field label="Zona" style={styles.flex}>
+                <Input
+                  value={mechanicsFilter.zone}
+                  onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, zone: value })}
+                />
+              </Field>
             </View>
-            {mechanic.gallery && mechanic.gallery.length > 0 && (
-              <View style={styles.publicProfileBox}>
-                <Text style={styles.publicProfileTitle}>Galería</Text>
-                <View style={styles.galleryRow}>
-                  {mechanic.gallery.slice(0, 3).map((imageUrl, index) => (
-                    <Image key={`${mechanic.id}-${index}`} source={{ uri: imageUrl }} style={styles.galleryPhoto} />
-                  ))}
-                </View>
-              </View>
-            )}
-            <View style={styles.publicProfileBox}>
-              <Text style={styles.publicProfileTitle}>Opiniones recientes</Text>
-              {selectedMechanicReviews.length === 0 ? (
-                <Text style={styles.smallText}>Todavía no hay reseñas.</Text>
-              ) : (
-                selectedMechanicReviews.slice(0, 3).map((review) => (
-                  <View key={review.id} style={styles.reviewCard}>
-                    <Text style={styles.reviewTitle}>
-                      {review.customerName} · {'⭐'.repeat(review.rating)}
-                    </Text>
-                    <Text style={styles.smallText}>{review.comment}</Text>
+            <SecondaryButton title="Buscar cerca de mí" compact busy={busy} onPress={searchNearMe} />
+            <PrimaryButton title="Buscar" onPress={searchByZone} />
+          </View>
+        </Card>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
+        {mechanics.length === 0 ? (
+          <Card title="Resultados">
+            <EmptyState
+              icon="people-outline"
+              title="Sin mecánicos por ahora"
+              text="Prueba con otra zona o busca cerca de ti."
+            />
+          </Card>
+        ) : (
+          <Card
+            title={mechanics.length === 1 ? '1 mecánico' : `${mechanics.length} mecánicos`}
+            subtitle="Toca uno para ver su perfil completo."
+          >
+            <View style={styles.list}>
+              {mechanics.slice(0, visibleCount).map((mechanic, index) => (
+                <Pressable
+                  key={mechanic.id}
+                  style={({ pressed }) => [styles.item, index === mechanicCursor && styles.itemActive, pressed && styles.buttonPressed]}
+                  onPress={() => setMechanicCursor(() => index)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: index === mechanicCursor }}
+                >
+                  <View style={styles.itemHeader}>
+                    <View style={styles.itemIcon}>
+                      <Ionicons name="person-outline" size={20} color={colors.primary} />
+                    </View>
+                    <View style={styles.flex}>
+                      <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
+                      <Text style={styles.smallText}>
+                        ★ {mechanic.rating.toFixed(1)} · {mechanic.jobsCompleted} trabajos
+                        {typeof mechanic.distanceKm === 'number' ? ` · a ${mechanic.distanceKm.toFixed(1)} km` : ''}
+                      </Text>
+                    </View>
                   </View>
-                ))
+                  <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(mechanic)} />
+                </Pressable>
+              ))}
+              {mechanics.length > visibleCount && (
+                <SecondaryButton title="Ver más" onPress={() => setVisibleCount((count) => count + PAGE_SIZE)} />
               )}
             </View>
-            <View style={styles.publicProfileBox}>
-              <Text style={styles.publicProfileTitle}>Calendario de turnos</Text>
-              <View style={styles.calendarStrip}>
-                {scheduleDates.length === 0 ? (
-                  <Text style={styles.smallText}>Sin turnos cargados todavía.</Text>
-                ) : (
-                  scheduleDates.map((date) => (
-                    <Pressable
-                      key={date}
-                      style={[styles.calendarChip, selectedScheduleDate === date && styles.calendarChipActive]}
-                      onPress={() => setSelectedScheduleDate(date)}
-                    >
-                      {(() => {
-                        const label = formatCalendarDate(date);
-                        return (
-                          <>
-                            <Text
-                              style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                            >
-                              {label.weekday}
-                            </Text>
-                            <Text
-                              style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                            >
-                              {label.day}
-                            </Text>
-                            <Text
-                              style={[styles.calendarChipText, selectedScheduleDate === date && styles.calendarChipTextActive]}
-                            >
-                              {label.month}
-                            </Text>
-                          </>
-                        );
-                      })()}
-                    </Pressable>
-                  ))
-                )}
-              </View>
+          </Card>
+        )}
+      </Animated.View>
+
+      {selected && (
+        <Animated.View key={selected.id} entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
+          <Card
+            title={selected.fullName}
+            subtitle={selected.specialties.length > 0 ? selected.specialties.join(', ') : undefined}
+          >
+            <View style={styles.stack}>
+              {selected.coverPhotoUrl ? <Image source={{ uri: selected.coverPhotoUrl }} style={styles.coverPhoto} /> : null}
+              <InfoRow
+                icon="star-outline"
+                text={
+                  selectedMechanicReviewStats.averageRating
+                    ? `${selectedMechanicReviewStats.averageRating.toFixed(1)} de 5 · ${selectedMechanicReviewStats.reviewCount} reseñas · ${selected.jobsCompleted} trabajos`
+                    : `Sin reseñas todavía · ${selected.jobsCompleted} trabajos`
+                }
+              />
+              <InfoRow
+                icon="location-outline"
+                text={`${selected.city} · ${selected.zone}${typeof selected.distanceKm === 'number' ? ` · a ${selected.distanceKm.toFixed(1)} km` : ''}`}
+              />
+              <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(selected)} />
+              {selected.phone ? <InfoRow icon="call-outline" text={selected.phone} /> : null}
+              {selected.bio ? <Text style={styles.itemText}>{selected.bio}</Text> : null}
+
+              {selected.gallery && selected.gallery.length > 0 && (
+                <View style={styles.publicProfileBox}>
+                  <Text style={styles.publicProfileTitle}>Trabajos anteriores</Text>
+                  <View style={styles.galleryRow}>
+                    {selected.gallery.slice(0, 3).map((imageUrl, index) => (
+                      <Image key={`${selected.id}-${index}`} source={{ uri: imageUrl }} style={styles.galleryPhoto} />
+                    ))}
+                  </View>
+                </View>
+              )}
+
               <View style={styles.publicProfileBox}>
-                <Text style={styles.publicProfileTitle}>Turnos del día</Text>
-                {filteredScheduleSlots.length === 0 ? (
-                  <Text style={styles.smallText}>No hay turnos en esta fecha.</Text>
+                <Text style={styles.publicProfileTitle}>Opiniones recientes</Text>
+                {selectedMechanicReviews.length === 0 ? (
+                  <Text style={styles.smallText}>Todavía no hay reseñas.</Text>
                 ) : (
-                  filteredScheduleSlots.map((slot) => (
-                    <View key={slot.id} style={styles.slotRow}>
-                      <Text style={styles.smallText}>
-                        {slot.startTime} - {slot.endTime} · {slot.status}
+                  selectedMechanicReviews.slice(0, 3).map((review) => (
+                    <View key={review.id} style={styles.reviewCard}>
+                      <Text style={styles.reviewTitle}>
+                        {review.customerName} · {'★'.repeat(review.rating)}
                       </Text>
-                      {slot.note ? <Text style={styles.smallText}>{slot.note}</Text> : null}
-                      {(user.role === 'customer' || user.role === 'admin') && slot.status === 'available' && (
-                        <SecondaryButton
-                          title="Tomar turno"
-                          compact
-                          onPress={() => {
-                            setRequestForm({
-                              ...requestForm,
-                              requestedMechanicId: String(mechanic.id),
-                              scheduleSlotId: String(slot.id),
-                              preferredTime: `${slot.slotDate} ${slot.startTime}`,
-                            });
-                            setCurrentScreen('requests');
-                            setRequestsView('create');
-                            setRequestCreateStep('vehicle');
-                            setMessage(`Turno del ${slot.slotDate} a las ${slot.startTime} con ${mechanic.fullName}`);
-                          }}
-                        />
-                      )}
+                      <Text style={styles.smallText}>{review.comment}</Text>
                     </View>
                   ))
                 )}
               </View>
+
+              <View style={styles.publicProfileBox}>
+                <Text style={styles.publicProfileTitle}>Turnos disponibles</Text>
+                {scheduleDates.length === 0 ? (
+                  <Text style={styles.smallText}>Este mecánico todavía no publica turnos.</Text>
+                ) : (
+                  <>
+                    <View style={styles.calendarStrip}>
+                      {scheduleDates.map((date) => {
+                        const label = formatCalendarDate(date);
+                        const active = selectedScheduleDate === date;
+                        return (
+                          <Pressable
+                            key={date}
+                            style={[styles.calendarChip, active && styles.calendarChipActive]}
+                            onPress={() => setSelectedScheduleDate(date)}
+                          >
+                            <Text style={[styles.calendarChipText, active && styles.calendarChipTextActive]}>{label.weekday}</Text>
+                            <Text style={[styles.calendarChipText, active && styles.calendarChipTextActive]}>{label.day}</Text>
+                            <Text style={[styles.calendarChipText, active && styles.calendarChipTextActive]}>{label.month}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    {filteredScheduleSlots.length === 0 ? (
+                      <Text style={styles.smallText}>No hay turnos en esta fecha.</Text>
+                    ) : (
+                      filteredScheduleSlots.map((slot) => (
+                        <View key={slot.id} style={styles.slotCard}>
+                          <Text style={styles.itemTitle}>
+                            {slot.startTime} - {slot.endTime}
+                          </Text>
+                          <Text style={styles.smallText}>{slot.status === 'available' ? 'Disponible' : 'Ocupado'}</Text>
+                          {slot.note ? <Text style={styles.smallText}>{slot.note}</Text> : null}
+                          {canRequest && slot.status === 'available' && (
+                            <SecondaryButton
+                              title="Tomar este turno"
+                              compact
+                              onPress={() => {
+                                setRequestForm({
+                                  ...requestForm,
+                                  requestedMechanicId: String(selected.id),
+                                  scheduleSlotId: String(slot.id),
+                                  preferredTime: `${slot.slotDate} ${slot.startTime}`,
+                                });
+                                setCurrentScreen('requests');
+                                setRequestsView('create');
+                                setRequestCreateStep('vehicle');
+                                setMessage(`Turno del ${slot.slotDate} a las ${slot.startTime} con ${selected.fullName}`);
+                              }}
+                            />
+                          )}
+                        </View>
+                      ))
+                    )}
+                  </>
+                )}
+              </View>
+
+              {canRequest && (
+                <PrimaryButton
+                  title="Pedir a este mecánico"
+                  onPress={() => {
+                    setRequestForm({ ...requestForm, requestedMechanicId: String(selected.id) });
+                    setCurrentScreen('requests');
+                    setRequestsView('create');
+                    setRequestCreateStep('vehicle');
+                    setMessage(`Solicitud preparada para ${selected.fullName}`);
+                  }}
+                />
+              )}
             </View>
-            <Text style={styles.badge}>
-              #{mechanic.id} · {mechanic.status} · {mechanic.isAvailable ? 'disponible' : 'ocupado'}
-            </Text>
-            {(user.role === 'customer' || user.role === 'admin') && (
-              <PrimaryButton
-                title="Solicitar ayuda de este mecánico"
-                onPress={() => {
-                  setRequestForm({ ...requestForm, requestedMechanicId: String(mechanic.id) });
-                  setCurrentScreen('requests');
-                  setRequestsView('create');
-                  setMessage(`Solicitud preparada para ${mechanic.fullName}`);
-                }}
-              />
-            )}
-            <View style={styles.row}>
-              <SecondaryButton title="Anterior" onPress={() => setMechanicCursor((value) => Math.max(0, value - 1))} />
-              <SecondaryButton
-                title="Siguiente"
-                onPress={() => setMechanicCursor((value) => Math.min(mechanics.length - 1, value + 1))}
-              />
-            </View>
-          </View>
-        ))}
-      </View>
-    </Card>
-    </Animated.View>
+          </Card>
+        </Animated.View>
+      )}
+    </>
   );
 }

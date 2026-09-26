@@ -77,7 +77,24 @@ type AuthUser = {
 type AuthResponse = {
   user: AuthUser;
   accessToken: string;
+  refreshToken?: string | null;
 };
+
+type RenewedSession = {
+  accessToken: string;
+  refreshToken: string;
+};
+
+// Error de API con el código HTTP, para distinguir "el servidor rechazó la
+// sesión" (401) de "no hubo conexión" sin depender del texto del mensaje.
+class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 type RegistrationResponse = {
   userId: string | null;
@@ -263,11 +280,12 @@ const defaultApiBaseUrl =
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || defaultApiBaseUrl;
 const AUTH_TOKEN_KEY = 'mecanifique.auth.token';
 const AUTH_USER_KEY = 'mecanifique.auth.user';
+const AUTH_REFRESH_KEY = 'mecanifique.auth.refresh';
+const SESSION_EXPIRED_MESSAGE = 'Tu sesión expiró. Vuelve a iniciar sesión.';
 const ONBOARDING_KEY = 'mecanifique.onboarding.seen';
 const API_REQUEST_TIMEOUT_MS = 15_000;
 const STATUS_REFRESH_INTERVAL_MS = 10_000;
 const APP_LOGO_IMAGE = require('./assets/logo.png');
-const ONBOARDING_MECHANIC_IMAGE = require('./assets/onboarding-mechanic.png');
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -290,11 +308,10 @@ const ONBOARDING_STEPS = [
     title: 'Solicita un servicio',
     body: 'Pide ayuda directo a un mecánico, reserva turnos y sigue el flujo del servicio.',
     icon: 'car-sport-outline' as const,
-    image: ONBOARDING_MECHANIC_IMAGE,
   },
   {
     title: 'Mecánicos se conectan y reciben pedidos',
-    body: 'El mecánico entra online, recibe solicitudes y gestiona agenda, updates y estado.',
+    body: 'El mecánico se conecta, recibe solicitudes y avisa cada paso del servicio.',
     icon: 'notifications-outline' as const,
   },
 ] as const;
@@ -313,7 +330,7 @@ function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
     case 'requests':
       return 'Tus solicitudes';
     case 'map':
-      return role === 'mechanic' ? 'Solicitud entrante' : 'Mecánicos cerca de ti';
+      return role === 'mechanic' ? 'Tu zona de trabajo' : 'Mecánicos cerca de ti';
     case 'actions':
       return 'Acciones';
     case 'account':
@@ -429,10 +446,6 @@ export default function App() {
     mechanicId: '',
     isAvailable: 'true',
   });
-  const [updateForm, setUpdateForm] = useState({
-    requestId: '',
-    message: '',
-  });
   const [slotForm, setSlotForm] = useState({
     mechanicId: '',
     slotDate: '',
@@ -461,7 +474,6 @@ export default function App() {
 
   const selectedMechanicId = useMemo(() => user?.mechanicId?.toString() || '', [user]);
   const currentUser = user;
-  const [requestCursor, setRequestCursor] = useState(0);
   const [mechanicCursor, setMechanicCursor] = useState(0);
   const [mechanicReviewsExpanded, setMechanicReviewsExpanded] = useState(false);
   const [selectedScheduleDate, setSelectedScheduleDate] = useState('');
@@ -514,10 +526,12 @@ export default function App() {
 
   useEffect(() => {
     async function restoreSession() {
+      let hadSession = false;
       try {
-        let [storedToken, storedUser] = await Promise.all([
+        let [storedToken, storedUser, storedRefreshToken] = await Promise.all([
           SecureStore.getItemAsync(AUTH_TOKEN_KEY),
           SecureStore.getItemAsync(AUTH_USER_KEY),
+          SecureStore.getItemAsync(AUTH_REFRESH_KEY),
         ]);
 
         if (!storedToken || !storedUser) {
@@ -544,9 +558,14 @@ export default function App() {
 
         if (storedToken && storedUser) {
           const parsedUser = JSON.parse(storedUser) as AuthUser;
+          hadSession = true;
+          tokenRef.current = storedToken;
+          refreshTokenRef.current = storedRefreshToken;
           setToken(storedToken);
           setUser(parsedUser);
 
+          // Si el token guardado ya venció, apiRequest lo renueva solo y
+          // deja el token nuevo en tokenRef.
           const me = await apiRequest<{ user: Partial<AuthUser> }>('/auth/v2/me', {
             token: storedToken,
           });
@@ -557,16 +576,27 @@ export default function App() {
             fullName: me.user.fullName || parsedUser.fullName || me.user.login || '',
           } as AuthUser;
           setUser(restoredUser);
-          await persistSession(storedToken, restoredUser);
+          await persistSession(tokenRef.current, restoredUser);
         }
 
         setOnboardingSeen(storedToken && storedUser ? true : storedOnboarding === '1');
         if (!storedToken || !storedUser) {
           return;
         }
-      } catch {
-        await clearSession();
-        setOnboardingSeen(false);
+      } catch (error) {
+        const sessionRejected = error instanceof ApiError && error.status === 401;
+        if (hadSession && !sessionRejected) {
+          // Sin conexión o servidor dormido: conservamos la sesión guardada.
+          // Las siguientes peticiones la renuevan, o la cierran si de verdad
+          // ya no es válida.
+          setOnboardingSeen(true);
+        } else {
+          await clearSession();
+          setOnboardingSeen(hadSession);
+          if (sessionRejected) {
+            setMessage(SESSION_EXPIRED_MESSAGE);
+          }
+        }
       } finally {
         setLoadingSession(false);
       }
@@ -663,17 +693,6 @@ export default function App() {
   }, [user, token]);
 
   useEffect(() => {
-    if (myRequests.length === 0) {
-      setRequestCursor(0);
-      return;
-    }
-
-    if (requestCursor >= myRequests.length) {
-      setRequestCursor(myRequests.length - 1);
-    }
-  }, [myRequests, requestCursor]);
-
-  useEffect(() => {
     if (actionOptions.length === 0) {
       return;
     }
@@ -718,6 +737,11 @@ export default function App() {
   // La ubicación del formulario se llena sola con el GPS una vez por sesión
   // (la geocodificación inversa no debe repetirse en cada refresco).
   const requestLocationPrefilled = useRef(false);
+  // Últimos tokens de sesión, para leerlos fuera del ciclo de render (el
+  // estado `token` puede ir un render atrasado justo después de renovarlo).
+  const tokenRef = useRef('');
+  const refreshTokenRef = useRef<string | null>(null);
+  const renewSessionInFlight = useRef<Promise<string | null> | null>(null);
   useEffect(() => {
     if (user?.role !== 'customer' || !currentLocation || requestLocationPrefilled.current) {
       return;
@@ -835,16 +859,6 @@ export default function App() {
   }, [mechanicSlots, selectedScheduleDate]);
 
   useEffect(() => {
-    if (myRequests.length === 0) {
-      setRequestCursor(0);
-      return;
-    }
-    if (requestCursor >= myRequests.length) {
-      setRequestCursor(myRequests.length - 1);
-    }
-  }, [myRequests, requestCursor]);
-
-  useEffect(() => {
     if (user?.role !== 'mechanic' || !user.mechanicId) {
       return;
     }
@@ -941,19 +955,71 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [currentLocation, selectedRequest?.id, user?.role, mechanicConnection, user, token]);
 
-  async function persistSession(nextToken: string, nextUser: AuthUser | null) {
+  // nextRefreshToken: string para guardar uno nuevo, null para borrarlo,
+  // undefined para dejar el que ya estaba (ej. al cambiar de modo).
+  async function persistSession(nextToken: string, nextUser: AuthUser | null, nextRefreshToken?: string | null) {
     if (!nextUser) {
       await clearSession();
       return;
     }
 
-    await Promise.all([
+    tokenRef.current = nextToken;
+    const writes = [
       SecureStore.setItemAsync(AUTH_TOKEN_KEY, nextToken),
       SecureStore.setItemAsync(AUTH_USER_KEY, JSON.stringify(nextUser)),
-    ]);
+    ];
+    if (nextRefreshToken !== undefined) {
+      refreshTokenRef.current = nextRefreshToken;
+      writes.push(
+        nextRefreshToken
+          ? SecureStore.setItemAsync(AUTH_REFRESH_KEY, nextRefreshToken)
+          : SecureStore.deleteItemAsync(AUTH_REFRESH_KEY),
+      );
+    }
+    await Promise.all(writes);
+  }
+
+  // El access token de Supabase vence a la hora. Con el refresh token
+  // pedimos uno nuevo sin molestar al usuario. Varias peticiones que fallan a
+  // la vez comparten una sola renovación (Supabase rota el refresh token en
+  // cada uso, así que no deben pedirse dos en paralelo).
+  // Devuelve el token nuevo, o null si la sesión ya no se puede renovar.
+  function renewSession(): Promise<string | null> {
+    if (!renewSessionInFlight.current) {
+      renewSessionInFlight.current = (async () => {
+        const refreshToken = refreshTokenRef.current;
+        if (!refreshToken) {
+          return null;
+        }
+        try {
+          const renewed = await apiRequest<RenewedSession>('/auth/v2/refresh', {
+            method: 'POST',
+            body: { refreshToken },
+          });
+          refreshTokenRef.current = renewed.refreshToken;
+          tokenRef.current = renewed.accessToken;
+          setToken(renewed.accessToken);
+          await Promise.all([
+            SecureStore.setItemAsync(AUTH_TOKEN_KEY, renewed.accessToken),
+            SecureStore.setItemAsync(AUTH_REFRESH_KEY, renewed.refreshToken),
+          ]);
+          return renewed.accessToken;
+        } catch (error) {
+          if (error instanceof ApiError && (error.status === 401 || error.status === 400)) {
+            return null;
+          }
+          throw error;
+        }
+      })().finally(() => {
+        renewSessionInFlight.current = null;
+      });
+    }
+    return renewSessionInFlight.current;
   }
 
   async function clearSession() {
+    tokenRef.current = '';
+    refreshTokenRef.current = null;
     setToken('');
     setUser(null);
     setIncomingRequest(null);
@@ -972,6 +1038,7 @@ export default function App() {
     await Promise.all([
       SecureStore.deleteItemAsync(AUTH_TOKEN_KEY),
       SecureStore.deleteItemAsync(AUTH_USER_KEY),
+      SecureStore.deleteItemAsync(AUTH_REFRESH_KEY),
       AsyncStorage.removeItem(AUTH_TOKEN_KEY),
       AsyncStorage.removeItem(AUTH_USER_KEY),
     ]);
@@ -995,6 +1062,7 @@ export default function App() {
       body?: unknown;
       token?: string;
     } = {},
+    isRetry = false,
   ): Promise<T> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
@@ -1027,6 +1095,15 @@ export default function App() {
       clearTimeout(timeout);
     }
 
+    if (response.status === 401 && options.token && !isRetry) {
+      const renewedToken = await renewSession();
+      if (renewedToken) {
+        return apiRequest<T>(path, { ...options, token: renewedToken }, true);
+      }
+      await clearSession();
+      throw new ApiError(SESSION_EXPIRED_MESSAGE, 401);
+    }
+
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('application/json') ? await response.json() : await response.text();
 
@@ -1054,7 +1131,7 @@ export default function App() {
         errorMessage = payloadDetails.length > 0 ? `${payloadError} (${payloadDetails.join(' | ')})` : payloadError || errorMessage;
       }
 
-      throw new Error(errorMessage);
+      throw new ApiError(errorMessage, response.status);
     }
 
     return payload as T;
@@ -1524,7 +1601,7 @@ export default function App() {
       setUser(response.user);
       setLocationAutoRequested(false);
       setCurrentScreen('home');
-      await persistSession(response.accessToken, response.user);
+      await persistSession(response.accessToken, response.user, response.refreshToken ?? null);
       await loadMyRequests(response.accessToken);
       setMessage(`Sesión iniciada como ${response.user.role}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -1563,7 +1640,7 @@ export default function App() {
       setUser(me.user);
       setLocationAutoRequested(false);
       setCurrentScreen('home');
-      await persistSession(accessToken, me.user);
+      await persistSession(accessToken, me.user, params.get('refresh_token'));
       await loadMyRequests(accessToken);
       setMessage(`Sesión iniciada como ${me.user.role}`);
     } catch (error) {
@@ -1683,7 +1760,6 @@ export default function App() {
     setSelectedActionRequest(request);
     setRequestLookupId(String(request.id));
     setServiceStatusForm((current) => ({ ...current, requestId: String(request.id) }));
-    setUpdateForm((current) => ({ ...current, requestId: String(request.id) }));
     setCurrentScreen('actions');
     setActionsView('requestStatus');
   }
@@ -1708,7 +1784,7 @@ export default function App() {
         body: payload,
       });
       setUser(response.user);
-      await persistSession(token, response.user);
+      await persistSession(tokenRef.current || token, response.user);
       setCurrentScreen(response.user.role === 'mechanic' ? 'home' : 'mechanics');
       setMessage(response.user.role === 'mechanic' ? 'Ahora estás en modo profesional' : 'Ahora estás en modo cliente');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -1843,7 +1919,6 @@ export default function App() {
         setSelectedActionRequest(fullRequest);
         setRequestLookupId(String(fullRequest.id));
         setServiceStatusForm((current) => ({ ...current, requestId: String(fullRequest.id) }));
-        setUpdateForm((current) => ({ ...current, requestId: String(fullRequest.id) }));
         // El trabajo en curso (dirección, "Cómo llegar", siguiente paso, chat)
         // vive en Inicio.
         setCurrentScreen('home');
@@ -2054,31 +2129,9 @@ export default function App() {
     }
   }
 
-  async function handleAddUpdate() {
-    if (!updateForm.requestId) return;
-
-    setBusy(true);
-    try {
-      await apiRequest(`/api/service-requests/${updateForm.requestId}/updates`, {
-        method: 'POST',
-        token,
-        body: {
-          source: 'mechanic',
-          message: updateForm.message,
-        },
-      });
-      await loadMyRequests();
-      setMessage('Update publicado');
-    } catch (error) {
-      setMessage(formatError(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleChangeServiceRequestStatus() {
     if (!serviceStatusForm.requestId) {
-      setMessage('Falta requestId');
+      setMessage('Falta el número de solicitud');
       return;
     }
 
@@ -2105,7 +2158,7 @@ export default function App() {
   async function handleCreateScheduleSlot() {
     const mechanicId = slotForm.mechanicId || selectedMechanicId;
     if (!mechanicId) {
-      setMessage('Falta mechanicId para crear el turno');
+      setMessage('Falta el ID del mecánico para crear el turno');
       return;
     }
     if (!slotForm.slotDate || !slotForm.startTime || !slotForm.endTime) {
@@ -2256,7 +2309,7 @@ export default function App() {
             <View style={styles.backButtonSpacer} />
           </View>
           {currentScreen === 'home' && (
-            <View>
+            <View style={styles.screenStack}>
               <HomeScreen
                 mechanicProfile={mechanicProfile}
                 onStartIdentityVerification={handleStartIdentityVerification}
@@ -2286,10 +2339,9 @@ export default function App() {
           )}
 
           {currentScreen === 'account' && (
-            <View>
+            <View style={styles.screenStack}>
               <AccountScreen
                 onStartIdentityVerification={handleStartIdentityVerification}
-                onLoadNotifications={loadNotifications}
                 onMarkNotificationRead={handleMarkNotificationRead}
                 onClearSession={clearSession}
                 onSwitchRole={handleSwitchRole}
@@ -2298,16 +2350,14 @@ export default function App() {
           )}
 
           {currentScreen === 'vehicles' && currentUser?.role === 'customer' && (
-            <View>
+            <View style={styles.screenStack}>
               <VehiclesScreen onAddVehicle={handleAddVehicle} onSetPrimaryVehicle={handleSetPrimaryVehicle} />
             </View>
           )}
 
           {currentScreen === 'requests' && (
-            <View>
+            <View style={styles.screenStack}>
             <RequestsScreen
-              requestCursor={requestCursor}
-              setRequestCursor={setRequestCursor}
               requestForm={requestForm}
               setRequestForm={setRequestForm}
               requestMechanicIdNumber={requestMechanicIdNumber}
@@ -2342,7 +2392,7 @@ export default function App() {
           )}
 
           {currentScreen === 'mechanics' && currentUser && currentUser.role !== 'mechanic' && (
-            <View>
+            <View style={styles.screenStack}>
             <MechanicsScreen
               mechanicsFilter={mechanicsFilter}
               setMechanicsFilter={setMechanicsFilter}
@@ -2364,13 +2414,13 @@ export default function App() {
           )}
 
           {currentScreen === 'map' && currentUser && (
-            <View>
+            <View style={styles.screenStack}>
               <MapScreen onRespondToIncoming={handleIncomingResponse} />
             </View>
           )}
 
           {currentScreen === 'actions' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
-            <View>
+            <View style={styles.screenStack}>
             <ActionsScreen
               selectedActionRequest={selectedActionRequest}
               actionsView={actionsView}
@@ -2381,8 +2431,6 @@ export default function App() {
               setStatusForm={setStatusForm}
               serviceStatusForm={serviceStatusForm}
               setServiceStatusForm={setServiceStatusForm}
-              updateForm={updateForm}
-              setUpdateForm={setUpdateForm}
               publicProfileForm={publicProfileForm}
               setPublicProfileForm={setPublicProfileForm}
               scheduleDates={scheduleDates}
@@ -2402,7 +2450,6 @@ export default function App() {
               onAssignRequest={handleAssignRequest}
               onChangeMechanicStatus={handleChangeMechanicStatus}
               onChangeServiceRequestStatus={handleChangeServiceRequestStatus}
-              onAddUpdate={handleAddUpdate}
               onToggleAvailability={handleToggleAvailability}
               onSavePublicProfile={handleSavePublicProfile}
               onCreateScheduleSlot={handleCreateScheduleSlot}

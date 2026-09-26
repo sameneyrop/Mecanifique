@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, Field, Input, PrimaryButton, Segmented, SecondaryButton } from '../components/ui';
+import { Card, EmptyState, Field, InfoRow, Input, PrimaryButton, Segmented, SecondaryButton } from '../components/ui';
 
 const ENGINE_OPTIONS = [
-  { key: 'gasolina', label: 'Gasolina' },
-  { key: 'diesel', label: 'Diésel' },
-  { key: 'hibrido', label: 'Híbrido' },
-  { key: 'electrico', label: 'Eléctrico' },
+  { key: 'gasolina', label: 'Gasolina', icon: 'water-outline' as const },
+  { key: 'diesel', label: 'Diésel', icon: 'water-outline' as const },
+  { key: 'hibrido', label: 'Híbrido', icon: 'leaf-outline' as const },
+  { key: 'electrico', label: 'Eléctrico', icon: 'flash-outline' as const },
 ];
 
 const TRANSMISSION_OPTIONS = [
@@ -88,11 +86,17 @@ export function VehiclesScreen({
   }
 
   return (
-    <View style={styles.stack}>
+    <View style={styles.screenStack}>
       {vehicles.length === 0 && !showForm && (
         <Animated.View entering={FadeInDown.duration(300)}>
-          <Card title="Todavía no tienes vehículos" subtitle="Agrega uno para poder pedir un servicio">
-            <PrimaryButton title="Agregar vehículo" onPress={() => setShowForm(true)} />
+          <Card title="Tus vehículos">
+            <EmptyState
+              icon="car-sport-outline"
+              title="Todavía no tienes vehículos"
+              text="Guárdalo una vez y ya no tendrás que escribirlo cada vez que pidas un servicio."
+            >
+              <PrimaryButton title="Agregar vehículo" onPress={() => setShowForm(true)} />
+            </EmptyState>
           </Card>
         </Animated.View>
       )}
@@ -105,21 +109,21 @@ export function VehiclesScreen({
           >
             <View style={styles.stack}>
               {vehicle.isPrimary && (
-                <View style={styles.row}>
-                  <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
-                  <Text style={[styles.itemText, { color: colors.primary }]}>Vehículo principal</Text>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusPillText}>Vehículo principal</Text>
                 </View>
               )}
               {vehicle.engineType && (
-                <Text style={styles.itemText}>Motor: {ENGINE_LABELS[vehicle.engineType] || vehicle.engineType}</Text>
+                <InfoRow icon="flash-outline" text={`Motor ${ENGINE_LABELS[vehicle.engineType] || vehicle.engineType}`} />
               )}
               {vehicle.transmissionType && (
-                <Text style={styles.itemText}>
-                  Transmisión: {TRANSMISSION_LABELS[vehicle.transmissionType] || vehicle.transmissionType}
-                </Text>
+                <InfoRow
+                  icon="cog-outline"
+                  text={`Transmisión ${TRANSMISSION_LABELS[vehicle.transmissionType] || vehicle.transmissionType}`}
+                />
               )}
-              {vehicle.color && <Text style={styles.itemText}>Color: {vehicle.color}</Text>}
-              {vehicle.licensePlate && <Text style={styles.smallText}>Placa: {vehicle.licensePlate}</Text>}
+              {vehicle.color && <InfoRow icon="color-palette-outline" text={vehicle.color} />}
+              {vehicle.licensePlate && <InfoRow icon="card-outline" text={`Placa ${vehicle.licensePlate}`} />}
               {!vehicle.isPrimary && (
                 <SecondaryButton
                   title="Marcar como principal"
@@ -134,12 +138,12 @@ export function VehiclesScreen({
       ))}
 
       {vehicles.length > 0 && !showForm && (
-        <SecondaryButton title="+ Agregar vehículo" onPress={() => setShowForm(true)} />
+        <SecondaryButton title="Agregar otro vehículo" onPress={() => setShowForm(true)} />
       )}
 
       {showForm && (
         <Animated.View entering={FadeInDown.duration(220)}>
-          <Card title="Agregar vehículo">
+          <Card title="Agregar vehículo" subtitle="Solo marca, modelo y año son obligatorios.">
             <View style={styles.stack}>
               <Field label="Alias (opcional)">
                 <Input
@@ -192,8 +196,8 @@ export function VehiclesScreen({
                   />
                 </Field>
               </View>
-              <PrimaryButton title="Guardar" onPress={handleSave} busy={busy} />
               {vehicles.length > 0 && <SecondaryButton title="Cancelar" onPress={() => setShowForm(false)} />}
+              <PrimaryButton title="Guardar vehículo" onPress={handleSave} busy={busy} />
             </View>
           </Card>
         </Animated.View>

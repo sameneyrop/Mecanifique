@@ -1,12 +1,23 @@
 import { useState } from 'react';
 import { Linking, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import Constants from 'expo-constants';
+import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, Field, Input, MenuRow, PrimaryButton, SecondaryButton, IdentityVerificationCard } from '../components/ui';
-import { formatError, normalizeSpecialties } from '../utils';
+import {
+  Card,
+  Field,
+  InfoRow,
+  Input,
+  MenuRow,
+  PrimaryButton,
+  SecondaryButton,
+  IdentityVerificationCard,
+} from '../components/ui';
+import { formatServerDate, normalizeSpecialties } from '../utils';
 
 // TODO: reemplazar por el canal de soporte real (ver README.md → "Riesgos
 // operativos" / roadmap de lanzamiento) antes de publicar — hoy no hay un
@@ -15,15 +26,18 @@ const SUPPORT_EMAIL = 'soporte@mecanifique.com';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 
+// Cuántos avisos se muestran antes de "Ver más".
+const NOTIFICATIONS_PAGE_SIZE = 5;
+
+const ROLE_LABELS = { customer: 'Cliente', mechanic: 'Mecánico', admin: 'Administrador' } as const;
+
 export function AccountScreen({
   onStartIdentityVerification,
-  onLoadNotifications,
   onMarkNotificationRead,
   onClearSession,
   onSwitchRole,
 }: {
   onStartIdentityVerification: () => void;
-  onLoadNotifications: () => Promise<void>;
   onMarkNotificationRead: (id: number) => void;
   onClearSession: () => Promise<void>;
   onSwitchRole: (payload: {
@@ -37,10 +51,14 @@ export function AccountScreen({
   const { user, identityState, identityBusy, notifications, busy, setMessage } = useAppContext();
   const [expanded, setExpanded] = useState<'personal' | 'about' | 'switchToPro' | null>(null);
   const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
+  const [visibleNotifications, setVisibleNotifications] = useState(NOTIFICATIONS_PAGE_SIZE);
 
   if (!user) {
     return null;
   }
+
+  const roleLabel = ROLE_LABELS[user.role];
+  const unreadCount = notifications.filter((notification) => !notification.readAt).length;
 
   function toggle(section: 'personal' | 'about' | 'switchToPro') {
     setExpanded((current) => (current === section ? null : section));
@@ -74,10 +92,25 @@ export function AccountScreen({
     });
   }
 
+  const showProForm = !user.mechanicId && expanded === 'switchToPro';
+
   return (
     <>
       <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-        <Card title={user.fullName} subtitle={user.login} />
+        <View style={styles.card}>
+          <View style={styles.itemHeader}>
+            <View style={styles.avatarCircle}>
+              <Ionicons name="person-outline" size={30} color={colors.primary} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.cardTitle}>{user.fullName}</Text>
+              <Text style={styles.smallText}>
+                {roleLabel}
+                {user.login && user.login !== user.fullName ? ` · ${user.login}` : ''}
+              </Text>
+            </View>
+          </View>
+        </View>
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
@@ -89,32 +122,40 @@ export function AccountScreen({
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
-        <Card title="Notificaciones" subtitle="Últimos avisos de la plataforma">
-          <View style={styles.stack}>
-            <SecondaryButton
-              title="Refrescar"
-              compact
-              onPress={async () => {
-                try {
-                  await onLoadNotifications();
-                } catch (error) {
-                  setMessage(formatError(error));
-                }
-              }}
-            />
-            {notifications.length === 0 && (
-              <Text style={styles.smallText}>Sin notificaciones por ahora.</Text>
-            )}
-            {notifications.map((notification) => (
+        <Card
+          title="Notificaciones"
+          subtitle={
+            notifications.length === 0
+              ? 'Aquí te avisamos de tus solicitudes.'
+              : unreadCount > 0
+                ? `${unreadCount} sin leer`
+                : 'Estás al día.'
+          }
+        >
+          <View style={styles.list}>
+            {notifications.slice(0, visibleNotifications).map((notification) => (
               <View key={notification.id} style={[styles.notificationItem, notification.readAt && styles.notificationItemRead]}>
-                <Text style={styles.itemTitle}>{notification.title}</Text>
+                <View style={styles.itemHeader}>
+                  <Ionicons
+                    name={notification.readAt ? 'notifications-outline' : 'notifications'}
+                    size={20}
+                    color={colors.primary}
+                  />
+                  <Text style={[styles.itemTitle, styles.flex]}>{notification.title}</Text>
+                </View>
                 <Text style={styles.itemText}>{notification.body}</Text>
-                <Text style={styles.smallText}>{notification.createdAt}</Text>
+                <Text style={styles.smallText}>{formatServerDate(notification.createdAt)}</Text>
                 {!notification.readAt && (
-                  <SecondaryButton title="Marcar leída" compact onPress={() => onMarkNotificationRead(notification.id)} />
+                  <SecondaryButton title="Marcar como leída" compact onPress={() => onMarkNotificationRead(notification.id)} />
                 )}
               </View>
             ))}
+            {notifications.length > visibleNotifications && (
+              <SecondaryButton
+                title="Ver más"
+                onPress={() => setVisibleNotifications((count) => count + NOTIFICATIONS_PAGE_SIZE)}
+              />
+            )}
           </View>
         </Card>
       </Animated.View>
@@ -125,9 +166,9 @@ export function AccountScreen({
             <MenuRow icon="person-outline" label="Información personal" onPress={() => toggle('personal')} />
             {expanded === 'personal' && (
               <View style={[styles.publicProfileBox, { marginBottom: 8 }]}>
-                <Text style={styles.itemText}>Nombre: {user.fullName}</Text>
-                <Text style={styles.itemText}>Correo: {user.login}</Text>
-                <Text style={styles.itemText}>Rol: {user.role === 'customer' ? 'Cliente' : user.role === 'mechanic' ? 'Mecánico' : 'Admin'}</Text>
+                <InfoRow icon="person-outline" text={user.fullName} />
+                <InfoRow icon="mail-outline" text={user.login} />
+                <InfoRow icon="briefcase-outline" text={roleLabel} />
                 <Text style={styles.smallText}>Editar estos datos todavía no está disponible.</Text>
               </View>
             )}
@@ -157,38 +198,50 @@ export function AccountScreen({
               : 'Ofrece tus servicios como mecánico con esta misma cuenta.'
           }
         >
-          {!user.mechanicId && expanded === 'switchToPro' && (
-            <View style={styles.stack}>
-              <Field label="Ciudad">
-                <Input value={proForm.city} onChangeText={(value) => setProForm({ ...proForm, city: value })} />
-              </Field>
-              <Field label="Zona">
-                <Input value={proForm.zone} onChangeText={(value) => setProForm({ ...proForm, zone: value })} />
-              </Field>
-              <Field label="Años de experiencia">
-                <Input
-                  value={proForm.yearsExperience}
-                  keyboardType="numeric"
-                  onChangeText={(value) => setProForm({ ...proForm, yearsExperience: value })}
+          <View style={styles.stack}>
+            {showProForm ? (
+              <>
+                <View style={styles.row}>
+                  <Field label="Ciudad" style={styles.flex}>
+                    <Input value={proForm.city} onChangeText={(value) => setProForm({ ...proForm, city: value })} />
+                  </Field>
+                  <Field label="Zona" style={styles.flex}>
+                    <Input value={proForm.zone} onChangeText={(value) => setProForm({ ...proForm, zone: value })} />
+                  </Field>
+                </View>
+                <Field label="Años de experiencia">
+                  <Input
+                    value={proForm.yearsExperience}
+                    keyboardType="numeric"
+                    onChangeText={(value) => setProForm({ ...proForm, yearsExperience: value })}
+                  />
+                </Field>
+                <Field label="Especialidades (separadas por coma)">
+                  <Input
+                    value={proForm.specialties}
+                    onChangeText={(value) => setProForm({ ...proForm, specialties: value })}
+                    placeholder="Motor, Eléctrico"
+                  />
+                </Field>
+                <SecondaryButton title="Cancelar" onPress={() => setExpanded(null)} />
+                <PrimaryButton title="Activar modo profesional" busy={busy} onPress={handleSwitchToProfessional} />
+              </>
+            ) : (
+              <>
+                {!user.mechanicId && (
+                  <>
+                    <InfoRow icon="notifications-outline" text="Recibe solicitudes de clientes en tu zona." />
+                    <InfoRow icon="shield-checkmark-outline" text="Tu perfil muestra que eres un mecánico verificado." />
+                  </>
+                )}
+                <PrimaryButton
+                  title={user.mechanicId ? 'Cambiar a modo profesional' : 'Quiero ofrecer mis servicios'}
+                  busy={busy}
+                  onPress={() => (user.mechanicId ? handleSwitchToProfessional() : toggle('switchToPro'))}
                 />
-              </Field>
-              <Field label="Especialidades (separadas por coma)">
-                <Input
-                  value={proForm.specialties}
-                  onChangeText={(value) => setProForm({ ...proForm, specialties: value })}
-                  placeholder="Motor, Eléctrico"
-                />
-              </Field>
-            </View>
-          )}
-          <PrimaryButton
-            title="Cambiar a modo profesional"
-            busy={busy}
-            onPress={() => (user.mechanicId ? handleSwitchToProfessional() : toggle('switchToPro'))}
-          />
-          {!user.mechanicId && expanded === 'switchToPro' && (
-            <SecondaryButton title="Confirmar" busy={busy} onPress={handleSwitchToProfessional} />
-          )}
+              </>
+            )}
+          </View>
         </Card>
       </Animated.View>
 

@@ -19,6 +19,30 @@ export function parseServerTimestamp(value: string | null | undefined): number |
   return Number.isNaN(milliseconds) ? null : milliseconds;
 }
 
+const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/**
+ * Fecha del servidor en lenguaje de persona: "Hoy, 09:52", "Ayer, 18:05" o
+ * "26 sep, 09:52", en la hora local del teléfono.
+ */
+export function formatServerDate(value: string | null | undefined): string {
+  const milliseconds = parseServerTimestamp(value);
+  if (milliseconds === null) {
+    return value || '';
+  }
+  const date = new Date(milliseconds);
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const today = new Date();
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  if (sameDay(date, today)) return `Hoy, ${time}`;
+  if (sameDay(date, yesterday)) return `Ayer, ${time}`;
+  const year = date.getFullYear() === today.getFullYear() ? '' : ` ${date.getFullYear()}`;
+  return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}${year}, ${time}`;
+}
+
 /** Distancia en línea recta (km) entre dos coordenadas. */
 export function distanceKm(
   from: { latitude: number; longitude: number },

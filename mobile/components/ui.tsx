@@ -1,5 +1,5 @@
 import { useEffect, type ComponentProps, type ReactNode } from 'react';
-import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   FadeInUp,
   FadeOutUp,
@@ -12,7 +12,7 @@ import * as Haptics from 'expo-haptics';
 
 import { colors } from '../colors';
 import { styles } from '../styles';
-import { getServiceRequestStatusLabel } from '../utils';
+import { formatServerDate, getServiceRequestStatusLabel } from '../utils';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -31,8 +31,7 @@ function usePressScale(toValue = 0.97) {
   return { animatedStyle, onPressIn, onPressOut };
 }
 
-const ILLUST_WAITING = require('../assets/illust-waiting.png');
-const ILLUST_IDENTITY = require('../assets/illust-identity.png');
+type IconName = ComponentProps<typeof Ionicons>['name'];
 
 type IdentityVerificationStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
 
@@ -40,43 +39,172 @@ type IdentityVerificationState = {
   status: IdentityVerificationStatus | null;
 };
 
-type ServiceRequest = {
+/**
+ * Lugar reservado para una ilustración de marca que todavía no existe
+ * (mismo recuadro punteado que el hero de Inicio). Cuando llegue la
+ * ilustración final se reemplaza aquí, en un solo componente.
+ */
+export function ImagePlaceholder({ icon, compact = false }: { icon: IconName; compact?: boolean }) {
+  return (
+    <View style={[styles.heroPlaceholder, compact && styles.placeholderCompact]}>
+      <Ionicons name={icon} size={compact ? 32 : 40} color={colors.primary} />
+    </View>
+  );
+}
+
+/** Pantalla o lista vacía: recuadro de imagen, qué pasa y qué hacer. */
+export function EmptyState({
+  icon,
+  title,
+  text,
+  children,
+}: {
+  icon: IconName;
+  title: string;
+  text?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <View style={styles.stack}>
+      <ImagePlaceholder icon={icon} compact />
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyStateTitle}>{title}</Text>
+        {text ? <Text style={styles.emptyStateText}>{text}</Text> : null}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/** Opción seleccionable con ícono, título y descripción (como "Ahora mismo" en Inicio). */
+export function ChoiceTile({
+  icon,
+  title,
+  description,
+  active,
+  onPress,
+  style,
+}: {
+  icon: IconName;
+  title: string;
+  description?: string;
+  active: boolean;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.whenOption, active && styles.whenOptionActive, pressed && styles.buttonPressed, style]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
+      <Ionicons name={icon} size={18} color={active ? colors.primary : colors.textSecondary} />
+      <Text style={[styles.whenOptionTitle, active && styles.whenOptionTitleActive]}>{title}</Text>
+      {description ? <Text style={styles.smallText}>{description}</Text> : null}
+    </Pressable>
+  );
+}
+
+/** Un dato con su ícono azul al frente, en vez de "Etiqueta: valor". */
+export function InfoRow({ icon, text, lines }: { icon: IconName; text: string; lines?: number }) {
+  return (
+    <View style={styles.infoRow}>
+      <Ionicons name={icon} size={18} color={colors.primary} />
+      <Text numberOfLines={lines} style={styles.infoRowText}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+export function StatusPill({ status }: { status: string }) {
+  const done = status === 'completed';
+  const muted = status === 'cancelled';
+  return (
+    <View style={[styles.statusPill, done && styles.statusPillDone, muted && styles.statusPillMuted]}>
+      <Text style={[styles.statusPillText, done && styles.statusPillTextDone, muted && styles.statusPillTextMuted]}>
+        {getServiceRequestStatusLabel(status)}
+      </Text>
+    </View>
+  );
+}
+
+type RequestCardData = {
   id: number;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: number;
-  issueDescription: string;
+  issueDescription?: string;
   status: string;
   mechanicName?: string | null;
+  customerName?: string | null;
   serviceAddress?: string | null;
   city: string;
   zone: string;
+  preferredTime?: string | null;
   scheduleSlotId?: number | null;
+  holdExpiresAt?: string | null;
+  updatedAt?: string;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 
-export function RequestCard({ request }: { request: ServiceRequest }) {
+/**
+ * Resumen de una solicitud. Con onPress se comporta como renglón de lista
+ * (flecha a la derecha); sin onPress, como encabezado del detalle.
+ */
+export function RequestCard({
+  request,
+  viewerRole,
+  onPress,
+}: {
+  request: RequestCardData;
+  viewerRole: 'customer' | 'mechanic' | 'admin';
+  onPress?: () => void;
+}) {
   const latestUpdate = request.updates && request.updates.length > 0 ? request.updates[request.updates.length - 1] : null;
+  const pending = request.status === 'pending';
+  const person =
+    viewerRole === 'mechanic'
+      ? request.customerName || 'Cliente'
+      : pending
+        ? request.mechanicName
+          ? `Esperando respuesta de ${request.mechanicName}`
+          : 'Buscando mecánico disponible'
+        : request.mechanicName || 'Sin mecánico asignado';
+  const when = request.preferredTime?.trim();
+
   return (
-    <View style={styles.item}>
-      {request.status === 'pending' && (
-        <Image source={ILLUST_WAITING} resizeMode="contain" style={styles.cardIllustration} />
+    <Pressable
+      style={({ pressed }) => [styles.item, pressed && onPress && styles.buttonPressed]}
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+    >
+      <View style={styles.itemHeader}>
+        <View style={styles.itemIcon}>
+          <Ionicons name="car-sport-outline" size={20} color={colors.primary} />
+        </View>
+        <View style={styles.flex}>
+          <Text style={styles.itemTitle}>
+            {request.vehicleMake} {request.vehicleModel} {request.vehicleYear}
+          </Text>
+          <Text style={styles.smallText}>
+            Solicitud #{request.id}
+            {request.updatedAt ? ` · ${formatServerDate(request.updatedAt)}` : ''}
+          </Text>
+        </View>
+        {onPress && <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />}
+      </View>
+      <StatusPill status={request.status} />
+      <InfoRow icon="person-outline" text={person} />
+      <InfoRow icon="location-outline" text={request.serviceAddress || `${request.city} · ${request.zone}`} lines={2} />
+      {(request.scheduleSlotId || when) && (
+        <InfoRow icon="calendar-outline" text={when ? `Para: ${when}` : 'Turno agendado'} />
       )}
-      <Text style={styles.itemTitle}>Solicitud #{request.id}</Text>
-      <Text style={styles.itemText}>
-        {request.vehicleMake} {request.vehicleModel} {request.vehicleYear}
-      </Text>
-      <Text style={styles.itemText}>Estado: {getServiceRequestStatusLabel(request.status)}</Text>
-      <Text style={styles.itemText}>Mecánico: {request.mechanicName || 'sin asignar'}</Text>
-      <Text style={styles.itemText}>Dirección: {request.serviceAddress || `${request.city}, ${request.zone}`}</Text>
-      {request.scheduleSlotId && <Text style={styles.smallText}>Turno #{request.scheduleSlotId}</Text>}
-      <Text numberOfLines={2} style={styles.smallText}>{request.issueDescription}</Text>
-      {latestUpdate && (
-        <Text numberOfLines={1} style={styles.smallText}>
-          Último update: {latestUpdate.source} · {latestUpdate.message}
-        </Text>
-      )}
-    </View>
+      {request.issueDescription ? <InfoRow icon="construct-outline" text={request.issueDescription} lines={2} /> : null}
+      {latestUpdate && <InfoRow icon="chatbubble-ellipses-outline" text={latestUpdate.message} lines={1} />}
+    </Pressable>
   );
 }
 
@@ -192,15 +320,27 @@ export function CharCounter({ value, max }: { value: string; max: number }) {
   );
 }
 
+// Columnas por número de opciones: 4 van en 2x2 y 5 en una fila, para no
+// dejar una opción sola ocupando todo el ancho en la última fila.
+function segmentColumns(count: number): number {
+  if (count === 4) return 2;
+  if (count === 5) return 5;
+  return Math.min(count, 3);
+}
+
 export function Segmented({
   value,
   options,
   onChange,
+  onBackground = false,
 }: {
   value: string;
-  options: Array<{ key: string; label: string }>;
+  options: Array<{ key: string; label: string; icon?: IconName }>;
   onChange: (value: string) => void;
+  /** Directo sobre el fondo de la pantalla (no dentro de una tarjeta): opciones blancas. */
+  onBackground?: boolean;
 }) {
+  const basis = `${Math.floor(100 / segmentColumns(options.length)) - 4}%` as const;
   return (
     <View style={styles.segmented}>
       {options.map((option) => {
@@ -208,9 +348,20 @@ export function Segmented({
         return (
           <Pressable
             key={option.key}
-            style={({ pressed }) => [styles.segment, active && styles.segmentActive, pressed && styles.buttonPressed]}
+            style={({ pressed }) => [
+              styles.segment,
+              { flexBasis: basis },
+              onBackground && styles.segmentOnBackground,
+              active && styles.segmentActive,
+              pressed && styles.buttonPressed,
+            ]}
             onPress={() => onChange(option.key)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
           >
+            {option.icon && (
+              <Ionicons name={option.icon} size={18} color={active ? colors.primary : colors.textSecondary} />
+            )}
             <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{option.label}</Text>
           </Pressable>
         );
@@ -329,8 +480,9 @@ export function IdentityVerificationCard({
               : 'Tu verificación está en revisión.'
       }
     >
-      {identityState.status !== 'approved' && (
-        <Image source={ILLUST_IDENTITY} resizeMode="contain" style={styles.cardIllustration} />
+      {identityState.status !== 'approved' && <ImagePlaceholder icon="id-card-outline" compact />}
+      {identityState.status === 'approved' && (
+        <InfoRow icon="shield-checkmark-outline" text="Los mecánicos y clientes ven que eres una persona verificada." />
       )}
       {identityState.status !== 'approved' &&
         identityState.status !== 'submitted' &&
@@ -339,15 +491,11 @@ export function IdentityVerificationCard({
             <Text style={styles.identityHint}>
               Usa la cámara en vivo para tus fotos — no subas imágenes desde tu galería, esa opción puede fallar.
             </Text>
-            <Pressable style={styles.primaryButton} disabled={identityBusy} onPress={onStart}>
-              {identityBusy ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
-                </Text>
-              )}
-            </Pressable>
+            <PrimaryButton
+              title={identityState.status === 'rejected' ? 'Volver a intentar' : 'Verificar identidad'}
+              busy={identityBusy}
+              onPress={onStart}
+            />
           </>
         )}
     </Card>

@@ -15,7 +15,8 @@ import {
   requireSupabaseRole,
   registerCustomerWithSupabase,
   registerMechanicWithSupabase,
-  loginWithSupabase
+  loginWithSupabase,
+  refreshSupabaseSession
 } from "./supabaseAuth";
 import { getSupabaseDbHealth } from "./supabaseDb";
 import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
@@ -1597,7 +1598,8 @@ app.post(
       res.status(200).json({
         user: result.user,
         accessToken: result.accessToken,
-        expiresIn: 3600
+        refreshToken: result.session.refresh_token ?? null,
+        expiresIn: result.session.expires_in ?? 3600
       });
     } catch (error) {
       if (error instanceof Error && error.message.toLowerCase().includes("invalid credentials")) {
@@ -1609,6 +1611,27 @@ app.post(
         return;
       }
       throw error;
+    }
+  })
+);
+
+/**
+ * Renovar la sesión cuando el access token venció
+ * POST /auth/v2/refresh
+ */
+app.post(
+  "/auth/v2/refresh",
+  handleAsync(async (req, res) => {
+    if (applyRateLimit("auth-refresh-v2", req, res, 30)) {
+      return;
+    }
+
+    const payload = z.object({ refreshToken: z.string().min(10) }).parse(req.body);
+
+    try {
+      res.status(200).json(await refreshSupabaseSession(payload.refreshToken));
+    } catch {
+      res.status(401).json({ error: "Tu sesión expiró. Vuelve a iniciar sesión." });
     }
   })
 );
@@ -1650,7 +1673,10 @@ app.get(
   supabaseAuthMiddleware,
   requireSupabaseAuth,
   handleAsync(async (req, res) => {
-    res.json({ user: req.supabaseAuth?.user });
+    // Devolvemos el usuario local (id numérico, igual que en el login): la
+    // app compara ese id contra senderUserId del chat. El de Supabase trae
+    // un UUID como id y rompía el "Tú" al reabrir la app.
+    res.json({ user: req.auth?.user ?? req.supabaseAuth?.user });
   })
 );
 

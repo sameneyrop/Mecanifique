@@ -76,24 +76,6 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  onboardingImage: {
-    alignSelf: 'center',
-    width: '100%',
-    height: 220,
-    marginVertical: 8,
-  },
-  cardIllustration: {
-    alignSelf: 'center',
-    width: '100%',
-    height: 140,
-    marginBottom: 8,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  emptyStateWrap: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
   homeHeroImage: {
     alignSelf: 'center',
     width: '100%',
@@ -113,6 +95,74 @@ export const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  placeholderCompact: {
+    height: 110,
+    marginVertical: 4,
+  },
+  screenStack: {
+    gap: 14,
+  },
+  emptyState: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  emptyStateTitle: {
+    fontFamily: fonts.extrabold,
+    fontSize: 17,
+    color: colors.textDark,
+    textAlign: 'center',
+  },
+  emptyStateText: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoRowText: {
+    flex: 1,
+    color: colors.textDark,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  itemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+  },
+  itemActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  statusPillDone: {
+    backgroundColor: '#d9f3e4',
+    borderColor: '#d9f3e4',
+  },
+  statusPillTextDone: {
+    color: '#15803d',
+  },
+  statusPillMuted: {
+    backgroundColor: colors.primaryLighter,
+    borderColor: colors.primaryLight,
+  },
+  statusPillTextMuted: {
+    color: colors.textSecondary,
   },
   trustRow: {
     flexDirection: 'row',
@@ -144,6 +194,10 @@ export const styles = StyleSheet.create({
     borderColor: colors.primaryLight,
     backgroundColor: colors.primaryLighter,
     gap: 4,
+  },
+  choiceHalf: {
+    flexGrow: 1,
+    flexBasis: '46%',
   },
   whenOptionActive: {
     borderColor: colors.primary,
@@ -619,15 +673,19 @@ export const styles = StyleSheet.create({
     minHeight: 54,
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 16,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
     borderWidth: 1,
     borderColor: colors.primaryLight,
     backgroundColor: colors.primaryLighter,
   },
+  segmentOnBackground: {
+    backgroundColor: colors.white,
+  },
   segmentActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryLight,
     borderColor: colors.primary,
   },
   segmentText: {
@@ -637,7 +695,7 @@ export const styles = StyleSheet.create({
     fontSize: 15,
   },
   segmentTextActive: {
-    color: colors.white,
+    color: colors.primaryDark,
   },
   primaryButton: {
     backgroundColor: colors.primary,
@@ -715,12 +773,12 @@ export const styles = StyleSheet.create({
     gap: 12,
   },
   item: {
-    padding: 10,
+    padding: 12,
     borderRadius: 16,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.primaryLighter,
     borderWidth: 1,
     borderColor: colors.primaryLight,
-    gap: 6,
+    gap: 8,
   },
   chatBubble: {
     padding: 10,
@@ -772,17 +830,17 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.regular,
   },
   publicProfileBox: {
-    gap: 4,
-    padding: 10,
-    borderRadius: 14,
+    gap: 8,
+    padding: 12,
+    borderRadius: 16,
     backgroundColor: colors.primaryLighter,
     borderWidth: 1,
-    borderColor: colors.primaryLighter,
+    borderColor: colors.primaryLight,
   },
   publicProfileTitle: {
     color: colors.textDark,
-    fontFamily: fonts.extrabold,
-    fontSize: 13,
+    fontFamily: fonts.bold,
+    fontSize: 15,
   },
   coverPhoto: {
     width: '100%',
@@ -803,17 +861,17 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primaryLighter,
   },
   reviewCard: {
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: colors.primaryLighter,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.primaryLight,
     gap: 4,
   },
   reviewTitle: {
     color: colors.textDark,
-    fontSize: 12,
-    fontFamily: fonts.extrabold,
+    fontSize: 14,
+    fontFamily: fonts.bold,
   },
   calendarStrip: {
     flexDirection: 'row',
@@ -833,16 +891,16 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   calendarChipActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryLight,
     borderColor: colors.primary,
   },
   calendarChipText: {
     color: colors.textDark,
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: fonts.bold,
   },
   calendarChipTextActive: {
-    color: colors.white,
+    color: colors.primaryDark,
   },
   slotRow: {
     gap: 6,
@@ -851,11 +909,11 @@ export const styles = StyleSheet.create({
     borderTopColor: colors.primaryLight,
   },
   slotCard: {
-    padding: 10,
+    padding: 12,
     borderRadius: 14,
-    backgroundColor: colors.primaryLighter,
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.primaryLighter,
+    borderColor: colors.primaryLight,
     gap: 4,
   },
   slotCardActive: {
@@ -863,17 +921,18 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
   },
   statusPill: {
+    alignSelf: 'flex-start',
     backgroundColor: colors.primaryLight,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.primaryLight,
     paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingVertical: 4,
   },
   statusPillText: {
-    color: colors.textDark,
+    color: colors.primaryDark,
     fontSize: 12,
-    fontFamily: fonts.semibold,
+    fontFamily: fonts.bold,
   },
   toastWrap: {
     position: 'absolute',
