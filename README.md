@@ -56,6 +56,17 @@ mantener informadas a ambas partes.
   ayuda" desde la app (`POST /api/support`, avisa a los admins con una
   notificación). El registro ahora manda nombre, teléfono y rol a Supabase en
   `data` (antes iban en `user_metadata`, que Supabase ignoraba).
+- **Eliminar cuenta** (requisito de Google Play): Cuenta → Seguridad →
+  "Eliminar mi cuenta" (mecánico: Acciones → Sesión), con explicación y doble
+  confirmación; bloqueado si hay un servicio en curso o una solicitud
+  buscando mecánico. `DELETE /api/account` borra primero el usuario en
+  Supabase Auth (necesita `SUPABASE_SERVICE_ROLE_KEY` en Render; sin ella
+  responde 503) y luego, en una transacción, borra los datos personales y
+  anonimiza el historial compartido (`src/accountDeletion.ts` documenta qué
+  se borra, qué se anonimiza y qué se conserva). Página pública
+  `/eliminar-cuenta` para pedirla sin la app (el enlace que pide la ficha de
+  Play); guarda la solicitud y avisa a los admins, que la procesan a mano por
+  ahora. `/health` indica `accountDeletion: true` cuando la clave existe.
 - **Comunidad** (Cuenta → Comunidad; el mecánico entra desde Acciones):
   cualquier usuario publica preguntas sobre su auto (título, categoría,
   vehículo, descripción); solo mecánicos verificados (`status = 'active'`)

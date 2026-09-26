@@ -830,6 +830,26 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.semibold,
     fontSize: 14,
   },
+  dangerBox: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#f5c2c2',
+    backgroundColor: colors.white,
+  },
+  dangerButton: {
+    minHeight: 52,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ef4444',
+  },
+  dangerButtonText: {
+    color: colors.white,
+    fontFamily: fonts.extrabold,
+    fontSize: 16,
+  },
   favoriteButton: {
     flexDirection: 'row',
     alignItems: 'center',

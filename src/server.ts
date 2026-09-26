@@ -18,8 +18,17 @@ import {
   registerMechanicWithSupabase,
   loginWithSupabase,
   refreshSupabaseSession,
-  updateSupabaseUser
+  updateSupabaseUser,
+  isSupabaseAdminConfigured,
+  deleteSupabaseAuthUser
 } from "./supabaseAuth";
+import {
+  anonymizeAccount,
+  deletionRequestErrorPage,
+  deletionRequestPage,
+  deletionRequestReceivedPage,
+  hasActiveServiceBlockingDeletion
+} from "./accountDeletion";
 import { getSupabaseDbHealth } from "./supabaseDb";
 import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
 import { calculateDepositAmount } from "./payments";
@@ -1122,6 +1131,7 @@ app.get("/health", (_req, res) => {
     ok: true,
     service: "mecanifique-api",
     database: databaseKind,
+    accountDeletion: isSupabaseAdminConfigured(),
     commit: process.env.RENDER_GIT_COMMIT?.slice(0, 7) ?? null
   });
 });
@@ -1937,6 +1947,79 @@ app.delete("/api/favorites/:mechanicId", requireAuth, handleAsync(async (req, re
   }
   await run("DELETE FROM favorite_mechanics WHERE user_id = ? AND mechanic_id = ?", [req.auth!.user.id, mechanicId]);
   res.json({ ok: true });
+}));
+
+// Eliminar la propia cuenta (requisito de Google Play). Primero se borra el
+// acceso en Supabase: si eso falla no se toca nada; después se borran y
+// anonimizan los datos locales (ver src/accountDeletion.ts).
+app.delete("/api/account", requireAuth, handleAsync(async (req, res) => {
+  if (applyRateLimit("account-delete", req, res)) {
+    return;
+  }
+  const authUser = req.auth!.user;
+  if (authUser.role === "admin") {
+    res.status(403).json({ error: "Las cuentas de administrador no se eliminan desde la app" });
+    return;
+  }
+  if (!isSupabaseAdminConfigured()) {
+    res.status(503).json({ error: "Eliminar cuentas todavía no está disponible. Escríbenos desde Cuenta → Obtener ayuda." });
+    return;
+  }
+  if (await hasActiveServiceBlockingDeletion(authUser)) {
+    res.status(409).json({
+      error: "Tienes un servicio en curso o una solicitud buscando mecánico. Termínalo o cancélalo antes de eliminar tu cuenta."
+    });
+    return;
+  }
+
+  const row = await get<{ supabaseUserId: string | null }>(
+    "SELECT supabase_user_id AS supabaseUserId FROM users WHERE id = ?",
+    [authUser.id]
+  );
+  if (row?.supabaseUserId) {
+    try {
+      await deleteSupabaseAuthUser(row.supabaseUserId);
+    } catch (error) {
+      console.error("No se pudo borrar el usuario de Supabase", error);
+      res.status(502).json({ error: "No pudimos eliminar tu cuenta en este momento. Intenta de nuevo en unos minutos." });
+      return;
+    }
+  }
+  await anonymizeAccount(authUser);
+  res.json({ ok: true });
+}));
+
+// Página pública para pedir la eliminación sin la app (Google Play la exige
+// en la ficha de la tienda). Guarda la solicitud y avisa a los admins.
+app.get("/eliminar-cuenta", (_req, res) => {
+  res.type("html").send(deletionRequestPage());
+});
+
+app.post("/eliminar-cuenta", express.urlencoded({ extended: false, limit: "10kb" }), handleAsync(async (req, res) => {
+  if (applyRateLimit("account-delete-web", req, res)) {
+    return;
+  }
+  const parsed = z.object({
+    email: z.string().trim().email().max(254),
+    message: z.string().trim().max(1000).optional()
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).type("html").send(deletionRequestErrorPage("Escribe un correo válido."));
+    return;
+  }
+  const result = await run(
+    "INSERT INTO account_deletion_requests (email, message) VALUES (?, ?)",
+    [parsed.data.email.toLowerCase(), parsed.data.message || null]
+  );
+  const adminUserIds = await getAdminUserIds();
+  await Promise.all(
+    adminUserIds.map((adminUserId) =>
+      createNotification(adminUserId, "Solicitud de eliminación de cuenta", `Desde la web: ${parsed.data.email}`, {
+        accountDeletionRequestId: result.lastID
+      })
+    )
+  );
+  res.type("html").send(deletionRequestReceivedPage());
 }));
 
 app.post("/api/support", requireAuth, handleAsync(async (req, res) => {

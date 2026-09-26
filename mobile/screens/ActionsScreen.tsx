@@ -20,6 +20,7 @@ import {
 } from '../components/ui';
 import { formatCalendarDate, openExternalNavigation } from '../utils';
 import { MechanicPromotions } from '../components/MechanicPromotions';
+import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
 type ScheduleSlot = {
@@ -124,6 +125,7 @@ function ScheduleCalendar({
 }
 
 export function ActionsScreen({
+  onDeleteAccount,
   api,
   onOpenCommunity,
   mechanicAccountActive,
@@ -164,6 +166,7 @@ export function ActionsScreen({
   onClearSession,
   onSwitchRole,
 }: {
+  onDeleteAccount: () => Promise<void>;
   api: ApiCall;
   onOpenCommunity: () => void;
   mechanicAccountActive: boolean;
@@ -614,13 +617,16 @@ export function ActionsScreen({
 
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         <Card title="Sesión" subtitle={`${user.fullName} · ${ROLE_LABELS[user.role]}`}>
-          <SecondaryButton
-            title="Cerrar sesión"
-            onPress={async () => {
-              await onClearSession();
-              setMessage('Sesión cerrada');
-            }}
-          />
+          <View style={styles.stack}>
+            <SecondaryButton
+              title="Cerrar sesión"
+              onPress={async () => {
+                await onClearSession();
+                setMessage('Sesión cerrada');
+              }}
+            />
+            {user.role === 'mechanic' && <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />}
+          </View>
         </Card>
       </Animated.View>
     </>

@@ -1756,6 +1756,19 @@ export default function App() {
     }
   }
 
+  async function handleDeleteAccount() {
+    setBusy(true);
+    try {
+      await apiRequest('/api/account', { method: 'DELETE', token });
+      await clearSession();
+      setMessage('Tu cuenta fue eliminada.');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSendSupport(kind: 'problem' | 'help', message: string): Promise<boolean> {
     setBusy(true);
     try {
@@ -2698,6 +2711,7 @@ export default function App() {
           {currentScreen === 'account' && (
             <View style={styles.screenStack}>
               <AccountScreen
+                onDeleteAccount={handleDeleteAccount}
                 onOpenCommunity={openCommunity}
                 favoriteMechanics={favoriteMechanics}
                 onOpenMechanic={openMechanicProfile}
@@ -2806,6 +2820,7 @@ export default function App() {
           {currentScreen === 'actions' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'mechanic') && (
             <View style={styles.screenStack}>
             <ActionsScreen
+              onDeleteAccount={handleDeleteAccount}
               api={api}
               onOpenCommunity={openCommunity}
               mechanicAccountActive={mechanicProfile?.status === 'active'}

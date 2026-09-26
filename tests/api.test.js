@@ -11,6 +11,7 @@ const { all, get, run } = require("../src/db.ts");
 const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } = require("../src/payments.ts");
 const { decodePhoto, PhotoUploadError, savePhoto } = require("../src/uploads.ts");
 const { communityAuthorName } = require("../src/routes/community.ts");
+const { anonymizeAccount, hasActiveServiceBlockingDeletion } = require("../src/accountDeletion.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -228,7 +229,8 @@ test("rutas de cuenta, favoritos y soporte sin token devuelven 401", async () =>
     ["GET", "/api/favorites"],
     ["PUT", "/api/favorites/1"],
     ["DELETE", "/api/favorites/1"],
-    ["POST", "/api/support", { kind: "help", message: "Necesito ayuda con la app" }]
+    ["POST", "/api/support", { kind: "help", message: "Necesito ayuda con la app" }],
+    ["DELETE", "/api/account"]
   ];
   for (const [method, path, body] of cases) {
     const { response } = await request(path, { method, body: body ? JSON.stringify(body) : undefined });
@@ -598,6 +600,172 @@ test("comunidad y promociones: flujo completo con sesión simulada", async () =>
     await run("DELETE FROM mechanic_promotions WHERE mechanic_id = ?", [mechanicId]);
     await run("DELETE FROM users WHERE id IN (?, ?, ?)", [users.customer.id, users.follower.id, users.mechanic.id]);
   }
+});
+
+test("eliminar cuenta de cliente: borra lo personal y anonimiza el historial compartido", async () => {
+  const tag = crypto.randomUUID().slice(0, 8);
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", [`Cliente ${tag}`, uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const supabaseUserId = crypto.randomUUID();
+  const user = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, customer_id)
+     VALUES ('customer', ?, ?, ?, 'x', 'x', ?)`,
+    [`${supabaseUserId}@example.test`, supabaseUserId, `Cliente ${tag}`, customer.lastID]
+  );
+  const account = { id: user.lastID, customerId: customer.lastID, mechanicId: null };
+  const request = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone,
+        status, mechanic_id, service_address, latitude, longitude)
+     VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', ?, 'Centro', 'completed', ?, 'Calle Falsa 123', -40, -150)`,
+    [customer.lastID, `Ciudad-${tag}`, mechanicId]
+  );
+  createdRows.requests.push(request.lastID);
+  await run(
+    "INSERT INTO vehicle_profiles (customer_id, make, model, year, photo_urls_json, metadata_json) VALUES (?, 'Nissan', 'Versa', 2018, '[]', '{}')",
+    [customer.lastID]
+  );
+  await run("INSERT INTO favorite_mechanics (user_id, mechanic_id) VALUES (?, ?)", [account.id, mechanicId]);
+  await run("INSERT INTO notifications (user_id, title, body) VALUES (?, 'Hola', 'Aviso de prueba')", [account.id]);
+  await run("INSERT INTO push_tokens (user_id, push_token) VALUES (?, ?)", [account.id, `ExponentPushToken[${tag}]`]);
+  await run(
+    "INSERT INTO community_questions (author_user_id, title, body, category) VALUES (?, 'Pregunta de prueba', 'Descripción de prueba', 'otro')",
+    [account.id]
+  );
+  await run(
+    "INSERT INTO service_request_messages (service_request_id, sender_user_id, sender_role, message) VALUES (?, ?, 'customer', 'Estoy en la esquina')",
+    [request.lastID, account.id]
+  );
+  await run(
+    "INSERT INTO mechanic_reviews (mechanic_id, service_request_id, customer_user_id, rating, comment) VALUES (?, ?, ?, 4, 'Muy bien')",
+    [mechanicId, request.lastID, account.id]
+  );
+
+  const count = async (sql, params) => (await get(sql, params)).total;
+  try {
+    assert.equal(await hasActiveServiceBlockingDeletion(account), false);
+    await run("UPDATE service_requests SET status = 'pending' WHERE id = ?", [request.lastID]);
+    assert.equal(await hasActiveServiceBlockingDeletion(account), true, "una solicitud buscando mecánico bloquea");
+    await run("UPDATE service_requests SET status = 'completed' WHERE id = ?", [request.lastID]);
+
+    await anonymizeAccount(account);
+
+    const userRow = await get(
+      "SELECT full_name AS fullName, login, supabase_user_id AS supabaseUserId, deleted_at AS deletedAt FROM users WHERE id = ?",
+      [account.id]
+    );
+    assert.equal(userRow.fullName, "Cuenta eliminada");
+    assert.equal(userRow.supabaseUserId, null);
+    assert.ok(userRow.deletedAt);
+    assert.ok(!userRow.login.includes("example.test"));
+    const customerRow = await get("SELECT full_name AS fullName, phone FROM customers WHERE id = ?", [customer.lastID]);
+    assert.equal(customerRow.fullName, "Cliente eliminado");
+    assert.match(customerRow.phone, /^eliminado-c/);
+
+    assert.equal(await count("SELECT COUNT(*) AS total FROM vehicle_profiles WHERE customer_id = ?", [customer.lastID]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS total FROM favorite_mechanics WHERE user_id = ?", [account.id]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS total FROM notifications WHERE user_id = ?", [account.id]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS total FROM push_tokens WHERE user_id = ?", [account.id]), 0);
+    assert.equal(await count("SELECT COUNT(*) AS total FROM community_questions WHERE author_user_id = ?", [account.id]), 0);
+
+    const requestRow = await get(
+      "SELECT service_address AS serviceAddress, latitude, vehicle_make AS vehicleMake FROM service_requests WHERE id = ?",
+      [request.lastID]
+    );
+    assert.equal(requestRow.serviceAddress, null);
+    assert.equal(requestRow.latitude, null);
+    assert.equal(requestRow.vehicleMake, "Nissan", "el servicio sigue en el historial del mecánico");
+    assert.equal((await get("SELECT message FROM service_request_messages WHERE service_request_id = ?", [request.lastID])).message, "Mensaje eliminado");
+    const review = await get("SELECT rating, comment FROM mechanic_reviews WHERE service_request_id = ?", [request.lastID]);
+    assert.equal(review.rating, 4, "la calificación del mecánico no cambia");
+    assert.equal(review.comment, "");
+  } finally {
+    await run("DELETE FROM mechanic_reviews WHERE service_request_id = ?", [request.lastID]);
+    await run("DELETE FROM service_request_messages WHERE service_request_id = ?", [request.lastID]);
+    await run("DELETE FROM favorite_mechanics WHERE user_id = ? OR mechanic_id = ?", [account.id, mechanicId]);
+    await run("DELETE FROM vehicle_profiles WHERE customer_id = ?", [customer.lastID]);
+    await run("DELETE FROM notifications WHERE user_id = ?", [account.id]);
+    await run("DELETE FROM push_tokens WHERE user_id = ?", [account.id]);
+    await run("DELETE FROM community_questions WHERE author_user_id = ?", [account.id]);
+    await run("DELETE FROM users WHERE id = ?", [account.id]);
+  }
+});
+
+test("eliminar cuenta de mecánico: deja de aparecer y se borran sus promociones y turnos libres", async () => {
+  const tag = crypto.randomUUID().slice(0, 8);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro", { latitude: -41, longitude: -151 });
+  const supabaseUserId = crypto.randomUUID();
+  const user = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
+     VALUES ('mechanic', ?, ?, 'Mecánico Borrable', 'x', 'x', ?)`,
+    [`${supabaseUserId}@example.test`, supabaseUserId, mechanicId]
+  );
+  const account = { id: user.lastID, customerId: null, mechanicId };
+  await run(
+    "INSERT INTO mechanic_promotions (mechanic_id, title, description) VALUES (?, 'Revisión gratis', 'Al contratar mi servicio')",
+    [mechanicId]
+  );
+  await run(
+    "INSERT INTO mechanic_schedule_slots (mechanic_id, slot_date, start_time, end_time, status) VALUES (?, '2099-01-01', '09:00', '10:00', 'available')",
+    [mechanicId]
+  );
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const job = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id)
+     VALUES (?, 'Ford', 'Fiesta', 2007, 'Frenos', '', ?, 'Centro', 'en_route', ?)`,
+    [customer.lastID, `Ciudad-${tag}`, mechanicId]
+  );
+  createdRows.requests.push(job.lastID);
+
+  try {
+    assert.equal(await hasActiveServiceBlockingDeletion(account), true, "un trabajo en camino bloquea");
+    await run("UPDATE service_requests SET status = 'completed' WHERE id = ?", [job.lastID]);
+    assert.equal(await hasActiveServiceBlockingDeletion(account), false);
+
+    await anonymizeAccount(account);
+
+    const mechanic = await get(
+      "SELECT full_name AS fullName, status, is_online AS isOnline, latitude FROM mechanics WHERE id = ?",
+      [mechanicId]
+    );
+    assert.equal(mechanic.fullName, "Mecánico eliminado");
+    assert.equal(mechanic.status, "suspended");
+    assert.equal(mechanic.isOnline, 0);
+    assert.equal(mechanic.latitude, null);
+    assert.equal((await get("SELECT COUNT(*) AS total FROM mechanic_promotions WHERE mechanic_id = ?", [mechanicId])).total, 0);
+    assert.equal(
+      (await get("SELECT COUNT(*) AS total FROM mechanic_schedule_slots WHERE mechanic_id = ? AND status = 'available'", [mechanicId])).total,
+      0
+    );
+  } finally {
+    await run("DELETE FROM mechanic_promotions WHERE mechanic_id = ?", [mechanicId]);
+    await run("DELETE FROM mechanic_schedule_slots WHERE mechanic_id = ?", [mechanicId]);
+    await run("DELETE FROM users WHERE id = ?", [account.id]);
+  }
+});
+
+test("página /eliminar-cuenta: se ve sin la app y guarda la solicitud", async () => {
+  const page = await fetch(`${baseUrl}/eliminar-cuenta`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get("content-type"), /html/);
+  assert.match(await page.text(), /Eliminar tu cuenta/);
+
+  const form = (fields) => fetch(`${baseUrl}/eliminar-cuenta`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(fields).toString()
+  });
+  assert.equal((await form({ email: "no-es-un-correo" })).status, 400);
+
+  const email = `borrar-${crypto.randomUUID()}@example.test`;
+  const accepted = await form({ email, message: "Ya no la uso" });
+  assert.equal(accepted.status, 200);
+  assert.match(await accepted.text(), /Recibimos tu solicitud/);
+  assert.ok(await get("SELECT id FROM account_deletion_requests WHERE email = ?", [email]));
+  await run("DELETE FROM account_deletion_requests WHERE email = ?", [email]);
 });
 
 test("mecánico nuevo y activo: al conectarse queda disponible para recibir solicitudes", async () => {

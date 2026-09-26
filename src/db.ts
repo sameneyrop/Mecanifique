@@ -65,6 +65,17 @@ export async function all<T>(sql: string, params: SqlParams = []): Promise<T[]> 
   return result.rows.map((_row, index) => toRow<T>(result, index));
 }
 
+/**
+ * Varias escrituras como una sola: o se aplican todas o ninguna (si una
+ * falla, se revierte lo anterior).
+ */
+export async function transaction(statements: Array<{ sql: string; params?: SqlParams }>): Promise<void> {
+  await db.batch(
+    statements.map(({ sql, params = [] }) => ({ sql, args: params as InValue[] })),
+    "write"
+  );
+}
+
 export async function initDb(): Promise<void> {
   await run(`
     CREATE TABLE IF NOT EXISTS mechanics (
@@ -539,6 +550,21 @@ export async function initDb(): Promise<void> {
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+
+  // Cuándo se eliminó la cuenta (la fila queda anonimizada, ver
+  // src/accountDeletion.ts).
+  await ensureColumn("users", "deleted_at", "ALTER TABLE users ADD COLUMN deleted_at TEXT");
+
+  // Solicitudes de eliminación hechas desde la página web /eliminar-cuenta
+  // (Google Play exige poder pedirla también fuera de la app).
+  await run(`
+    CREATE TABLE IF NOT EXISTS account_deletion_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      message TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
 

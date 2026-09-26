@@ -19,6 +19,7 @@ import {
 } from '../components/ui';
 import { formatServerDate, normalizeSpecialties } from '../utils';
 import type { FavoriteMechanic } from '../App';
+import { DeleteAccountSection } from '../components/DeleteAccountSection';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 
@@ -85,7 +86,15 @@ function PersonalInfoPanel({
   );
 }
 
-function SecurityPanel({ busy, onChangePassword }: { busy: boolean; onChangePassword: (password: string) => Promise<boolean> }) {
+function SecurityPanel({
+  busy,
+  onChangePassword,
+  onDeleteAccount,
+}: {
+  busy: boolean;
+  onChangePassword: (password: string) => Promise<boolean>;
+  onDeleteAccount: () => Promise<void>;
+}) {
   const { setMessage } = useAppContext();
   const [form, setForm] = useState({ password: '', confirm: '' });
 
@@ -124,6 +133,8 @@ function SecurityPanel({ busy, onChangePassword }: { busy: boolean; onChangePass
         />
       </Field>
       <PrimaryButton title="Cambiar contraseña" busy={busy} onPress={() => void submit()} />
+      <Text style={[styles.publicProfileTitle, styles.menuPanel]}>Eliminar cuenta</Text>
+      <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />
     </View>
   );
 }
@@ -217,6 +228,7 @@ function SupportPanel({
 }
 
 export function AccountScreen({
+  onDeleteAccount,
   onOpenCommunity,
   favoriteMechanics,
   onOpenMechanic,
@@ -229,6 +241,7 @@ export function AccountScreen({
   onClearSession,
   onSwitchRole,
 }: {
+  onDeleteAccount: () => Promise<void>;
   onOpenCommunity: () => void;
   favoriteMechanics: FavoriteMechanic[];
   onOpenMechanic: (mechanicId: number) => void;
@@ -374,7 +387,9 @@ export function AccountScreen({
               />
             )}
             <MenuRow icon="shield-checkmark-outline" label="Seguridad" onPress={() => toggle('security')} />
-            {expanded === 'security' && <SecurityPanel busy={busy} onChangePassword={onChangePassword} />}
+            {expanded === 'security' && (
+              <SecurityPanel busy={busy} onChangePassword={onChangePassword} onDeleteAccount={onDeleteAccount} />
+            )}
             <MenuRow
               icon="heart-outline"
               label="Favoritos"

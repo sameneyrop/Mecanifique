@@ -417,6 +417,35 @@ export async function refreshSupabaseSession(refreshToken: string) {
   };
 }
 
+/** Hay clave de administrador de Supabase (necesaria para eliminar cuentas). */
+export function isSupabaseAdminConfigured(): boolean {
+  return Boolean(supabaseUrl && process.env.SUPABASE_SERVICE_ROLE_KEY?.trim());
+}
+
+/**
+ * Borra el usuario de Supabase Auth (ya no podrá iniciar sesión). Usa la
+ * clave de administrador: la heredada "service_role" (un JWT, va también en
+ * Authorization) o la nueva "sb_secret_…" (solo en apikey).
+ */
+export async function deleteSupabaseAuthUser(supabaseUserId: string): Promise<void> {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+  const headers: Record<string, string> = { apikey: key };
+  if (!key.startsWith("sb_")) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+  const response = await supabaseFetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(supabaseUserId)}`, {
+    method: "DELETE",
+    headers,
+  });
+  if (response.status === 404) {
+    return; // ya no existía
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(getSupabaseError(data as Record<string, unknown>, "No se pudo eliminar el acceso"));
+  }
+}
+
 /**
  * Cambia datos de la cuenta en Supabase con el token del propio usuario
  * (contraseña y/o metadatos como el nombre).
