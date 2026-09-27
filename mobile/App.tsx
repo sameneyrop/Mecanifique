@@ -24,6 +24,7 @@ import {
   getMechanicPublicStatus,
   getServiceRequestStatusLabel,
   formatCalendarDate,
+  validateRequestForm,
 } from './utils';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
@@ -233,6 +234,7 @@ type ServiceRequest = {
   scheduleSlotId?: number | null;
   assignmentMode?: 'auto' | 'direct' | null;
   updates?: RequestUpdate[];
+  serviceFee?: { amount: number; status: 'pending' | 'authorized' | 'captured' | 'released' | 'failed' } | null;
 };
 
 type RequestSummary = {
@@ -501,6 +503,11 @@ export default function App() {
     note: '',
   });
   const [favoriteMechanics, setFavoriteMechanics] = useState<FavoriteMechanic[]>([]);
+  // Cuota de servicio (Stripe). Si está activa, el cliente la paga antes de
+  // enviar su solicitud; paidFeeSession guarda un pago hecho cuya solicitud
+  // todavía no se creó (para no cobrarle dos veces si algo falla).
+  const [serviceFeeConfig, setServiceFeeConfig] = useState<{ enabled: boolean; amount: number }>({ enabled: false, amount: 49 });
+  const paidFeeSession = useRef<string | null>(null);
   // Aviso "Conectando con el servidor…" mientras haya peticiones lentas.
   const [serverWaking, setServerWaking] = useState(false);
   const slowRequestCount = useRef(0);
@@ -743,6 +750,7 @@ export default function App() {
     loadNotifications().catch((error) => setMessage(formatError(error)));
     registerPushToken(token).catch(() => undefined);
     loadFavorites().catch(() => undefined);
+    loadServiceFeeConfig().catch(() => undefined);
   }, [user?.id, token]);
 
   useEffect(() => {
@@ -1100,6 +1108,7 @@ export default function App() {
   }
 
   async function clearSession() {
+    paidFeeSession.current = null;
     tokenRef.current = '';
     refreshTokenRef.current = null;
     setToken('');
@@ -2023,13 +2032,62 @@ export default function App() {
     }
   }
 
+  async function loadServiceFeeConfig() {
+    const data = await apiRequest<{ serviceFee: { enabled: boolean; amount: number } }>('/api/payments/config', { token });
+    setServiceFeeConfig(data.serviceFee);
+    return data.serviceFee;
+  }
+
+  // Abre el pago de la cuota en la página segura de Stripe (dentro de la
+  // app) y regresa sola al terminar. Devuelve el id del pago, o null si la
+  // persona lo canceló.
+  async function payServiceFee(): Promise<string | null> {
+    const returnUrl = Linking.createURL('pago');
+    const checkout = await apiRequest<{ checkoutUrl: string; sessionId: string }>('/api/payments/service-fee', {
+      method: 'POST',
+      token,
+      body: { returnUrl },
+    });
+    const result = await WebBrowser.openAuthSessionAsync(checkout.checkoutUrl, returnUrl);
+    if (result.type !== 'success' || !result.url) {
+      return null;
+    }
+    const query = result.url.split('?')[1]?.split('#')[0] ?? '';
+    return new URLSearchParams(query).get('estado') === 'listo' ? checkout.sessionId : null;
+  }
+
   async function handleCreateRequest() {
     if (!user) return;
+
+    const formProblem = validateRequestForm(requestForm);
+    if (formProblem) {
+      setMessage(formProblem);
+      return;
+    }
 
     setBusy(true);
     setMessage('Creando solicitud...');
 
     try {
+      let serviceFeeSessionId: string | null = null;
+      if (user.role === 'customer') {
+        // Se consulta al momento: la cuota puede activarse sin reiniciar la app.
+        const feeConfig = await loadServiceFeeConfig().catch(() => serviceFeeConfig);
+        if (feeConfig.enabled) {
+          serviceFeeSessionId = paidFeeSession.current;
+          if (!serviceFeeSessionId) {
+            setMessage('Abriendo el pago seguro…');
+            serviceFeeSessionId = await payServiceFee();
+            if (!serviceFeeSessionId) {
+              setMessage('Pago cancelado. Tu solicitud no se envió.');
+              return;
+            }
+            paidFeeSession.current = serviceFeeSessionId;
+            setMessage('Pago listo. Enviando tu solicitud…');
+          }
+        }
+      }
+
       // Respaldo: si el formulario todavía no tiene coordenadas, se usa la
       // ubicación actual (sin coordenadas no hay búsqueda por distancia ni
       // "Cómo llegar" para el mecánico).
@@ -2051,6 +2109,7 @@ export default function App() {
         ...(requestForm.scheduleSlotId ? { scheduleSlotId: Number(requestForm.scheduleSlotId) } : {}),
         ...(latitude !== undefined && Number.isFinite(latitude) ? { latitude } : {}),
         ...(longitude !== undefined && Number.isFinite(longitude) ? { longitude } : {}),
+        ...(serviceFeeSessionId ? { serviceFeeSessionId } : {}),
       };
 
       const request = await apiRequest<ServiceRequest>('/api/service-requests', {
@@ -2058,6 +2117,7 @@ export default function App() {
         body: payload,
         token,
       });
+      paidFeeSession.current = null;
 
       setSelectedRequest(request);
       setRequestLookupId(String(request.id));
@@ -2073,6 +2133,12 @@ export default function App() {
       void loadMyRequests().catch((error) => setMessage(formatError(error)));
       void loadRequestDetailById(request.id).catch(() => undefined);
     } catch (error) {
+      // 402/409: ese pago ya no sirve (no se completó o ya se usó); el
+      // siguiente intento abre un pago nuevo. Otro error: se conserva el pago
+      // para reintentar sin cobrar de nuevo.
+      if (error instanceof ApiError && (error.status === 402 || error.status === 409)) {
+        paidFeeSession.current = null;
+      }
       setMessage(formatError(error));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
     } finally {
@@ -2736,6 +2802,7 @@ export default function App() {
           {currentScreen === 'requests' && (
             <View style={styles.screenStack}>
             <RequestsScreen
+              serviceFee={serviceFeeConfig}
               requestForm={requestForm}
               setRequestForm={setRequestForm}
               requestMechanicIdNumber={requestMechanicIdNumber}

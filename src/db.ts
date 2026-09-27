@@ -568,6 +568,25 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // Cuota de servicio (ver src/serviceFees.ts): una fila por pago en Stripe
+  // Checkout. claimed_at marca que ya se usó para una solicitud.
+  await run(`
+    CREATE TABLE IF NOT EXISTS service_fees (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      checkout_session_id TEXT NOT NULL UNIQUE,
+      payment_intent_id TEXT,
+      amount REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'authorized', 'captured', 'released', 'failed')),
+      service_request_id INTEGER UNIQUE,
+      claimed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id)
+    )
+  `);
+
   // Lista de espera del sitio web (antes de publicar la app). contact_key es
   // el contacto normalizado (correo en minúsculas o solo dígitos del
   // teléfono) para no guardar dos veces a la misma persona.

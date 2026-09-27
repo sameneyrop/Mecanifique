@@ -284,7 +284,38 @@ estar completas sin una cuenta, credenciales o decisión operativa:
 | Pagos | Cuenta de Stripe Connect u otro PSP compatible con México, requisitos fiscales y política de reembolsos. |
 | CLABE y liquidaciones | Onboarding bancario del proveedor de pagos y calendario comercial de dispersión. |
 
-## Modelo de pagos y apartado (decidido, pendiente de construir)
+## Modelo de pagos: cuota de servicio (vigente)
+
+Mecanifique solo cobra una **cuota de servicio fija** al cliente
+(`SERVICE_FEE_MXN`, por defecto $49). El trabajo del mecánico se le paga
+directamente a él, en efectivo o transferencia, fuera de la app. Así
+Mecanifique no maneja dinero de terceros: no tiene que retener ISR/IVA como
+plataforma que cobra por cuenta de otros ni dar de alta a cada mecánico en
+Stripe (algo difícil para mecánicos mayores).
+
+Cómo funciona (`src/serviceFees.ts`, `src/stripe.ts`):
+
+1. Al enviar la solicitud, la app valida el formulario y abre Stripe Checkout
+   (`POST /api/payments/service-fee`) en un navegador dentro de la app. La
+   tarjeta solo queda **apartada** (captura manual).
+2. Stripe regresa a `/pagos/regreso`, que devuelve a la app (solo a
+   `mecanifique://` o `exp://`, nunca a otro sitio). La app crea la
+   solicitud con `serviceFeeSessionId`; el servidor verifica con Stripe que la
+   tarjeta quedó apartada y reclama la cuota (una cuota, una solicitud) antes
+   de enviarla a los mecánicos.
+3. Cuando el mecánico llega (`on_site` o cualquier paso posterior) se
+   **cobra**. Si la solicitud se cancela antes, se **libera** y no se cobra
+   nada. Si algo falla después del pago, la app reutiliza ese pago en el
+   siguiente intento.
+4. Un barrido cada 10 minutos libera cuotas pagadas que nunca llegaron a una
+   solicitud (la app se cerró a medio camino).
+
+Configuración en Render: `STRIPE_SECRET_KEY` (sin ella, la cuota queda
+desactivada y la app funciona como antes) y, opcional, `SERVICE_FEE_MXN`.
+Limitación conocida: una tarjeta apartada vence a los 7 días, así que una
+solicitud programada para más adelante podría no llegar a cobrarse.
+
+## Modelo de apartado + ajuste (descartado, historial)
 
 Sin capital para financiar un fondo de refacciones prepagado, se decidió este
 modelo de "apartado + ajuste":

@@ -11,6 +11,7 @@ import {
   EmptyState,
   Field,
   ImagePlaceholder,
+  InfoRow,
   Input,
   PrimaryButton,
   RequestCard,
@@ -24,7 +25,7 @@ import {
   SearchingStatus,
   ServiceProgress,
 } from '../components/ActiveService';
-import { formatError, formatCalendarDate } from '../utils';
+import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
 
 type ScheduleSlot = {
   id: number;
@@ -68,6 +69,7 @@ type DisputeFormShape = {
 const PAGE_SIZE = 8;
 
 export function RequestsScreen({
+  serviceFee,
   requestForm,
   setRequestForm,
   requestMechanicIdNumber,
@@ -98,6 +100,7 @@ export function RequestsScreen({
   onSubmitDispute,
   onSendMessage,
 }: {
+  serviceFee: { enabled: boolean; amount: number };
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
   requestMechanicIdNumber: number | null;
@@ -209,6 +212,8 @@ export function RequestsScreen({
   ];
 
   const detailIsActive = selectedRequest ? ACTIVE_REQUEST_STATUSES.has(selectedRequest.status) : false;
+  const feeApplies = serviceFee.enabled && user.role === 'customer';
+  const detailFeeText = selectedRequest ? serviceFeeStatusText(selectedRequest.serviceFee) : null;
 
   return (
     <>
@@ -467,9 +472,22 @@ export function RequestsScreen({
                     </View>
                     <SecondaryButton title="Usar mi ubicación actual" compact busy={busy} onPress={onUseMyLocation} />
                   </View>
+                  {feeApplies && (
+                    <View style={styles.publicProfileBox}>
+                      <Text style={styles.publicProfileTitle}>Cuota de servicio: ${serviceFee.amount}</Text>
+                      <InfoRow icon="shield-checkmark-outline" text="Solo se cobra cuando el mecánico llega. Si cancelas antes o no llega nadie, no se te cobra." />
+                      <InfoRow icon="cash-outline" text="El trabajo del mecánico se lo pagas directamente a él." />
+                    </View>
+                  )}
                   <SecondaryButton title="Volver" onPress={() => setRequestCreateStep('vehicle')} />
                   <PrimaryButton
-                    title={requestForm.preferredTime.trim() ? 'Programar solicitud' : 'Solicitar mecánico ahora'}
+                    title={
+                      feeApplies
+                        ? `Pagar $${serviceFee.amount} y ${requestForm.preferredTime.trim() ? 'programar' : 'solicitar'}`
+                        : requestForm.preferredTime.trim()
+                          ? 'Programar solicitud'
+                          : 'Solicitar mecánico ahora'
+                    }
                     onPress={onCreateRequest}
                     busy={busy}
                   />
@@ -510,6 +528,7 @@ export function RequestsScreen({
               <Card title="Detalle de la solicitud">
                 <View style={styles.stack}>
                   <RequestCard request={selectedRequest} viewerRole={user.role} />
+                  {detailFeeText && user.role !== 'mechanic' && <InfoRow icon="card-outline" text={detailFeeText} />}
                   {detailIsActive && <ServiceProgress status={selectedRequest.status} />}
                 </View>
               </Card>

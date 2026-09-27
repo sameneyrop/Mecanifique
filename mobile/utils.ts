@@ -67,6 +67,59 @@ export function formatDateOnly(value: string): string {
   return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}${year}`;
 }
 
+/** Texto del estado de la cuota de servicio de una solicitud (null si no hay nada que mostrar). */
+export function serviceFeeStatusText(fee: { amount: number; status: string } | null | undefined): string | null {
+  if (!fee) return null;
+  switch (fee.status) {
+    case 'authorized':
+      return `Cuota de $${fee.amount} apartada: se cobra cuando llegue el mecánico.`;
+    case 'captured':
+      return `Cuota de servicio cobrada: $${fee.amount}.`;
+    case 'released':
+      return 'Cuota liberada: no se te cobró.';
+    case 'failed':
+      return 'No se realizó el cobro de la cuota.';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Revisa el formulario de solicitud con las mismas reglas del servidor, antes
+ * de pedir el pago: nadie debe pagar para luego enterarse de que faltaba un dato.
+ */
+export function validateRequestForm(form: {
+  vehicleMake: string;
+  vehicleModel: string;
+  vehicleYear: string;
+  issueDescription: string;
+  preferredTime: string;
+  city: string;
+  zone: string;
+  serviceAddress: string;
+}): string | null {
+  const year = Number(form.vehicleYear);
+  if (form.vehicleMake.trim().length < 2 || form.vehicleModel.trim().length < 1) {
+    return 'Escribe la marca y el modelo de tu auto.';
+  }
+  if (!Number.isInteger(year) || year < 1970 || year > new Date().getFullYear() + 1) {
+    return 'Revisa el año de tu auto.';
+  }
+  if (form.issueDescription.trim().length < 10) {
+    return 'Describe la falla con un poco más de detalle (mínimo 10 letras).';
+  }
+  if (form.preferredTime.trim() && form.preferredTime.trim().length < 3) {
+    return 'Escribe mejor para cuándo lo necesitas, o déjalo vacío.';
+  }
+  if (form.city.trim().length < 2 || form.zone.trim().length < 2) {
+    return 'Escribe tu ciudad y tu zona.';
+  }
+  if (form.serviceAddress.trim() && form.serviceAddress.trim().length < 5) {
+    return 'La dirección es muy corta: escríbela completa o déjala vacía.';
+  }
+  return null;
+}
+
 /** Distancia en línea recta (km) entre dos coordenadas. */
 export function distanceKm(
   from: { latitude: number; longitude: number },

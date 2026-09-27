@@ -80,6 +80,7 @@ type ServiceRequest = {
   holdExpiresAt?: string | null;
   scheduleSlotId?: number | null;
   assignmentMode?: 'auto' | 'direct' | null;
+  serviceFee?: { amount: number; status: 'pending' | 'authorized' | 'captured' | 'released' | 'failed' } | null;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

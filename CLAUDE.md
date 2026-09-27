@@ -63,10 +63,15 @@ $env:EXPO_PUBLIC_API_BASE_URL = "https://mecanifique.onrender.com"
   — el cambio de pantalla es por estado (`currentScreen`) y render
   condicional dentro de `App.tsx`. Si vas a cablear navegación real, es un
   cambio arquitectónico grande: avisar antes de tocarlo a medias.
-- **Pagos: solo existe el esquema de datos, cero lógica de negocio.** No
-  asumir que `deposit_amount`, `extra_amount`, `refund_amount` en
-  `service_requests` hacen algo — ningún endpoint los lee ni escribe. Ver
-  README.md → "Modelo de pagos y apartado" antes de tocar esto.
+- **Pagos: solo existe la cuota de servicio** (`src/serviceFees.ts`,
+  `src/stripe.ts`): el cliente la paga en Stripe Checkout con captura
+  manual, se cobra cuando el mecánico llega y se libera si se cancela antes.
+  Mecanifique NO cobra el trabajo del mecánico (se le paga directo a él), a
+  propósito: cobrar por cuenta de terceros obligaría a retener ISR/IVA y a
+  dar de alta a cada mecánico en Stripe. Sin `STRIPE_SECRET_KEY` la cuota
+  queda desactivada. `deposit_amount`, `extra_amount` y `refund_amount` en
+  `service_requests` siguen sin usarse (eran del modelo de apartado,
+  descartado). Ver README.md → "Modelo de pagos".
 - **Textos de UI en español** (México). Mantener el tono y vocabulario ya
   usado en la app (ej. "solicitud", no "pedido"; "mecánico", no "técnico").
 - No usar `--no-verify` ni saltar hooks. No hacer `git push --force` a

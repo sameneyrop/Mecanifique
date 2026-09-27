@@ -1,41 +1,114 @@
 /**
- * Integración con Stripe (pagos: apartado + ajuste). Sigue el mismo patrón
- * que didit.ts: getStripeConfig() devuelve null si no hay credenciales, y
- * cada endpoint que dependa de Stripe responde 503 en ese caso en vez de
- * fallar de forma confusa.
+ * Conexión con Stripe para la cuota de servicio (ver src/serviceFees.ts).
  *
- * Nada de esto se usa todavía desde ninguna ruta — es la base para cuando
- * exista una cuenta de Stripe (ver README.md → "Modelo de pagos y apartado"
- * para el checklist de qué falta conectar).
+ * Todo pasa por esta interfaz pequeña para que los tests puedan usar un
+ * Stripe simulado. Sin STRIPE_SECRET_KEY no hay pasarela y la cuota queda
+ * desactivada: la app funciona como antes, sin cobrar nada.
  */
 import Stripe from "stripe";
 
-type StripeConfig = {
-  secretKey: string;
-  webhookSecret: string;
+export type CheckoutSummary = {
+  status: string | null; // 'open' | 'complete' | 'expired'
+  paymentIntentId: string | null;
+  paymentIntentStatus: string | null; // 'requires_capture' cuando la tarjeta ya quedó apartada
+  amountTotalCents: number | null;
 };
 
-export function getStripeConfig(): StripeConfig | null {
-  const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+export type StripeGateway = {
+  createCheckout(input: {
+    amountCents: number;
+    successUrl: string;
+    cancelUrl: string;
+    customerEmail?: string;
+    userId: number;
+  }): Promise<{ id: string; url: string }>;
+  retrieveCheckout(sessionId: string): Promise<CheckoutSummary>;
+  capture(paymentIntentId: string, idempotencyKey: string): Promise<void>;
+  cancel(paymentIntentId: string, idempotencyKey: string): Promise<void>;
+};
 
-  if (!secretKey || !webhookSecret) {
-    return null;
-  }
+function createStripeGateway(secretKey: string): StripeGateway {
+  const stripe = new Stripe(secretKey);
+  return {
+    async createCheckout({ amountCents, successUrl, cancelUrl, customerEmail, userId }) {
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        locale: "es-419",
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "mxn",
+              unit_amount: amountCents,
+              product_data: {
+                name: "Cuota de servicio Mecanifique",
+                description: "Solo se cobra cuando el mecánico llega. Si cancelas antes o no llega nadie, no se te cobra."
+              }
+            }
+          }
+        ],
+        // "Apartar" en la tarjeta en vez de cobrar: se cobra (capture) cuando
+        // el mecánico llega, o se libera (cancel) si nunca llega.
+        payment_intent_data: {
+          capture_method: "manual",
+          description: "Cuota de servicio Mecanifique",
+          metadata: { userId: String(userId) }
+        },
+        client_reference_id: String(userId),
+        customer_email: customerEmail,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        // Stripe exige entre 30 minutos y 24 horas.
+        expires_at: Math.floor(Date.now() / 1000) + 35 * 60
+      });
+      if (!session.url) {
+        throw new Error("Stripe no devolvió la dirección de pago");
+      }
+      return { id: session.id, url: session.url };
+    },
 
-  return { secretKey, webhookSecret };
+    async retrieveCheckout(sessionId) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["payment_intent"] });
+      const paymentIntent = session.payment_intent;
+      const intent = paymentIntent && typeof paymentIntent === "object" ? paymentIntent : null;
+      return {
+        status: session.status ?? null,
+        paymentIntentId: intent?.id ?? (typeof paymentIntent === "string" ? paymentIntent : null),
+        paymentIntentStatus: intent?.status ?? null,
+        amountTotalCents: session.amount_total ?? null
+      };
+    },
+
+    async capture(paymentIntentId, idempotencyKey) {
+      await stripe.paymentIntents.capture(paymentIntentId, {}, { idempotencyKey });
+    },
+
+    async cancel(paymentIntentId, idempotencyKey) {
+      await stripe.paymentIntents.cancel(paymentIntentId, {}, { idempotencyKey });
+    }
+  };
 }
 
-let cachedClient: Stripe | null = null;
+let cachedGateway: StripeGateway | null = null;
+let gatewayOverride: StripeGateway | null | undefined;
 
-/** Cliente de Stripe reutilizado entre llamadas. Lanza si no hay config. */
-export function getStripeClient(): Stripe {
-  const config = getStripeConfig();
-  if (!config) {
-    throw new Error("STRIPE_NOT_CONFIGURED");
+/** Pasarela de Stripe, o null si no hay STRIPE_SECRET_KEY (cuota desactivada). */
+export function getStripeGateway(): StripeGateway | null {
+  if (gatewayOverride !== undefined) {
+    return gatewayOverride;
   }
-  if (!cachedClient) {
-    cachedClient = new Stripe(config.secretKey);
+  const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
+  if (!secretKey) {
+    return null;
   }
-  return cachedClient;
+  if (!cachedGateway) {
+    cachedGateway = createStripeGateway(secretKey);
+  }
+  return cachedGateway;
+}
+
+/** Solo para tests: usa un Stripe simulado (undefined vuelve al real). */
+export function setStripeGatewayForTests(gateway: StripeGateway | null | undefined): void {
+  gatewayOverride = gateway;
 }

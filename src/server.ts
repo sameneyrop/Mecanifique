@@ -31,6 +31,18 @@ import {
 import { getSupabaseDbHealth } from "./supabaseDb";
 import { createDiditSession, verifyDiditWebhookSignature, type DiditWebhookPayload } from "./didit";
 import { calculateDepositAmount } from "./payments";
+import {
+  ServiceFeeError,
+  claimServiceFee,
+  createServiceFeeCheckout,
+  getServiceFeeForRequest,
+  isAllowedAppReturnUrl,
+  isServiceFeeEnabled,
+  linkServiceFee,
+  releaseOrphanServiceFees,
+  serviceFeeAmount,
+  settleServiceFee
+} from "./serviceFees";
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, findPhoto, savePhoto } from "./uploads";
 
 const app = express();
@@ -313,8 +325,17 @@ const loginSchema = z.object({
 const apiServiceRequestSchema = serviceRequestSchema.omit({ customerId: true }).extend({
   customerId: z.number().int().positive().optional(),
   requestedMechanicId: z.number().int().positive().optional(),
-  scheduleSlotId: z.number().int().positive().optional()
+  scheduleSlotId: z.number().int().positive().optional(),
+  // Id del pago de la cuota en Stripe Checkout (cuando los pagos están activos).
+  serviceFeeSessionId: z.string().min(10).max(255).optional()
 });
+
+// Dirección pública de este servidor. Detrás del proxy de Render
+// req.protocol es "http"; el original viene en x-forwarded-proto.
+function publicBaseUrl(req: Request): string {
+  const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
+  return process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`;
+}
 
 const authRateLimitWindowMs = 60_000;
 const authRateLimitMaxAttempts = 5;
@@ -1032,6 +1053,25 @@ function stopHoldSweep(): void {
     clearInterval(holdSweepTimer);
     holdSweepTimer = null;
   }
+  if (serviceFeeSweepTimer) {
+    clearInterval(serviceFeeSweepTimer);
+    serviceFeeSweepTimer = null;
+  }
+}
+
+// Cuotas pagadas que nunca llegaron a una solicitud (la app se cerró a medio
+// camino): se liberan para no dejar dinero apartado en la tarjeta.
+const SERVICE_FEE_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+let serviceFeeSweepTimer: NodeJS.Timeout | null = null;
+
+function startServiceFeeSweep(): void {
+  if (serviceFeeSweepTimer) {
+    return;
+  }
+  serviceFeeSweepTimer = setInterval(() => {
+    releaseOrphanServiceFees().catch((error) => console.error("Service fee sweep failed:", error));
+  }, SERVICE_FEE_SWEEP_INTERVAL_MS);
+  serviceFeeSweepTimer.unref();
 }
 
 const ACTIVE_JOB_STATUSES_SQL = "('assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts')";
@@ -2091,6 +2131,52 @@ app.post("/lista-de-espera", express.urlencoded({ extended: false, limit: "10kb"
   backToSite("ok");
 }));
 
+// ============================================================================
+// CUOTA DE SERVICIO (Stripe Checkout, ver src/serviceFees.ts)
+// ============================================================================
+
+app.get("/api/payments/config", requireAuth, (_req, res) => {
+  res.json({ serviceFee: { enabled: isServiceFeeEnabled(), amount: serviceFeeAmount() } });
+});
+
+app.post("/api/payments/service-fee", requireAuth, requireRole("customer"), handleAsync(async (req, res) => {
+  if (applyRateLimit("service-fee-checkout", req, res, 10)) {
+    return;
+  }
+  const payload = z.object({ returnUrl: z.string().min(8).max(300) }).parse(req.body);
+  try {
+    const checkout = await createServiceFeeCheckout({
+      userId: req.auth!.user.id,
+      email: req.auth!.user.login,
+      appReturnUrl: payload.returnUrl,
+      publicBaseUrl: publicBaseUrl(req)
+    });
+    res.status(201).json(checkout);
+  } catch (error) {
+    if (error instanceof ServiceFeeError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}));
+
+// Stripe regresa aquí (https) al terminar o cancelar el pago; de aquí se
+// vuelve a la app. Solo se permite regresar a la app (mecanifique:// o
+// exp:// en desarrollo): nunca a otro sitio.
+app.get("/pagos/regreso", (req, res) => {
+  const destino = typeof req.query.destino === "string" ? req.query.destino : "";
+  if (!isAllowedAppReturnUrl(destino)) {
+    res.redirect(302, SITE_URL);
+    return;
+  }
+  const params = new URLSearchParams({ estado: req.query.estado === "listo" ? "listo" : "cancelado" });
+  if (typeof req.query.session_id === "string" && /^cs_[A-Za-z0-9_]+$/.test(req.query.session_id)) {
+    params.set("session_id", req.query.session_id);
+  }
+  res.redirect(302, `${destino}${destino.includes("?") ? "&" : "?"}${params.toString()}`);
+});
+
 app.post("/api/support", requireAuth, handleAsync(async (req, res) => {
   if (applyRateLimit("support-request", req, res)) {
     return;
@@ -2327,6 +2413,25 @@ app.post(
       return;
     }
 
+    // Cuota de servicio: con los pagos activos, un cliente debe haberla
+    // apartado en Stripe antes de que la solicitud llegue a los mecánicos.
+    let serviceFeeId: number | null = null;
+    if (isServiceFeeEnabled() && req.auth?.user.role === "customer") {
+      if (!payload.serviceFeeSessionId) {
+        res.status(402).json({ error: "Paga la cuota de servicio para enviar tu solicitud.", code: "SERVICE_FEE_REQUIRED" });
+        return;
+      }
+      try {
+        serviceFeeId = await claimServiceFee(req.auth.user.id, payload.serviceFeeSessionId);
+      } catch (error) {
+        if (error instanceof ServiceFeeError) {
+          res.status(error.status).json({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+    }
+
     const result = await run(
       `
       INSERT INTO service_requests (
@@ -2358,6 +2463,9 @@ app.post(
       ]
     );
 
+    if (serviceFeeId) {
+      await linkServiceFee(serviceFeeId, result.lastID);
+    }
     if (scheduleSlotId) {
       await run(
         `
@@ -3141,112 +3249,6 @@ app.patch(
   })
 );
 
-app.patch(
-  "/service-requests/:id/status",
-  requireAuth,
-  requireRole("mechanic", "admin"),
-  handleAsync(async (req, res) => {
-    const requestId = Number(req.params.id);
-    const payload = requestStatusSchema.parse(req.body);
-
-    if (!Number.isInteger(requestId) || requestId <= 0) {
-      res.status(400).json({ error: "requestId inválido" });
-      return;
-    }
-
-    const existing = await get<{ id: number; customerId: number; mechanic_id: number | null; status: string }>(
-      `
-      SELECT id, customer_id AS customerId, mechanic_id, status
-      FROM service_requests
-      WHERE id = ?
-      `,
-      [requestId]
-    );
-
-    if (!existing) {
-      res.status(404).json({ error: "Solicitud no encontrada" });
-      return;
-    }
-
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== existing.mechanic_id) {
-      res.status(403).json({ error: "Solo el mecánico asignado puede actualizar esta solicitud" });
-      return;
-    }
-
-    if (!allowedRequestTransitions[existing.status]?.includes(payload.status)) {
-      res.status(409).json({
-        error: `Transición no permitida: ${existing.status} -> ${payload.status}`
-      });
-      return;
-    }
-
-    await run(
-      `
-      UPDATE service_requests
-      SET status = ?, diagnosis_notes = COALESCE(?, diagnosis_notes),
-          repair_notes = COALESCE(?, repair_notes), estimated_price = COALESCE(?, estimated_price),
-          final_price = COALESCE(?, final_price), updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-      `,
-      [
-        payload.status,
-        payload.diagnosisNotes ?? null,
-        payload.repairNotes ?? null,
-        payload.estimatedPrice ?? null,
-        payload.finalPrice ?? null,
-        requestId
-      ]
-    );
-
-    if (payload.status === "completed" && existing.mechanic_id) {
-      await run(
-        `
-        UPDATE mechanics
-        SET is_available = 1, jobs_completed = jobs_completed + 1
-        WHERE id = ?
-        `,
-        [existing.mechanic_id]
-      );
-    }
-
-    const statusCustomerUserId = await getUserIdByCustomerId(existing.customerId);
-    const statusMechanicUserId = existing.mechanic_id ? await getUserIdByMechanicId(existing.mechanic_id) : null;
-    if (statusCustomerUserId) {
-      await createNotification(
-        statusCustomerUserId,
-        "Estado actualizado",
-        `Tu solicitud #${requestId} cambió a ${payload.status}`,
-        { requestId, status: payload.status }
-      );
-    }
-    if (statusMechanicUserId) {
-      await createNotification(
-        statusMechanicUserId,
-        "Estado actualizado",
-        `La solicitud #${requestId} cambió a ${payload.status}`,
-        { requestId, status: payload.status }
-      );
-    }
-
-    notifyRequest(requestId, "status-updated", {
-      requestId,
-      status: payload.status,
-      diagnosisNotes: payload.diagnosisNotes ?? null,
-      repairNotes: payload.repairNotes ?? null,
-      estimatedPrice: payload.estimatedPrice ?? null,
-      finalPrice: payload.finalPrice ?? null
-    });
-    if (statusCustomerUserId) {
-      notifyUser(statusCustomerUserId, "status-updated", { requestId, status: payload.status });
-    }
-    if (statusMechanicUserId) {
-      notifyUser(statusMechanicUserId, "status-updated", { requestId, status: payload.status });
-    }
-
-    res.status(200).json({ ok: true });
-  })
-);
-
 app.post(
   "/service-requests/:id/updates",
   requireAuth,
@@ -3668,6 +3670,7 @@ app.post(
       `,
       [requestId]
     );
+    await settleServiceFee(requestId, "cancelled");
 
     if (request.schedule_slot_id) {
       await run(
@@ -3780,7 +3783,8 @@ app.get(
 
     res.status(200).json({
       ...request,
-      updates
+      updates,
+      serviceFee: await getServiceFeeForRequest(requestId)
     });
   })
 );
@@ -3967,6 +3971,8 @@ app.patch(
         requestId
       ]
     );
+
+    await settleServiceFee(requestId, payload.status);
 
     if (payload.status === "completed" && existing.mechanic_id) {
       await run(
@@ -4172,6 +4178,7 @@ export async function startServer(): Promise<typeof httpServer> {
     const onListening = () => {
       httpServer.off("error", onError);
       startHoldSweep();
+      startServiceFeeSweep();
       httpServer.once("close", stopHoldSweep);
       console.log(`Mecanifique API escuchando en http://localhost:${port}`);
       resolve(httpServer);

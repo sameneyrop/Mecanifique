@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, ChoiceTile, Field, ImagePlaceholder, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Card, ChoiceTile, Field, ImagePlaceholder, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
 import {
   ACTIVE_REQUEST_STATUSES,
   ContactRow,
@@ -15,7 +15,7 @@ import {
   SearchingStatus,
   ServiceProgress,
 } from '../components/ActiveService';
-import { openExternalNavigation } from '../utils';
+import { openExternalNavigation, serviceFeeStatusText } from '../utils';
 
 type RequestFormShape = {
   vehicleMake: string;
@@ -257,6 +257,7 @@ function CustomerHome(props: HomeScreenProps) {
   }
 
   const hasMechanic = detail.status !== 'pending' && Boolean(detail.mechanicName);
+  const feeText = serviceFeeStatusText(detail.serviceFee);
 
   return (
     <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>
@@ -264,7 +265,10 @@ function CustomerHome(props: HomeScreenProps) {
         title="Tu servicio"
         subtitle={`${detail.vehicleMake} ${detail.vehicleModel} ${detail.vehicleYear} · ${detail.issueDescription}`}
       >
-        <ServiceProgress status={detail.status} />
+        <View style={styles.stack}>
+          <ServiceProgress status={detail.status} />
+          {feeText && <InfoRow icon="card-outline" text={feeText} />}
+        </View>
       </Card>
       {detail.status === 'pending' && (
         <SearchingStatus request={detail} busy={busy} onSearchAgain={props.onSearchAgain} />

@@ -12,6 +12,15 @@ const { calculateDepositAmount, getCommissionRate, calculateCommissionAmount } =
 const { decodePhoto, PhotoUploadError, savePhoto } = require("../src/uploads.ts");
 const { communityAuthorName } = require("../src/routes/community.ts");
 const { anonymizeAccount, hasActiveServiceBlockingDeletion } = require("../src/accountDeletion.ts");
+const {
+  ServiceFeeError,
+  claimServiceFee,
+  createServiceFeeCheckout,
+  linkServiceFee,
+  releaseOrphanServiceFees,
+  settleServiceFee
+} = require("../src/serviceFees.ts");
+const { setStripeGatewayForTests } = require("../src/stripe.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -47,6 +56,7 @@ const createdRows = { mechanics: [], customers: [], requests: [] };
 
 async function cleanupCreatedRows() {
   for (const requestId of createdRows.requests) {
+    await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_requests WHERE id = ?", [requestId]);
@@ -750,6 +760,128 @@ test("eliminar cuenta de mecánico: deja de aparecer y se borran sus promociones
     await run("DELETE FROM mechanic_promotions WHERE mechanic_id = ?", [mechanicId]);
     await run("DELETE FROM mechanic_schedule_slots WHERE mechanic_id = ?", [mechanicId]);
     await run("DELETE FROM users WHERE id = ?", [account.id]);
+  }
+});
+
+test("pagos: la configuración y el pago de la cuota exigen sesión", async () => {
+  assert.equal((await request("/api/payments/config")).response.status, 401);
+  const { response } = await request("/api/payments/service-fee", {
+    method: "POST",
+    body: JSON.stringify({ returnUrl: "mecanifique://pago" })
+  });
+  assert.equal(response.status, 401);
+});
+
+test("/pagos/regreso vuelve a la app con el resultado y nunca manda a otro sitio", async () => {
+  const back = (query) => fetch(`${baseUrl}/pagos/regreso?${query}`, { redirect: "manual" });
+  const ok = await back(`estado=listo&session_id=cs_test_123&destino=${encodeURIComponent("exp://192.168.1.5:8081/--/pago")}`);
+  assert.equal(ok.status, 302);
+  assert.equal(ok.headers.get("location"), "exp://192.168.1.5:8081/--/pago?estado=listo&session_id=cs_test_123");
+
+  const cancelled = await back(`estado=cancelado&destino=${encodeURIComponent("mecanifique://pago")}`);
+  assert.equal(cancelled.headers.get("location"), "mecanifique://pago?estado=cancelado");
+
+  const evil = await back(`estado=listo&destino=${encodeURIComponent("https://sitio-malicioso.example/robar")}`);
+  assert.equal(evil.headers.get("location"), "https://mecanifique.vercel.app/");
+});
+
+test("cuota de servicio: se aparta, se reclama una vez, se cobra al llegar el mecánico y se libera al cancelar", async () => {
+  // Stripe simulado: registra lo que la app le pide.
+  const sessions = new Map();
+  const calls = [];
+  let counter = 0;
+  setStripeGatewayForTests({
+    async createCheckout(input) {
+      counter += 1;
+      const id = `cs_test_${crypto.randomUUID().replace(/-/g, "")}`;
+      sessions.set(id, { status: "open", paymentIntentId: null, paymentIntentStatus: null, amountTotalCents: input.amountCents, input });
+      return { id, url: `https://checkout.stripe.test/${counter}` };
+    },
+    async retrieveCheckout(sessionId) {
+      const session = sessions.get(sessionId);
+      return { status: session.status, paymentIntentId: session.paymentIntentId, paymentIntentStatus: session.paymentIntentStatus, amountTotalCents: session.amountTotalCents };
+    },
+    async capture(paymentIntentId, key) { calls.push(["capture", paymentIntentId, key]); },
+    async cancel(paymentIntentId, key) { calls.push(["cancel", paymentIntentId, key]); }
+  });
+  const payAt = (sessionId) => {
+    const session = sessions.get(sessionId);
+    session.status = "complete";
+    session.paymentIntentId = `pi_${sessionId.slice(-8)}`;
+    session.paymentIntentStatus = "requires_capture";
+  };
+
+  const supabaseUserId = crypto.randomUUID();
+  const user = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash)
+     VALUES ('customer', ?, ?, 'Cliente Cuota', 'x', 'x')`,
+    [`${supabaseUserId}@example.test`, supabaseUserId]
+  );
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Cuota", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const newRequest = async () => {
+    const created = await run(
+      `INSERT INTO service_requests (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status)
+       VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', 'Ciudad-Cuota', 'Centro', 'pending')`,
+      [customer.lastID]
+    );
+    createdRows.requests.push(created.lastID);
+    return created.lastID;
+  };
+  const feeStatus = async (requestId) => (await get("SELECT status FROM service_fees WHERE service_request_id = ?", [requestId]))?.status;
+
+  try {
+    await assert.rejects(
+      createServiceFeeCheckout({ userId: user.lastID, appReturnUrl: "https://otro-sitio.example", publicBaseUrl: "https://api.test" }),
+      (error) => error instanceof ServiceFeeError && error.status === 400
+    );
+
+    // 1. Pago que sí llega: se aparta, se reclama y se cobra una sola vez al llegar.
+    const checkout = await createServiceFeeCheckout({
+      userId: user.lastID,
+      email: "cliente@example.test",
+      appReturnUrl: "mecanifique://pago",
+      publicBaseUrl: "https://api.test"
+    });
+    assert.equal(checkout.amount, 49);
+    const sent = sessions.get(checkout.sessionId).input;
+    assert.equal(sent.amountCents, 4900);
+    assert.match(sent.successUrl, /^https:\/\/api\.test\/pagos\/regreso\?estado=listo&session_id=\{CHECKOUT_SESSION_ID\}&destino=mecanifique%3A%2F%2Fpago$/);
+
+    await assert.rejects(claimServiceFee(user.lastID, checkout.sessionId), (error) => error.status === 402, "sin pagar no se reclama");
+    payAt(checkout.sessionId);
+    const feeId = await claimServiceFee(user.lastID, checkout.sessionId);
+    await assert.rejects(claimServiceFee(user.lastID, checkout.sessionId), (error) => error.status === 409, "una cuota, una solicitud");
+
+    const arrivedRequest = await newRequest();
+    await linkServiceFee(feeId, arrivedRequest);
+    await settleServiceFee(arrivedRequest, "en_route");
+    assert.equal(await feeStatus(arrivedRequest), "authorized", "en camino todavía no se cobra");
+    await settleServiceFee(arrivedRequest, "on_site");
+    await settleServiceFee(arrivedRequest, "completed");
+    assert.equal(await feeStatus(arrivedRequest), "captured");
+    assert.equal(calls.filter(([kind]) => kind === "capture").length, 1, "se cobra una sola vez");
+
+    // 2. Cancelada antes de que llegue el mecánico: se libera.
+    const second = await createServiceFeeCheckout({ userId: user.lastID, appReturnUrl: "mecanifique://pago", publicBaseUrl: "https://api.test" });
+    payAt(second.sessionId);
+    const secondFee = await claimServiceFee(user.lastID, second.sessionId);
+    const cancelledRequest = await newRequest();
+    await linkServiceFee(secondFee, cancelledRequest);
+    await settleServiceFee(cancelledRequest, "cancelled");
+    assert.equal(await feeStatus(cancelledRequest), "released");
+
+    // 3. Pagada pero sin solicitud (la app se cerró): el barrido la libera.
+    const orphan = await createServiceFeeCheckout({ userId: user.lastID, appReturnUrl: "mecanifique://pago", publicBaseUrl: "https://api.test" });
+    payAt(orphan.sessionId);
+    await run("UPDATE service_fees SET created_at = datetime('now', '-3 hours') WHERE checkout_session_id = ?", [orphan.sessionId]);
+    assert.ok((await releaseOrphanServiceFees()) >= 1);
+    assert.equal((await get("SELECT status FROM service_fees WHERE checkout_session_id = ?", [orphan.sessionId])).status, "released");
+    assert.ok(calls.some(([kind, paymentIntentId]) => kind === "cancel" && paymentIntentId === sessions.get(orphan.sessionId).paymentIntentId));
+  } finally {
+    setStripeGatewayForTests(undefined);
+    await run("DELETE FROM service_fees WHERE user_id = ?", [user.lastID]);
+    await run("DELETE FROM users WHERE id = ?", [user.lastID]);
   }
 });
 
