@@ -56,6 +56,14 @@ mantener informadas a ambas partes.
   ayuda" desde la app (`POST /api/support`, avisa a los admins con una
   notificación). El registro ahora manda nombre, teléfono y rol a Supabase en
   `data` (antes iban en `user_metadata`, que Supabase ignoraba).
+- **Lista de espera del sitio web** (`mecanifique.vercel.app`, cuyo código
+  vive fuera de este repo): formulario HTML normal que hace POST a
+  `/lista-de-espera` (cliente o mecánico, nombre opcional, WhatsApp o correo,
+  ciudad). Guarda en `waitlist_signups` sin duplicar (contacto normalizado),
+  descarta bots con un campo trampa, avisa a los admins y regresa al sitio con
+  `?registro=ok|error#lista`. La dirección de regreso es fija
+  (`WAITLIST_REDIRECT_URL`, por defecto el sitio de Vercel) para no permitir
+  redirecciones abiertas. No necesita CORS porque no es un fetch.
 - **Eliminar cuenta** (requisito de Google Play): Cuenta → Seguridad →
   "Eliminar mi cuenta" (mecánico: Acciones → Sesión), con explicación y doble
   confirmación; bloqueado si hay un servicio en curso o una solicitud

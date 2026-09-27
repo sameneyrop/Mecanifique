@@ -2022,6 +2022,70 @@ app.post("/eliminar-cuenta", express.urlencoded({ extended: false, limit: "10kb"
   res.type("html").send(deletionRequestReceivedPage());
 }));
 
+// Lista de espera del sitio web (mecanifique.vercel.app). Es un formulario
+// HTML normal (no fetch), así que no necesita CORS: guarda el registro y
+// regresa al sitio con ?registro=ok o ?registro=error. La dirección de
+// regreso es fija (nunca viene del formulario) para no abrir redirecciones.
+const WAITLIST_REDIRECT_URL = process.env.WAITLIST_REDIRECT_URL || "https://mecanifique.vercel.app/";
+
+const waitlistSchema = z.object({
+  role: z.enum(["cliente", "mecanico"]),
+  name: z.string().trim().max(80).optional(),
+  contact: z.string().trim().min(5).max(120),
+  city: z.string().trim().max(60).optional()
+});
+
+export function normalizeWaitlistContact(contact: string): string | null {
+  const value = contact.trim();
+  if (z.string().email().safeParse(value).success) {
+    return value.toLowerCase();
+  }
+  const digits = value.replace(/\D/g, "");
+  return /^[0-9+()\-\s]{8,20}$/.test(value) && digits.length >= 8 ? digits : null;
+}
+
+app.get("/lista-de-espera", (_req, res) => {
+  res.redirect(302, WAITLIST_REDIRECT_URL);
+});
+
+app.post("/lista-de-espera", express.urlencoded({ extended: false, limit: "10kb" }), handleAsync(async (req, res) => {
+  const backToSite = (status: "ok" | "error") => {
+    const url = new URL(WAITLIST_REDIRECT_URL);
+    url.searchParams.set("registro", status);
+    url.hash = "lista";
+    res.redirect(303, url.toString());
+  };
+  if (applyRateLimit("waitlist", req, res)) {
+    return;
+  }
+  // Campo trampa invisible: una persona nunca lo llena, un bot sí.
+  if (typeof req.body?.website === "string" && req.body.website.trim()) {
+    backToSite("ok");
+    return;
+  }
+  const parsed = waitlistSchema.safeParse(req.body ?? {});
+  const contactKey = parsed.success ? normalizeWaitlistContact(parsed.data.contact) : null;
+  if (!parsed.success || !contactKey) {
+    backToSite("error");
+    return;
+  }
+  const role = parsed.data.role === "mecanico" ? "mechanic" : "customer";
+  const inserted = await run(
+    "INSERT OR IGNORE INTO waitlist_signups (role, name, contact, contact_key, city) VALUES (?, ?, ?, ?, ?)",
+    [role, parsed.data.name || null, parsed.data.contact, contactKey, parsed.data.city || null]
+  );
+  if (inserted.changes > 0) {
+    const adminUserIds = await getAdminUserIds();
+    const who = `${role === "mechanic" ? "Mecánico" : "Cliente"}${parsed.data.city ? ` en ${parsed.data.city}` : ""}`;
+    await Promise.all(
+      adminUserIds.map((adminUserId) =>
+        createNotification(adminUserId, "Nuevo registro en la lista de espera", `${who}: ${parsed.data.name || "sin nombre"}`)
+      )
+    );
+  }
+  backToSite("ok");
+}));
+
 app.post("/api/support", requireAuth, handleAsync(async (req, res) => {
   if (applyRateLimit("support-request", req, res)) {
     return;

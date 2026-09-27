@@ -568,6 +568,22 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // Lista de espera del sitio web (antes de publicar la app). contact_key es
+  // el contacto normalizado (correo en minúsculas o solo dígitos del
+  // teléfono) para no guardar dos veces a la misma persona.
+  await run(`
+    CREATE TABLE IF NOT EXISTS waitlist_signups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      role TEXT NOT NULL CHECK(role IN ('customer', 'mechanic')),
+      name TEXT,
+      contact TEXT NOT NULL,
+      contact_key TEXT NOT NULL,
+      city TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(contact_key, role)
+    )
+  `);
+
   // Fotos subidas desde la app (ver src/uploads.ts): en la base y no en
   // disco, porque el disco de Render gratis no persiste.
   await run(`

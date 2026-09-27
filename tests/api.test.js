@@ -747,6 +747,35 @@ test("eliminar cuenta de mecánico: deja de aparecer y se borran sus promociones
   }
 });
 
+test("lista de espera: guarda una vez, regresa al sitio y descarta bots y datos inválidos", async () => {
+  const post = (fields) => fetch(`${baseUrl}/lista-de-espera`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(fields).toString(),
+    redirect: "manual"
+  });
+  const phone = `449 ${crypto.randomInt(100, 999)} ${crypto.randomInt(1000, 9999)}`;
+  const contactKey = phone.replace(/\D/g, "");
+
+  try {
+    const first = await post({ role: "cliente", name: "Ana", contact: phone, city: "Aguascalientes" });
+    assert.equal(first.status, 303);
+    assert.match(first.headers.get("location"), /^https:\/\/mecanifique\.vercel\.app\/\?registro=ok#lista$/);
+    // La misma persona otra vez: no se duplica, pero igual ve "listo".
+    assert.match((await post({ role: "cliente", contact: phone })).headers.get("location"), /registro=ok/);
+    assert.equal((await get("SELECT COUNT(*) AS total FROM waitlist_signups WHERE contact_key = ?", [contactKey])).total, 1);
+
+    assert.match((await post({ role: "cliente", contact: "hola" })).headers.get("location"), /registro=error/);
+    assert.match((await post({ role: "dueño", contact: phone })).headers.get("location"), /registro=error/);
+
+    const botEmail = `bot-${crypto.randomUUID()}@example.test`;
+    assert.match((await post({ role: "cliente", contact: botEmail, website: "http://spam" })).headers.get("location"), /registro=ok/);
+    assert.equal(await get("SELECT id FROM waitlist_signups WHERE contact_key = ?", [botEmail]), undefined);
+  } finally {
+    await run("DELETE FROM waitlist_signups WHERE contact_key = ?", [contactKey]);
+  }
+});
+
 test("página /eliminar-cuenta: se ve sin la app y guarda la solicitud", async () => {
   const page = await fetch(`${baseUrl}/eliminar-cuenta`);
   assert.equal(page.status, 200);
