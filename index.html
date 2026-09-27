@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mecanifique — Tu auto, en buenas manos</title>
+  <meta id="meta-description" name="description" content="Pide un mecánico verificado que va hasta donde está tu auto, ahora mismo o con cita. Muy pronto en Aguascalientes.">
+  <link rel="canonical" href="https://mecanifique.vercel.app/">
+  <link rel="icon" href="assets/mecanifique-logo-blue.png">
+
+  <!-- Vista previa al compartir (WhatsApp, Facebook, X). -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Mecanifique">
+  <meta property="og:locale" content="es_MX">
+  <meta property="og:url" content="https://mecanifique.vercel.app/">
+  <meta property="og:title" content="Mecanifique — Tu auto, en buenas manos">
+  <meta property="og:description" content="Mecánicos verificados que van a donde está tu auto, ahora mismo o con cita. Muy pronto en Aguascalientes.">
+  <meta property="og:image" content="https://mecanifique.vercel.app/assets/mecanifique-logo-blue.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="theme-color" content="#0f77b5">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Mecanifique",
+    "url": "https://mecanifique.vercel.app/",
+    "logo": "https://mecanifique.vercel.app/assets/mecanifique-logo-blue.png",
+    "email": "ameneyro.design@gmail.com",
+    "areaServed": "Aguascalientes, México",
+    "description": "Plataforma que conecta a conductores con mecánicos independientes verificados que van a donde está el vehículo."
+  }
+  </script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="progress" aria-hidden="true"><span id="progress-bar"></span></div>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top" aria-label="Mecanifique, inicio">
+        <img src="assets/mecanifique-logo-blue.png" alt="Mecanifique">
+      </a>
+      <nav class="desktop-nav">
+        <a href="#como-funciona" data-i18n="nav.how">Cómo funciona</a>
+        <a href="#confianza" data-i18n="nav.trust">Confianza</a>
+        <a href="#mecanicos" data-i18n="nav.mechanics">Mecánicos</a>
+        <a href="#inversionistas" data-i18n="nav.investors">Inversionistas</a>
+      </nav>
+      <div class="nav-actions">
+        <button id="language-toggle" class="lang-toggle" type="button" aria-label="Cambiar idioma / Switch language">
+          <span class="lang-pill active">ES</span><span class="lang-divider">/</span><span class="lang-pill">EN</span>
+        </button>
+        <a class="nav-cta" href="#lista" data-i18n="nav.cta">Avísame</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Para clientes -->
+    <section class="hero section">
+      <div class="container hero-grid">
+        <div class="hero-copy reveal">
+          <p class="eyebrow" data-i18n="hero.eyebrow">MUY PRONTO EN AGUASCALIENTES</p>
+          <h1 data-i18n-html="hero.title">Tu auto,<br><span>en buenas manos.</span></h1>
+          <p class="lead" data-i18n="hero.lead">Pide un mecánico verificado que va hasta donde está tu auto. Ahora mismo o con cita, sin buscar a quién llamar.</p>
+          <div class="hero-actions">
+            <a class="button primary magnetic" href="#lista" data-role="cliente" data-i18n="hero.primary">Avísame cuando esté lista</a>
+            <a class="button secondary magnetic" href="#como-funciona" data-i18n="hero.secondary">Cómo funciona</a>
+          </div>
+          <div class="trust-row" data-stagger-group>
+            <span data-i18n="hero.trust1">✓ Mecánicos con identidad verificada</span>
+            <span data-i18n="hero.trust2">✓ Van a donde está tu auto</span>
+            <span data-i18n="hero.trust3">✓ Ahora mismo o con cita</span>
+          </div>
+        </div>
+
+        <div class="hero-mark-wrap reveal delay-1" data-parallax="0.08">
+          <div class="glow-orbit orbit-1"></div>
+          <div class="glow-orbit orbit-2"></div>
+          <div class="logo-stage tilt-card">
+            <img src="assets/mecanifique-logo-white.png" alt="Mecanifique" class="hero-logo-white">
+            <div class="stage-caption">
+              <span data-i18n="hero.stage1">Encuentra.</span>
+              <span data-i18n="hero.stage2">Confía.</span>
+              <span data-i18n="hero.stage3">Repara.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="scroll-cue" aria-hidden="true"><span></span><small data-i18n="hero.scroll">Desliza</small></div>
+    </section>
+
+    <section id="problema" class="section muted">
+      <div class="container split">
+        <div class="reveal">
+          <p class="eyebrow" data-i18n="problem.eyebrow">¿TE SUENA?</p>
+          <h2 data-i18n="problem.title">Se descompone el auto y la primera pregunta es: ¿a quién le hablo?</h2>
+        </div>
+        <div class="problem-copy reveal delay-1">
+          <p data-i18n="problem.lead">Encontrar a alguien de confianza es difícil. Encontrar a alguien que vaya hasta donde está tu auto, todavía más.</p>
+          <div class="problem-list">
+            <div><b>01</b><span data-i18n="problem.p1">No sabes a quién llamar, ni si es de fiar.</span></div>
+            <div><b>02</b><span data-i18n="problem.p2">Llevarlo al taller cuesta grúa, tiempo y dinero.</span></div>
+            <div><b>03</b><span data-i18n="problem.p3">No sabes qué tiene tu auto ni cuánto debería costar.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="como-funciona" class="section">
+      <div class="container">
+        <div class="section-heading center reveal">
+          <p class="eyebrow" data-i18n="how.eyebrow">CÓMO FUNCIONA</p>
+          <h2 data-i18n="how.title">De la falla a la solución, desde tu celular.</h2>
+          <p data-i18n="how.lead">Así pides un mecánico con Mecanifique.</p>
+        </div>
+        <div class="steps">
+          <article class="step reveal">
+            <span class="step-num">01</span>
+            <h3 data-i18n="how.s1h">Pide</h3>
+            <p data-i18n="how.s1p">Describe la falla y comparte dónde está tu auto. Ahora mismo o con cita.</p>
+          </article>
+          <article class="step reveal delay-1">
+            <span class="step-num">02</span>
+            <h3 data-i18n="how.s2h">Te asignamos</h3>
+            <p data-i18n="how.s2p">Te enviamos al mecánico verificado disponible más cercano. O elige tú a uno por su perfil y sus reseñas.</p>
+          </article>
+          <article class="step reveal delay-2">
+            <span class="step-num">03</span>
+            <h3 data-i18n="how.s3h">Síguelo</h3>
+            <p data-i18n="how.s3p">Ve cuándo va en camino, cuándo llega y cada paso del servicio. Chatea o llámale desde la app.</p>
+          </article>
+          <article class="step reveal delay-3">
+            <span class="step-num">04</span>
+            <h3 data-i18n="how.s4h">Listo</h3>
+            <p data-i18n="how.s4p">Si se puede reparar ahí, se repara ahí. Al terminar, calificas el servicio.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="confianza" class="section blue">
+      <div class="container feature-grid">
+        <div class="reveal">
+          <p class="eyebrow light" data-i18n="trust.eyebrow">POR QUÉ CONFIAR</p>
+          <h2 data-i18n="trust.title">La confianza no es un extra: es el producto.</h2>
+          <p class="light-copy" data-i18n="trust.lead">Antes de que un mecánico llegue a donde está tu auto, ya sabemos quién es.</p>
+        </div>
+        <div class="feature-panel reveal delay-1">
+          <div class="feature"><span>✓</span><div><b data-i18n="trust.f1h">Identidad verificada</b><p data-i18n="trust.f1p">Cada mecánico pasa una verificación de identidad con prueba de vida antes de recibir solicitudes.</p></div></div>
+          <div class="feature"><span>★</span><div><b data-i18n="trust.f2h">Reseñas de clientes reales</b><p data-i18n="trust.f2p">Solo quien recibió el servicio puede calificarlo, y las calificaciones se ven en el perfil del mecánico.</p></div></div>
+          <div class="feature"><span>!</span><div><b data-i18n="trust.f3h">Ayuda si algo sale mal</b><p data-i18n="trust.f3p">Durante un servicio tienes un botón para llamar al 911, y al terminar puedes reportar cualquier problema.</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="container">
+        <div class="section-heading center reveal">
+          <p class="eyebrow" data-i18n="app.eyebrow">TODO EN UNA APP</p>
+          <h2 data-i18n="app.title">Más que pedir un mecánico.</h2>
+        </div>
+        <div class="app-points reveal delay-1">
+          <div class="app-point"><b data-i18n="app.p1h">Ahora mismo o con cita</b><p data-i18n="app.p1p">Pide ayuda al momento o aparta un turno en la agenda del mecánico que prefieras.</p></div>
+          <div class="app-point"><b data-i18n="app.p2h">Tus vehículos guardados</b><p data-i18n="app.p2p">Registra tu auto una vez y ya no lo vuelves a escribir cada vez que pides un servicio.</p></div>
+          <div class="app-point"><b data-i18n="app.p3h">Pregúntale a un mecánico</b><p data-i18n="app.p3p">En la Comunidad, mecánicos verificados responden gratis tus dudas sobre tu auto.</p></div>
+          <div class="app-point"><b data-i18n="app.p4h">Promociones cerca de ti</b><p data-i18n="app.p4p">Ve las ofertas que publican los mecánicos de tu zona.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Para mecánicos -->
+    <section id="mecanicos" class="section">
+      <div class="container split">
+        <div class="reveal">
+          <p class="eyebrow" data-i18n="mechanics.eyebrow">PARA MECÁNICOS</p>
+          <h2 data-i18n="mechanics.title">Tú pones la experiencia. Mecanifique te trae clientes.</h2>
+          <p class="lead-small" data-i18n="mechanics.lead">Si eres mecánico independiente, recibe trabajos cerca de ti, elige los que te convienen y construye tu reputación.</p>
+          <div class="mechanic-points">
+            <span data-i18n="mechanics.p1">Solicitudes cerca de ti</span>
+            <span data-i18n="mechanics.p2">Aceptas solo lo que te conviene</span>
+            <span data-i18n="mechanics.p3">Tu perfil con fotos y reseñas</span>
+            <span data-i18n="mechanics.p4">Tus propias promociones</span>
+          </div>
+          <div class="hero-actions">
+            <a class="button primary magnetic" href="#lista" data-role="mecanico" data-i18n="mechanics.cta">Quiero unirme como mecánico</a>
+          </div>
+        </div>
+        <div class="mechanic-card reveal delay-1 tilt-card">
+          <div class="profile-head">
+            <div class="avatar">AP</div>
+            <div>
+              <p class="mini-label" data-i18n="mechanics.cardlabel">EJEMPLO DE PERFIL</p>
+              <h3 data-i18n="mechanics.cardtitle">Mecánico verificado</h3>
+            </div>
+          </div>
+          <div class="rating">★★★★★ <span data-i18n="mechanics.cardtrust">Calificaciones de sus clientes</span></div>
+          <div class="specialties">
+            <span data-i18n="mechanics.sp1">Eléctrico</span><span data-i18n="mechanics.sp2">Diésel</span><span data-i18n="mechanics.sp3">General</span>
+          </div>
+          <div class="mechanic-quote" data-i18n="mechanics.quote">“Tú te concentras en reparar autos. Nosotros, en que los clientes te encuentren.”</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lista de espera (clientes y mecánicos) -->
+    <section id="lista" class="section contact">
+      <div class="container waitlist-card reveal">
+        <div>
+          <p class="eyebrow" data-i18n="waitlist.eyebrow">LISTA DE ESPERA</p>
+          <h2 data-i18n="waitlist.title">Sé de los primeros en usar Mecanifique.</h2>
+          <p data-i18n="waitlist.lead">Estamos por lanzar en Aguascalientes. Déjanos tu WhatsApp o correo y te avisamos el día que la app esté lista.</p>
+        </div>
+        <form id="waitlist-form" class="waitlist-form" method="post" action="https://mecanifique.onrender.com/lista-de-espera">
+          <div id="waitlist-status" class="form-status" role="status" hidden></div>
+          <fieldset class="role-choice">
+            <legend data-i18n="waitlist.role">Soy</legend>
+            <label><input type="radio" name="role" value="cliente" checked><span data-i18n="waitlist.roleCustomer">Cliente: necesito un mecánico</span></label>
+            <label><input type="radio" name="role" value="mecanico"><span data-i18n="waitlist.roleMechanic">Mecánico: quiero recibir trabajos</span></label>
+          </fieldset>
+          <label class="field"><span data-i18n="waitlist.name">Nombre (opcional)</span><input name="name" maxlength="80" autocomplete="name"></label>
+          <label class="field"><span data-i18n="waitlist.contact">WhatsApp o correo</span><input name="contact" required minlength="5" maxlength="120" autocomplete="tel" data-i18n-placeholder="waitlist.contactPlaceholder" placeholder="449 123 4567 o tu@correo.com"></label>
+          <label class="field"><span data-i18n="waitlist.city">Ciudad</span><input name="city" maxlength="60" value="Aguascalientes" autocomplete="address-level2"></label>
+          <!-- Campo trampa para bots: invisible para las personas. -->
+          <label class="trap" aria-hidden="true">Sitio web<input name="website" tabindex="-1" autocomplete="off"></label>
+          <button id="waitlist-submit" class="button primary" type="submit" data-i18n="waitlist.submit">Avísame</button>
+          <p class="form-note"><span data-i18n="waitlist.privacy">Solo usaremos tus datos para avisarte del lanzamiento.</span> <a href="/privacidad" data-i18n="waitlist.privacyLink">Aviso de privacidad</a></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Para inversionistas -->
+    <section id="inversionistas" class="section dark">
+      <div class="container vision-grid">
+        <div class="reveal">
+          <p class="eyebrow light" data-i18n="vision.eyebrow">PARA INVERSIONISTAS</p>
+          <h2 data-i18n="vision.title">Hacer que pedir un mecánico sea tan fácil como pedir un viaje.</h2>
+        </div>
+        <div class="reveal delay-1">
+          <p class="light-copy" data-i18n="vision.lead">Empezamos en Aguascalientes para crear densidad y validar el mercado. Después, replicamos el modelo ciudad por ciudad en México.</p>
+          <div class="vision-chain">
+            <span data-i18n="vision.c1">Construir</span><i>→</i><span data-i18n="vision.c2">Lanzar</span><i>→</i><span data-i18n="vision.c3">Validar</span><i>→</i><span data-i18n="vision.c4">Escalar</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section ecosystem-section">
+      <div class="container">
+        <div class="section-heading reveal">
+          <p class="eyebrow" data-i18n="ecosystem.eyebrow">EL ECOSISTEMA</p>
+          <h2 data-i18n="ecosystem.title">Más que un marketplace de mecánicos.</h2>
+          <p data-i18n="ecosystem.lead">Con el tiempo, Mecanifique puede conectar todo el recorrido del servicio automotriz.</p>
+        </div>
+        <div class="ecosystem" data-parallax="0.03">
+          <div class="eco-core">Mecanifique</div>
+          <div class="eco-item top"><b data-i18n="ecosystem.drivers">Conductores</b><span data-i18n="ecosystem.drivers_sub">Solicitan y agendan</span></div>
+          <div class="eco-item right"><b data-i18n="ecosystem.mechanics">Mecánicos</b><span data-i18n="ecosystem.mechanics_sub">Servicio y reputación</span></div>
+          <div class="eco-item bottom"><b data-i18n="ecosystem.parts">Refacciones</b><span data-i18n="ecosystem.parts_sub">Disponibilidad y suministro</span></div>
+          <div class="eco-item left"><b data-i18n="ecosystem.workshops">Talleres</b><span data-i18n="ecosystem.workshops_sub">Reparaciones especializadas</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="contacto" class="section contact">
+      <div class="container contact-card reveal">
+        <div>
+          <p class="eyebrow" data-i18n="contact.eyebrow">MECANIFIQUE</p>
+          <h2 data-i18n="contact.title">Estamos construyendo la capa de confianza para el servicio automotriz en México.</h2>
+          <p data-i18n="contact.lead">Producto construido por el fundador, con Aguascalientes como mercado inicial. El siguiente paso es formar el equipo y validar el marketplace.</p>
+        </div>
+        <div class="contact-actions">
+          <a class="button primary magnetic" href="mailto:ameneyro.design@gmail.com" data-i18n="contact.cta">Contactar al fundador</a>
+          <p class="contact-note" data-i18n="contact.note">ameneyro.design@gmail.com</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <img src="assets/mecanifique-logo-blue.png" alt="Mecanifique">
+      <nav class="footer-links">
+        <a href="/privacidad" data-i18n="footer.privacy">Aviso de privacidad</a>
+        <a href="https://mecanifique.onrender.com/eliminar-cuenta" data-i18n="footer.deleteAccount">Eliminar cuenta</a>
+        <a href="mailto:ameneyro.design@gmail.com" data-i18n="footer.contact">Contacto</a>
+      </nav>
+      <span><span data-i18n="footer.left">Mecanifique · Aguascalientes, México</span> · <span id="year"></span></span>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
