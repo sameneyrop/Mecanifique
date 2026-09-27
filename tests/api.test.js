@@ -329,6 +329,24 @@ test("creación concurrente de usuario local no duplica la fila ni pierde el rol
   assert.equal(rows.length, 1, "no debe haber filas duplicadas para el mismo supabase_user_id");
 });
 
+test("registrarse diciendo 'admin' en los metadatos de Supabase crea un cliente, nunca un admin", async () => {
+  const supabaseUserId = `test-${crypto.randomUUID()}`;
+  const user = await ensureLocalUser({
+    id: supabaseUserId,
+    email: `${supabaseUserId}@example.test`,
+    user_metadata: { role: "admin", full_name: "Intento De Admin", phone: uniquePhone() }
+  });
+  try {
+    assert.equal(user.role, "customer");
+    assert.ok(user.customerId, "queda como cliente normal");
+  } finally {
+    await run("DELETE FROM users WHERE id = ?", [user.id]);
+    if (user.customerId) {
+      await run("DELETE FROM customers WHERE id = ?", [user.customerId]);
+    }
+  }
+});
+
 test("calculateDepositAmount: 40% de la tarifa de mano de obra", () => {
   assert.equal(calculateDepositAmount(500), 200);
   assert.equal(calculateDepositAmount(333), 133.2);

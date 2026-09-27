@@ -23,6 +23,10 @@ mantener informadas a ambas partes.
 - Flujo preparado para Google OAuth: botón móvil, deep link
   `mecanifique://auth/callback` y endpoint `GET /auth/v2/google`.
 - Registro de clientes y mecánicos, con roles `customer`, `mechanic` y `admin`.
+  El registro solo crea clientes o mecánicos (pendientes de verificación):
+  los metadatos de Supabase los escribe el propio usuario, así que el rol
+  `admin` nunca se toma de ahí. Un admin se asigna a mano en Turso con
+  `UPDATE users SET role = 'admin' WHERE login = '<correo>'`.
 - Mecánicos con disponibilidad, conexión/desconexión y búsqueda por ciudad,
   zona y cercanía GPS.
 - Perfil público de mecánico: especialidades, experiencia, foto principal,

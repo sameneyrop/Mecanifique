@@ -52,10 +52,14 @@ export async function ensureLocalUser(supabaseUser: {
     return existing;
   }
 
+  // user_metadata lo escribe el propio usuario (cualquiera con la clave
+  // pública de Supabase puede registrarse mandando lo que quiera ahí), así
+  // que de ahí solo se acepta cliente o mecánico: el mecánico nace pendiente
+  // de verificación. Un admin nunca sale de aquí; se asigna a mano en la base
+  // (UPDATE users SET role = 'admin' ...).
   const metadata = supabaseUser.user_metadata || {};
   const email = supabaseUser.email || "";
-  const role: "customer" | "mechanic" | "admin" =
-    metadata.role === "mechanic" ? "mechanic" : metadata.role === "admin" ? "admin" : "customer";
+  const role: "customer" | "mechanic" = metadata.role === "mechanic" ? "mechanic" : "customer";
   // Google manda full_name y name; el registro propio, full_name.
   const fullName = String(metadata.full_name || metadata.name || email);
   const phone = String(metadata.phone || "");
@@ -69,21 +73,7 @@ export async function ensureLocalUser(supabaseUser: {
   // concurrentes logra insertar; la(s) otra(s) simplemente no hacen nada
   // ahí, y todas relogran leyendo el resultado final al final de la
   // función — sin importar cuál "ganó", todas devuelven la misma fila.
-  if (role === "admin") {
-    await run(
-      `
-      INSERT OR IGNORE INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash)
-      VALUES ('admin', ?, ?, ?, ?, ?)
-      `,
-      [
-        email,
-        supabaseUser.id,
-        fullName,
-        crypto.randomBytes(16).toString("hex"),
-        crypto.randomBytes(32).toString("hex")
-      ]
-    );
-  } else if (role === "mechanic") {
+  if (role === "mechanic") {
     // mechanics.phone es UNIQUE, así que dos peticiones concurrentes con el
     // mismo teléfono (el caso real: es la misma persona registrándose dos
     // veces en paralelo) competirían por esa fila también, no solo por la
