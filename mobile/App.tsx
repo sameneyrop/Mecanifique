@@ -512,6 +512,10 @@ export default function App() {
   const [serverWaking, setServerWaking] = useState(false);
   const slowRequestCount = useRef(0);
   const [communityView, setCommunityView] = useState<CommunityView>({ mode: 'list' });
+  // En Mecánicos, el perfil de uno se ve solo en pantalla, no debajo de la
+  // lista (antes había que bajar a buscarlo).
+  const [mechanicsView, setMechanicsView] = useState<'list' | 'profile'>('list');
+  const mainScrollRef = useRef<ScrollView>(null);
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
     coverPhotoUrl: '',
@@ -854,7 +858,7 @@ export default function App() {
       return goBackInApp();
     });
     return () => subscription.remove();
-  }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep, communityView]);
+  }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep, communityView, mechanicsView]);
 
   const refreshUserRef = useRef(refreshUserFromServer);
   refreshUserRef.current = refreshUserFromServer;
@@ -894,6 +898,10 @@ export default function App() {
       setCommunityView({ mode: 'list' });
       return true;
     }
+    if (currentScreen === 'mechanics' && mechanicsView === 'profile') {
+      setMechanicsView('list');
+      return true;
+    }
     if (currentScreen === 'community' || currentScreen === 'promotions') {
       setCurrentScreen(user?.role === 'customer' ? 'account' : 'actions');
       return true;
@@ -904,6 +912,19 @@ export default function App() {
     }
     return false;
   }
+
+  // Al volver a Mecánicos desde otra pantalla se ve la lista, no el último
+  // perfil abierto.
+  useEffect(() => {
+    if (currentScreen !== 'mechanics') {
+      setMechanicsView('list');
+    }
+  }, [currentScreen]);
+
+  // Abrir o cerrar un perfil empieza desde arriba de la pantalla.
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [mechanicsView]);
 
   useEffect(() => {
     if (mechanics.length === 0) {
@@ -1704,8 +1725,9 @@ export default function App() {
     }
   }
 
-  // Abre en Mecánicos el perfil de un mecánico (desde Favoritos). Si la
-  // lista actual está filtrada por zona y no lo incluye, se recarga completa.
+  // Abre en Mecánicos el perfil de un mecánico (desde la lista, el radar de
+  // cercanos, Favoritos, Comunidad o Promociones). Si la lista actual está
+  // filtrada por zona y no lo incluye, se recarga completa.
   async function openMechanicProfile(mechanicId: number) {
     try {
       let list = mechanics;
@@ -1720,6 +1742,7 @@ export default function App() {
         return;
       }
       setMechanicCursor(index);
+      setMechanicsView('profile');
       setCurrentScreen('mechanics');
     } catch (error) {
       setMessage(formatError(error));
@@ -2732,6 +2755,7 @@ export default function App() {
         </View>
         <ServerWakingBanner visible={serverWaking} />
         <ScrollView
+          ref={mainScrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -2753,7 +2777,11 @@ export default function App() {
             ) : (
               <View style={styles.backButtonSpacer} />
             )}
-            <Text style={[styles.title, styles.flex]}>{getScreenTitle(currentScreen, currentUser?.role)}</Text>
+            <Text style={[styles.title, styles.flex]}>
+              {currentScreen === 'mechanics' && mechanicsView === 'profile'
+                ? 'Perfil del mecánico'
+                : getScreenTitle(currentScreen, currentUser?.role)}
+            </Text>
             <View style={styles.backButtonSpacer} />
           </View>
           {currentScreen === 'home' && (
@@ -2852,6 +2880,8 @@ export default function App() {
             <View style={styles.screenStack}>
             <MechanicsScreen
               api={api}
+              view={mechanicsView}
+              onOpenMechanic={openMechanicProfile}
               favoriteMechanicIds={favoriteMechanics.map((mechanic) => mechanic.id)}
               onToggleFavorite={handleToggleFavorite}
               mechanicsFilter={mechanicsFilter}
@@ -2859,7 +2889,6 @@ export default function App() {
               requestForm={requestForm}
               setRequestForm={setRequestForm}
               mechanicCursor={mechanicCursor}
-              setMechanicCursor={setMechanicCursor}
               selectedMechanicReviews={selectedMechanicReviews}
               selectedMechanicReviewStats={selectedMechanicReviewStats}
               scheduleDates={scheduleDates}

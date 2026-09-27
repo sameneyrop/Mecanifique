@@ -57,6 +57,8 @@ const PAGE_SIZE = 8;
 
 export function MechanicsScreen({
   api,
+  view,
+  onOpenMechanic,
   favoriteMechanicIds,
   onToggleFavorite,
   mechanicsFilter,
@@ -64,7 +66,6 @@ export function MechanicsScreen({
   requestForm,
   setRequestForm,
   mechanicCursor,
-  setMechanicCursor,
   selectedMechanicReviews,
   selectedMechanicReviewStats,
   scheduleDates,
@@ -76,6 +77,9 @@ export function MechanicsScreen({
   onLoadNearbyMechanics,
 }: {
   api: ApiCall;
+  // 'profile' muestra solo el perfil del mecánico elegido.
+  view: 'list' | 'profile';
+  onOpenMechanic: (mechanicId: number) => void;
   favoriteMechanicIds: number[];
   onToggleFavorite: (mechanicId: number) => void;
   mechanicsFilter: { city: string; zone: string };
@@ -83,7 +87,6 @@ export function MechanicsScreen({
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
   mechanicCursor: number;
-  setMechanicCursor: (updater: (prev: number) => number) => void;
   selectedMechanicReviews: MechanicReview[];
   selectedMechanicReviewStats: { averageRating: number | null; reviewCount: number };
   scheduleDates: string[];
@@ -126,6 +129,12 @@ export function MechanicsScreen({
 
   const selected = mechanics[mechanicCursor];
   const canRequest = user.role === 'customer' || user.role === 'admin';
+  const showProfile = view === 'profile' && Boolean(selected);
+  // La lista general no trae distancia; si el mecánico está en el radar, se
+  // usa la de ahí.
+  const selectedDistanceKm = selected
+    ? (selected.distanceKm ?? nearbyMechanics.find((mechanic) => mechanic.id === selected.id)?.distanceKm)
+    : undefined;
 
   async function searchByZone() {
     try {
@@ -148,40 +157,115 @@ export function MechanicsScreen({
     }
   }
 
-  // Los cercanos vienen del radar; su perfil completo (turnos, reseñas) se
-  // abre eligiéndolo en la lista general de mecánicos.
-  function openNearbyProfile(mechanicId: number) {
-    const index = mechanics.findIndex((mechanic) => mechanic.id === mechanicId);
-    if (index >= 0) {
-      setMechanicCursor(() => index);
-      setMessage('Perfil abierto abajo');
-    }
-  }
-
   return (
     <>
-      <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-        <Card
-          title="Cerca de ti ahora"
-          subtitle={
-            !currentLocation
-              ? 'Necesitamos tu ubicación para mostrarte quién está cerca.'
-              : nearbyMechanics.length > 0
-                ? `${nearbyMechanics.length === 1 ? '1 mecánico conectado' : `${nearbyMechanics.length} mecánicos conectados`} a menos de 25 km.`
-                : 'Se actualiza solo cada pocos segundos.'
-          }
-        >
-          <View style={styles.stack}>
-            {currentLocation && nearbyMechanics.length > 0 ? (
-              <>
-                <MechanicRadar userLocation={currentLocation} mechanics={nearbyMechanics} maxDistanceKm={25} />
+      {!showProfile && (
+        <>
+          <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
+            <Card
+              title="Cerca de ti ahora"
+              subtitle={
+                !currentLocation
+                  ? 'Necesitamos tu ubicación para mostrarte quién está cerca.'
+                  : nearbyMechanics.length > 0
+                    ? `${nearbyMechanics.length === 1 ? '1 mecánico conectado' : `${nearbyMechanics.length} mecánicos conectados`} a menos de 25 km.`
+                    : 'Se actualiza solo cada pocos segundos.'
+              }
+            >
+              <View style={styles.stack}>
+                {currentLocation && nearbyMechanics.length > 0 ? (
+                  <>
+                    <MechanicRadar userLocation={currentLocation} mechanics={nearbyMechanics} maxDistanceKm={25} />
+                    <View style={styles.list}>
+                      {nearbyMechanics.map((mechanic) => (
+                        <Pressable
+                          key={`nearby-${mechanic.id}`}
+                          style={({ pressed }) => [styles.item, pressed && styles.buttonPressed]}
+                          onPress={() => onOpenMechanic(mechanic.id)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Ver el perfil de ${mechanic.fullName}`}
+                        >
+                          <View style={styles.itemHeader}>
+                            <View style={styles.itemIcon}>
+                              <Ionicons name="person-outline" size={20} color={colors.primary} />
+                            </View>
+                            <View style={styles.flex}>
+                              <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
+                              <Text style={styles.smallText}>
+                                a {mechanic.distanceKm?.toFixed(1) ?? '?'} km · {mechanic.zone}, {mechanic.city}
+                              </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                          </View>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                ) : (
+                  <EmptyState
+                    icon="map-outline"
+                    title={currentLocation ? 'Nadie conectado cerca todavía' : 'Sin ubicación'}
+                    text={
+                      currentLocation
+                        ? 'Puedes pedir un servicio de todos modos: te avisamos en cuanto un mecánico lo tome.'
+                        : 'Toca el botón para permitir tu ubicación.'
+                    }
+                  >
+                    <SecondaryButton
+                      title={currentLocation ? 'Buscar de nuevo' : 'Usar mi ubicación'}
+                      busy={busy}
+                      onPress={searchNearMe}
+                    />
+                  </EmptyState>
+                )}
+              </View>
+            </Card>
+          </Animated.View>
+    
+          <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
+            <Card title="Busca por zona" subtitle="Escribe una ciudad y una zona para ver a todos sus mecánicos.">
+              <View style={styles.stack}>
+                <View style={styles.row}>
+                  <Field label="Ciudad" style={styles.flex}>
+                    <Input
+                      value={mechanicsFilter.city}
+                      onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, city: value })}
+                    />
+                  </Field>
+                  <Field label="Zona" style={styles.flex}>
+                    <Input
+                      value={mechanicsFilter.zone}
+                      onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, zone: value })}
+                    />
+                  </Field>
+                </View>
+                <PrimaryButton title="Buscar" onPress={searchByZone} />
+              </View>
+            </Card>
+          </Animated.View>
+    
+          <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
+            {mechanics.length === 0 ? (
+              <Card title="Resultados">
+                <EmptyState
+                  icon="people-outline"
+                  title="Sin mecánicos por ahora"
+                  text="Prueba con otra ciudad o zona."
+                />
+              </Card>
+            ) : (
+              <Card
+                title={mechanics.length === 1 ? '1 mecánico' : `${mechanics.length} mecánicos`}
+                subtitle="Toca uno para ver su perfil completo."
+              >
                 <View style={styles.list}>
-                  {nearbyMechanics.map((mechanic) => (
+                  {mechanics.slice(0, visibleCount).map((mechanic, index) => (
                     <Pressable
-                      key={`nearby-${mechanic.id}`}
+                      key={mechanic.id}
                       style={({ pressed }) => [styles.item, pressed && styles.buttonPressed]}
-                      onPress={() => openNearbyProfile(mechanic.id)}
+                      onPress={() => onOpenMechanic(mechanic.id)}
                       accessibilityRole="button"
+                      accessibilityLabel={`Ver el perfil de ${mechanic.fullName}`}
                     >
                       <View style={styles.itemHeader}>
                         <View style={styles.itemIcon}>
@@ -190,106 +274,26 @@ export function MechanicsScreen({
                         <View style={styles.flex}>
                           <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
                           <Text style={styles.smallText}>
-                            a {mechanic.distanceKm?.toFixed(1) ?? '?'} km · {mechanic.zone}, {mechanic.city}
+                            ★ {mechanic.rating.toFixed(1)} · {mechanic.jobsCompleted} trabajos
+                            {typeof mechanic.distanceKm === 'number' ? ` · a ${mechanic.distanceKm.toFixed(1)} km` : ''}
                           </Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                       </View>
+                      <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(mechanic)} />
                     </Pressable>
                   ))}
+                  {mechanics.length > visibleCount && (
+                    <SecondaryButton title="Ver más" onPress={() => setVisibleCount((count) => count + PAGE_SIZE)} />
+                  )}
                 </View>
-              </>
-            ) : (
-              <EmptyState
-                icon="map-outline"
-                title={currentLocation ? 'Nadie conectado cerca todavía' : 'Sin ubicación'}
-                text={
-                  currentLocation
-                    ? 'Puedes pedir un servicio de todos modos: te avisamos en cuanto un mecánico lo tome.'
-                    : 'Toca el botón para permitir tu ubicación.'
-                }
-              >
-                <SecondaryButton
-                  title={currentLocation ? 'Buscar de nuevo' : 'Usar mi ubicación'}
-                  busy={busy}
-                  onPress={searchNearMe}
-                />
-              </EmptyState>
+              </Card>
             )}
-          </View>
-        </Card>
-      </Animated.View>
+          </Animated.View>
+        </>
+      )}
 
-      <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
-        <Card title="Busca por zona" subtitle="Escribe una ciudad y una zona para ver a todos sus mecánicos.">
-          <View style={styles.stack}>
-            <View style={styles.row}>
-              <Field label="Ciudad" style={styles.flex}>
-                <Input
-                  value={mechanicsFilter.city}
-                  onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, city: value })}
-                />
-              </Field>
-              <Field label="Zona" style={styles.flex}>
-                <Input
-                  value={mechanicsFilter.zone}
-                  onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, zone: value })}
-                />
-              </Field>
-            </View>
-            <PrimaryButton title="Buscar" onPress={searchByZone} />
-          </View>
-        </Card>
-      </Animated.View>
-
-      <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
-        {mechanics.length === 0 ? (
-          <Card title="Resultados">
-            <EmptyState
-              icon="people-outline"
-              title="Sin mecánicos por ahora"
-              text="Prueba con otra ciudad o zona."
-            />
-          </Card>
-        ) : (
-          <Card
-            title={mechanics.length === 1 ? '1 mecánico' : `${mechanics.length} mecánicos`}
-            subtitle="Toca uno para ver su perfil completo."
-          >
-            <View style={styles.list}>
-              {mechanics.slice(0, visibleCount).map((mechanic, index) => (
-                <Pressable
-                  key={mechanic.id}
-                  style={({ pressed }) => [styles.item, index === mechanicCursor && styles.itemActive, pressed && styles.buttonPressed]}
-                  onPress={() => setMechanicCursor(() => index)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: index === mechanicCursor }}
-                >
-                  <View style={styles.itemHeader}>
-                    <View style={styles.itemIcon}>
-                      <Ionicons name="person-outline" size={20} color={colors.primary} />
-                    </View>
-                    <View style={styles.flex}>
-                      <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
-                      <Text style={styles.smallText}>
-                        ★ {mechanic.rating.toFixed(1)} · {mechanic.jobsCompleted} trabajos
-                        {typeof mechanic.distanceKm === 'number' ? ` · a ${mechanic.distanceKm.toFixed(1)} km` : ''}
-                      </Text>
-                    </View>
-                  </View>
-                  <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(mechanic)} />
-                </Pressable>
-              ))}
-              {mechanics.length > visibleCount && (
-                <SecondaryButton title="Ver más" onPress={() => setVisibleCount((count) => count + PAGE_SIZE)} />
-              )}
-            </View>
-          </Card>
-        )}
-      </Animated.View>
-
-      {selected && (
-        <Animated.View key={selected.id} entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
+      {showProfile && selected && (
+        <Animated.View key={selected.id} entering={FadeInDown.duration(300)} needsOffscreenAlphaCompositing>
           <Card
             title={selected.fullName}
             subtitle={selected.specialties.length > 0 ? selected.specialties.join(', ') : undefined}
@@ -327,7 +331,7 @@ export function MechanicsScreen({
               />
               <InfoRow
                 icon="location-outline"
-                text={`${selected.city} · ${selected.zone}${typeof selected.distanceKm === 'number' ? ` · a ${selected.distanceKm.toFixed(1)} km` : ''}`}
+                text={`${selected.city} · ${selected.zone}${typeof selectedDistanceKm === 'number' ? ` · a ${selectedDistanceKm.toFixed(1)} km` : ''}`}
               />
               <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(selected)} />
               {selected.laborRate ? (
