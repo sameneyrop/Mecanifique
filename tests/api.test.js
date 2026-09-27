@@ -78,6 +78,12 @@ test("health responde correctamente", async () => {
   assert.equal(body.database, "local-file");
 });
 
+test("la raíz del servidor redirige al sitio web", async () => {
+  const response = await fetch(`${baseUrl}/`, { redirect: "manual" });
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "https://mecanifique.vercel.app/");
+});
+
 test("ruta inexistente devuelve 404 JSON", async () => {
   const { response, body } = await request("/ruta-inexistente");
 

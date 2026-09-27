@@ -1,7 +1,6 @@
 import "dotenv/config";
 import cors from "cors";
 import http from "node:http";
-import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
@@ -153,7 +152,13 @@ app.use((req, res, next) => {
   next();
 });
 app.use(supabaseAuthMiddleware);
-app.use(express.static(path.resolve(process.cwd(), "public")));
+// El sitio web (carpeta web/, publicada en Vercel) es la cara pública del
+// proyecto; la raíz de este servidor solo redirige ahí. Antes servía aquí un
+// panel de pruebas viejo que ya no funcionaba.
+const SITE_URL = process.env.SITE_URL || "https://mecanifique.vercel.app/";
+app.get("/", (_req, res) => {
+  res.redirect(302, SITE_URL);
+});
 // Fotos subidas por los mecánicos, servidas desde la base de datos. El
 // nombre incluye un UUID aleatorio y nunca cambia de contenido: se puede
 // guardar en caché mucho tiempo.
@@ -2026,7 +2031,7 @@ app.post("/eliminar-cuenta", express.urlencoded({ extended: false, limit: "10kb"
 // HTML normal (no fetch), así que no necesita CORS: guarda el registro y
 // regresa al sitio con ?registro=ok o ?registro=error. La dirección de
 // regreso es fija (nunca viene del formulario) para no abrir redirecciones.
-const WAITLIST_REDIRECT_URL = process.env.WAITLIST_REDIRECT_URL || "https://mecanifique.vercel.app/";
+const WAITLIST_REDIRECT_URL = process.env.WAITLIST_REDIRECT_URL || SITE_URL;
 
 const waitlistSchema = z.object({
   role: z.enum(["cliente", "mecanico"]),

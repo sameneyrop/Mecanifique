@@ -1,5 +1,9 @@
 MECANIFIQUE — SITIO WEB (mecanifique.vercel.app)
 
+Vive en la carpeta web/ del repositorio de la app. Vercel está conectado al
+repo y publica solo esta carpeta (ver vercel.json en la raíz del repo): cada
+push a main actualiza el sitio. No hace falta subir archivos a mano.
+
 Sitio estático, en español por defecto (con inglés opcional, que se recuerda
 en el navegador). Pensado primero para clientes y mecánicos, con una sección
 completa para inversionistas al final.

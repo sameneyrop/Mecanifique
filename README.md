@@ -56,8 +56,13 @@ mantener informadas a ambas partes.
   ayuda" desde la app (`POST /api/support`, avisa a los admins con una
   notificación). El registro ahora manda nombre, teléfono y rol a Supabase en
   `data` (antes iban en `user_metadata`, que Supabase ignoraba).
-- **Lista de espera del sitio web** (`mecanifique.vercel.app`, cuyo código
-  vive fuera de este repo): formulario HTML normal que hace POST a
+- **Sitio web** (`web/`, publicado en `mecanifique.vercel.app`): página
+  estática en español (inglés opcional) para clientes, mecánicos e
+  inversionistas, con aviso de privacidad en `/privacidad`. Vercel está
+  conectado a este repo y publica solo `web/` gracias al `vercel.json` de la
+  raíz (sin instalar ni compilar); se actualiza solo con cada push a `main`.
+  La raíz del servidor de Render (`/`) redirige al sitio (`SITE_URL`).
+- **Lista de espera del sitio web**: formulario HTML normal que hace POST a
   `/lista-de-espera` (cliente o mecánico, nombre opcional, WhatsApp o correo,
   ciudad). Guarda en `waitlist_signups` sin duplicar (contacto normalizado),
   descarta bots con un campo trampa, avisa a los admins y regresa al sitio con

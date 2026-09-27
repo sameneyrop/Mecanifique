@@ -1,7 +1,10 @@
 # Mecanifique — guía para Claude Code
 
-Monorepo con dos partes independientes: backend en la raíz, app Android en
-`mobile/`. Lee primero `README.md` (fuente de verdad del estado de
+Monorepo con tres partes independientes: backend en la raíz, app Android en
+`mobile/` y sitio web estático en `web/` (mecanifique.vercel.app). Vercel
+publica solo `web/`, sin instalar ni compilar, por el `vercel.json` de la
+raíz; Render ignora `web/`. No volver a poner archivos del sitio en la raíz
+ni crear `public/`: Vercel publicaría esa carpeta. Lee primero `README.md` (fuente de verdad del estado de
 implementación) antes de asumir que algo falta o existe.
 
 ## Comandos
