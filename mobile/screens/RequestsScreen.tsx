@@ -17,6 +17,7 @@ import {
   RequestCard,
   SecondaryButton,
   Segmented,
+  StarRating,
 } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
 import {
@@ -564,13 +565,9 @@ export function RequestsScreen({
                   <View style={styles.stack}>
                     <Illustration source={ILLUSTRATIONS.completed} compact />
                     <Field label="Calificación">
-                      <Segmented
-                        value={reviewForm.rating}
-                        options={['5', '4', '3', '2', '1'].map((rating) => ({ key: rating, label: rating, icon: 'star' as const }))}
-                        onChange={(value) => setReviewForm({ ...reviewForm, rating: value })}
-                      />
+                      <StarRating value={reviewForm.rating} onChange={(value) => setReviewForm({ ...reviewForm, rating: value })} />
                     </Field>
-                    <Field label="Comentario">
+                    <Field label="Comentario (opcional)">
                       <Input
                         value={reviewForm.comment}
                         multiline

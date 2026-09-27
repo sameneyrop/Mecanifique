@@ -6,7 +6,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, ChoiceTile, Field, Illustration, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import {
+  Card,
+  ChoiceTile,
+  Field,
+  Illustration,
+  InfoRow,
+  Input,
+  PrimaryButton,
+  SecondaryButton,
+  StatusPulseDot,
+} from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
 import {
   ACTIVE_REQUEST_STATUSES,
@@ -538,7 +548,7 @@ function MechanicHome(props: HomeScreenProps) {
         >
           <View style={styles.stack}>
             <View style={styles.connectionStatus}>
-              <View style={[styles.connectionDot, online && styles.connectionDotOn]} />
+              <StatusPulseDot active={online} />
               <Text style={styles.connectionStatusText}>{online ? 'Conectado' : 'Desconectado'}</Text>
             </View>
             {online ? (

@@ -1,4 +1,4 @@
-import { useEffect, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -11,11 +11,17 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, {
+  Easing,
   FadeInUp,
   FadeOutUp,
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
+  withDelay,
+  withRepeat,
+  withSequence,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
@@ -380,6 +386,121 @@ function segmentColumns(count: number): number {
   if (count === 4) return 2;
   if (count === 5) return 5;
   return Math.min(count, 3);
+}
+
+/** Una onda que sale del punto y se desvanece, en ciclo. */
+function PulseRing({ delay }: { delay: number }) {
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withDelay(
+      delay,
+      withRepeat(withTiming(1, { duration: 2000, easing: Easing.out(Easing.quad) }), -1, false),
+    );
+    return () => cancelAnimation(progress);
+  }, []);
+  const style = useAnimatedStyle(() => ({
+    opacity: 0.35 * (1 - progress.value),
+    transform: [{ scale: 1 + progress.value * 1.8 }],
+  }));
+  return <Animated.View style={[styles.pulseRing, style]} />;
+}
+
+/** Punto de estado; encendido, irradia ondas suaves (como un indicador "en vivo"). */
+export function StatusPulseDot({ active }: { active: boolean }) {
+  return (
+    <View style={styles.pulseDotWrap}>
+      {active && [0, 1].map((ring) => <PulseRing key={ring} delay={ring * 1000} />)}
+      <View style={[styles.connectionDot, active && styles.connectionDotOn]} />
+    </View>
+  );
+}
+
+const STAR_LABELS = ['Malo', 'Regular', 'Bien', 'Muy bien', 'Excelente'];
+
+/**
+ * Una estrella con brillo: al elegir, las encendidas saltan una tras otra y
+ * se quedan con un halo dorado suave detrás.
+ */
+function RatingStar({
+  star,
+  filled,
+  pulse,
+  onPress,
+}: {
+  star: number;
+  filled: boolean;
+  pulse: number;
+  onPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const glow = useSharedValue(filled ? 1 : 0);
+
+  useEffect(() => {
+    if (!filled) {
+      glow.value = withTiming(0, { duration: 150 });
+      return;
+    }
+    const delay = (star - 1) * 40;
+    scale.value = withDelay(delay, withSequence(withTiming(1.12, { duration: 110 }), withSpring(1, { damping: 14 })));
+    glow.value = withDelay(delay, withSequence(withTiming(1.2, { duration: 140 }), withTiming(1, { duration: 350 })));
+  }, [filled, pulse]);
+
+  const starStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const haloStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(glow.value, 1) * 0.3,
+    transform: [{ scale: 0.75 + glow.value * 0.2 }],
+  }));
+
+  return (
+    <Pressable
+      style={styles.starButton}
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={`${star} ${star === 1 ? 'estrella' : 'estrellas'}: ${STAR_LABELS[star - 1]}`}
+      accessibilityState={{ selected: filled }}
+    >
+      <Animated.View style={[styles.starHalo, haloStyle]} />
+      <Animated.View style={starStyle}>
+        <Ionicons
+          name={filled ? 'star' : 'star-outline'}
+          size={40}
+          color={colors.accent}
+          style={filled ? styles.starGlow : undefined}
+        />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+/**
+ * Calificación de 1 a 5 estrellas, de izquierda a derecha: tocar la tercera
+ * llena de la 1 a la 3. value es '' mientras no se elige.
+ */
+export function StarRating({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const selected = Number(value) || 0;
+  // Cuenta cada toque para repetir el brillo aunque se toque la misma estrella.
+  const [pulse, setPulse] = useState(0);
+  return (
+    <View style={styles.starRating}>
+      <View style={styles.starRow}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <RatingStar
+            key={star}
+            star={star}
+            filled={star <= selected}
+            pulse={pulse}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+              setPulse((count) => count + 1);
+              onChange(String(star));
+            }}
+          />
+        ))}
+      </View>
+      <Text style={styles.starRatingLabel}>{selected ? STAR_LABELS[selected - 1] : 'Toca las estrellas para calificar'}</Text>
+    </View>
+  );
 }
 
 export function Segmented({

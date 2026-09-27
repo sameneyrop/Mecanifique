@@ -443,10 +443,11 @@ const mechanicPublicProfileSchema = z.object({
   // por defecto — ver el modelo de pagos en README.md.
 });
 
+// La calificación es obligatoria; el comentario, opcional (se guarda vacío).
 const mechanicReviewSchema = z.object({
   serviceRequestId: z.number().int().positive(),
   rating: z.number().int().min(1).max(5),
-  comment: z.string().min(3).max(500)
+  comment: z.string().trim().max(500).optional().default("")
 });
 
 const pushTokenSchema = z.object({
@@ -977,6 +978,19 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
 }
 
 /** Libera un turno reservado por una solicitud que perdió a su mecánico. */
+// La cuota de servicio queda apartada en la tarjeta y Stripe suelta un
+// apartado a los 7 días: un turno solo se aparta dentro de los próximos 7
+// días, hoy incluido, con la fecha de México (la de los turnos). La app
+// filtra lo mismo (BOOKING_WINDOW_DAYS en mobile/utils.ts).
+const BOOKING_WINDOW_DAYS = 7;
+
+export function lastBookableSlotDate(now = new Date()): string {
+  const todayInMexico = now.toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+  const last = new Date(`${todayInMexico}T12:00:00Z`);
+  last.setUTCDate(last.getUTCDate() + BOOKING_WINDOW_DAYS - 1);
+  return last.toISOString().slice(0, 10);
+}
+
 async function releaseScheduleSlot(scheduleSlotId: number | null): Promise<void> {
   if (!scheduleSlotId) {
     return;
@@ -2353,6 +2367,11 @@ app.post(
 
       if (scheduleSlot.status !== "available") {
         res.status(409).json({ error: "El turno ya no está disponible" });
+        return;
+      }
+
+      if (scheduleSlot.slotDate > lastBookableSlotDate()) {
+        res.status(409).json({ error: "Solo se pueden apartar turnos de los próximos 7 días." });
         return;
       }
 

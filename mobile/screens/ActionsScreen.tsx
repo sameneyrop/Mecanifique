@@ -393,7 +393,7 @@ export function ActionsScreen({
 
           {mechanicView === 'schedule' && (
             <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
-              <Card title="Tu agenda" subtitle="Publica los horarios en que puedes atender. Los clientes pueden apartarlos.">
+              <Card title="Tu agenda" subtitle="Publica los horarios en que puedes atender. Los clientes pueden apartar los de los próximos 7 días.">
                 <View style={styles.stack}>
                   <Illustration source={ILLUSTRATIONS.settings} compact />
                   {calendar}

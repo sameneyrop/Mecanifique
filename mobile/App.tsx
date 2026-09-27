@@ -26,6 +26,7 @@ import {
   getServiceRequestStatusLabel,
   formatCalendarDate,
   validateRequestForm,
+  isWithinBookingWindow,
 } from './utils';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
@@ -543,8 +544,9 @@ export default function App() {
     galleryUrls: '',
     laborRate: '',
   });
+  // La calificación empieza sin elegir: es obligatoria y debe ser a conciencia.
   const [reviewForm, setReviewForm] = useState({
-    rating: '5',
+    rating: '',
     comment: '',
   });
   const [disputeForm, setDisputeForm] = useState({
@@ -591,15 +593,36 @@ export default function App() {
     return mechanicSlots.filter((slot) => slot.slotDate === selectedScheduleDate);
   }, [mechanicSlots, selectedScheduleDate]);
   const requestMechanicIdNumber = requestForm.requestedMechanicId ? Number(requestForm.requestedMechanicId) : null;
+  // Lo que el cliente puede apartar: turnos de los próximos 7 días (ver
+  // BOOKING_WINDOW_DAYS). El mecánico sí ve toda su agenda.
+  const bookableMechanicSlots = useMemo(
+    () => mechanicSlots.filter((slot) => isWithinBookingWindow(slot.slotDate)),
+    [mechanicSlots],
+  );
+  const bookableScheduleDates = useMemo(
+    () => Array.from(new Set(bookableMechanicSlots.map((slot) => slot.slotDate))),
+    [bookableMechanicSlots],
+  );
+  const bookableFilteredSlots = useMemo(
+    () =>
+      selectedScheduleDate
+        ? bookableMechanicSlots.filter((slot) => slot.slotDate === selectedScheduleDate)
+        : bookableMechanicSlots,
+    [bookableMechanicSlots, selectedScheduleDate],
+  );
+  const bookableRequestSlots = useMemo(
+    () => requestMechanicSlots.filter((slot) => isWithinBookingWindow(slot.slotDate)),
+    [requestMechanicSlots],
+  );
   const requestMechanicSlotsDates = useMemo(() => {
-    return Array.from(new Set(requestMechanicSlots.map((slot) => slot.slotDate))).slice(0, 7);
-  }, [requestMechanicSlots]);
+    return Array.from(new Set(bookableRequestSlots.map((slot) => slot.slotDate)));
+  }, [bookableRequestSlots]);
   const requestFilteredSlots = useMemo(() => {
     if (!selectedRequestScheduleDate) {
-      return requestMechanicSlots;
+      return bookableRequestSlots;
     }
-    return requestMechanicSlots.filter((slot) => slot.slotDate === selectedRequestScheduleDate);
-  }, [requestMechanicSlots, selectedRequestScheduleDate]);
+    return bookableRequestSlots.filter((slot) => slot.slotDate === selectedRequestScheduleDate);
+  }, [bookableRequestSlots, selectedRequestScheduleDate]);
   const liveLocationRequest = useMemo(
     () =>
       user?.role === 'mechanic'
@@ -1538,8 +1561,8 @@ export default function App() {
       return;
     }
 
-    if (!reviewForm.comment.trim()) {
-      setMessage('Escribe un comentario');
+    if (!reviewForm.rating) {
+      setMessage('Elige una calificación de 1 a 5 estrellas');
       return;
     }
 
@@ -1554,7 +1577,7 @@ export default function App() {
           comment: reviewForm.comment.trim(),
         },
       });
-      setReviewForm({ rating: '5', comment: '' });
+      setReviewForm({ rating: '', comment: '' });
       await loadMechanicReviews(selectedRequest.mechanicId);
       setMessage('Reseña enviada');
     } catch (error) {
@@ -2970,7 +2993,7 @@ export default function App() {
               requestForm={requestForm}
               setRequestForm={setRequestForm}
               requestMechanicIdNumber={requestMechanicIdNumber}
-              requestMechanicSlots={requestMechanicSlots}
+              requestMechanicSlots={bookableRequestSlots}
               requestMechanicSlotsDates={requestMechanicSlotsDates}
               selectedRequestScheduleDate={selectedRequestScheduleDate}
               setSelectedRequestScheduleDate={setSelectedRequestScheduleDate}
@@ -3015,10 +3038,10 @@ export default function App() {
               mechanicCursor={mechanicCursor}
               selectedMechanicReviews={selectedMechanicReviews}
               selectedMechanicReviewStats={selectedMechanicReviewStats}
-              scheduleDates={scheduleDates}
+              scheduleDates={bookableScheduleDates}
               selectedScheduleDate={selectedScheduleDate}
               setSelectedScheduleDate={setSelectedScheduleDate}
-              filteredScheduleSlots={filteredScheduleSlots}
+              filteredScheduleSlots={bookableFilteredSlots}
               onLoadMechanics={loadMechanics}
               onRequestCurrentLocation={requestCurrentLocation}
               onLoadNearbyMechanics={loadNearbyMechanics}

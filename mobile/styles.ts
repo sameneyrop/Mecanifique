@@ -669,6 +669,19 @@ export const styles = StyleSheet.create({
   connectionDotOn: {
     backgroundColor: '#16a34a',
   },
+  pulseDotWrap: {
+    width: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#16a34a',
+  },
   connectionStatusText: {
     fontFamily: fonts.bold,
     fontSize: 17,
@@ -1076,6 +1089,41 @@ export const styles = StyleSheet.create({
     color: colors.textDark,
     fontSize: 14,
     fontFamily: fonts.bold,
+  },
+  reviewStars: {
+    color: colors.accent,
+  },
+  starRating: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  starRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  starButton: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Halo y resplandor con el dorado de la paleta (colors.accent, #F2B84B).
+  starHalo: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(242, 184, 75, 0.45)',
+  },
+  starGlow: {
+    textShadowColor: 'rgba(242, 184, 75, 0.9)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
+  },
+  starRatingLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: colors.textSecondary,
   },
   calendarStrip: {
     flexDirection: 'row',

@@ -350,8 +350,12 @@ Cómo funciona (`src/serviceFees.ts`, `src/stripe.ts`):
 
 Configuración en Render: `STRIPE_SECRET_KEY` (sin ella, la cuota queda
 desactivada y la app funciona como antes) y, opcional, `SERVICE_FEE_MXN`.
-Limitación conocida: una tarjeta apartada vence a los 7 días, así que una
-solicitud programada para más adelante podría no llegar a cobrarse.
+Una tarjeta apartada vence a los 7 días, así que los turnos de la agenda solo
+se pueden apartar dentro de los próximos 7 días, hoy incluido
+(`lastBookableSlotDate` en el servidor, `BOOKING_WINDOW_DAYS` en la app). Queda
+un hueco: el campo libre "¿Para cuándo?" acepta cualquier texto, así que
+alguien podría escribir una fecha lejana; ahí el mecánico acepta en ese
+momento y lo normal es que llegue antes de 7 días.
 
 ## Modelo de apartado + ajuste (descartado, historial)
 

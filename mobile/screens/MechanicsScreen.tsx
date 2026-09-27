@@ -371,9 +371,9 @@ export function MechanicsScreen({
                   selectedMechanicReviews.slice(0, 3).map((review) => (
                     <View key={review.id} style={styles.reviewCard}>
                       <Text style={styles.reviewTitle}>
-                        {review.customerName} · {'★'.repeat(review.rating)}
+                        {review.customerName} · <Text style={styles.reviewStars}>{'★'.repeat(review.rating)}</Text>
                       </Text>
-                      <Text style={styles.smallText}>{review.comment}</Text>
+                      {review.comment ? <Text style={styles.smallText}>{review.comment}</Text> : null}
                     </View>
                   ))
                 )}

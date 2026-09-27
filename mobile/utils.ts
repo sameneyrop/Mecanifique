@@ -58,6 +58,18 @@ export function formatServerDate(value: string | null | undefined): string {
 }
 
 /** Fecha sin hora ("2026-09-30") como "30 sep" (con año si no es el actual). */
+// La cuota de servicio queda apartada en la tarjeta y Stripe suelta un
+// apartado a los 7 días: por eso un turno solo se puede apartar dentro de los
+// próximos 7 días (hoy incluido). El servidor revisa lo mismo.
+export const BOOKING_WINDOW_DAYS = 7;
+
+export function isWithinBookingWindow(slotDate: string): boolean {
+  const today = new Date();
+  const last = new Date(today.getFullYear(), today.getMonth(), today.getDate() + BOOKING_WINDOW_DAYS - 1);
+  const lastKey = `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
+  return slotDate <= lastKey;
+}
+
 /** CLABE en grupos (banco, plaza, cuenta, control) para leerla y dictarla fácil. */
 export function formatClabe(clabe: string): string {
   const digits = clabe.replace(/\D/g, '');

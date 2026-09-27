@@ -4,7 +4,8 @@ const {
   startServer,
   sweepExpiredHolds,
   applyMechanicConnection,
-  activateMechanicIfIdentityApproved
+  activateMechanicIfIdentityApproved,
+  lastBookableSlotDate
 } = require("../src/server.ts");
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
@@ -575,6 +576,12 @@ test("seguimiento: el cliente ve a su mecánico solo en camino o por refacciones
   // Salió por refacciones: se vuelve a ver.
   await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
   assert.equal((await getMechanicLocationForRequest(requestId, owner, distanceKm)).tracking, true);
+});
+
+test("turnos: solo se apartan dentro de los próximos 7 días, con la fecha de México", () => {
+  // 27 sep 2026, 23:30 en México = 28 sep 05:30 UTC: el "hoy" de los turnos es el 27.
+  assert.equal(lastBookableSlotDate(new Date("2026-09-28T05:30:00Z")), "2026-10-03");
+  assert.equal(lastBookableSlotDate(new Date("2026-09-27T18:00:00Z")), "2026-10-03");
 });
 
 test("propina: la CLABE se valida con su dígito de control", () => {
