@@ -496,6 +496,33 @@ Para crear un APK:
 eas build --platform android --profile preview
 ```
 
+El perfil `preview` genera un APK que apunta al servidor de Render;
+`production` genera el AAB para Play Store y sube solo el `versionCode`
+(`appVersionSource: remote` en `eas.json`).
+
+**Notificaciones push (Firebase Cloud Messaging).** Desde el SDK 53, Expo Go
+ya no recibe avisos push en Android: se prueban con el APK. Se necesitan dos
+piezas del proyecto de Firebase `mecanifique-a9018`:
+
+- `mobile/google-services.json` (registrado en `app.json` como
+  `android.googleServicesFile`). No es secreto: va dentro del APK.
+- La clave de cuenta de servicio (FCM V1), subida **solo** a expo.dev →
+  Credentials → Android. Nunca va en el repositorio.
+
+Cada teléfono queda registrado en `push_tokens` al iniciar sesión. Para una
+prueba manual, copia su `ExponentPushToken[...]` y mándale un aviso desde
+https://expo.dev/notifications con la app en segundo plano.
+
+**Probar como mecánico sin pasar por Didit** (solo cuentas de prueba): en la
+consola SQL de Turso marca la identidad como aprobada **antes** de activar el
+modo profesional, y el perfil de mecánico nacerá activo:
+
+```sql
+INSERT INTO identity_verifications (user_id, role, status, consent_at, reviewed_at, reviewer_note)
+VALUES (<id del usuario>, 'customer', 'approved', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Activación manual de prueba')
+ON CONFLICT(user_id) DO UPDATE SET status = 'approved', updated_at = CURRENT_TIMESTAMP;
+```
+
 ## Configuración de Google OAuth
 
 En Supabase, **Authentication → Providers → Google**:

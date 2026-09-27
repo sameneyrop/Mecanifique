@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "414478989600",
+    "project_id": "mecanifique-a9018",
+    "storage_bucket": "mecanifique-a9018.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:414478989600:android:a50573b56db381de38ff45",
+        "android_client_info": {
+          "package_name": "com.sameneyro.mecanifique"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAKMHoPB1ccx6ZqthrlmCYn3mil4yktKQo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

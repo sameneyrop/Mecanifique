@@ -748,7 +748,9 @@ export default function App() {
     }
 
     loadNotifications().catch((error) => setMessage(formatError(error)));
-    registerPushToken(token).catch(() => undefined);
+    // Sin avisos push la app sigue funcionando; el error queda en el log
+    // (adb logcat) para poder diagnosticar por qué un teléfono no se registró.
+    registerPushToken(token).catch((error) => console.warn('No se pudo registrar para avisos push:', error));
     loadFavorites().catch(() => undefined);
     loadServiceFeeConfig().catch(() => undefined);
   }, [user?.id, token]);
@@ -1804,6 +1806,16 @@ export default function App() {
   async function registerPushToken(nextToken = token) {
     if (!nextToken || Platform.OS === 'web') {
       return;
+    }
+
+    // En Android 13+ el permiso solo se puede pedir si ya existe un canal.
+    // "default" es el canal al que Expo manda los avisos sin channelId.
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Avisos de Mecanifique',
+        importance: Notifications.AndroidImportance.HIGH,
+        lightColor: '#0072B2',
+      });
     }
 
     const currentPermissions = await Notifications.getPermissionsAsync();

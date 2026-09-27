@@ -622,6 +622,10 @@ async function sendExpoPushNotifications(
         tokens.map((token) => ({
           to: token,
           sound: "default",
+          // Alta prioridad: una solicitud entrante tiene que llegar aunque el
+          // teléfono del mecánico esté en reposo.
+          priority: "high",
+          channelId: "default",
           title,
           body,
           data

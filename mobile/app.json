@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "com.sameneyro.mecanifique",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0072B2",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -35,7 +36,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/notification-icon.png",
           "color": "#0072B2"
         }
       ],
