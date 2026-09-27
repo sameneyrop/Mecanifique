@@ -410,13 +410,24 @@ function MechanicOnboarding({
             done={identityDone && mechanicConnection === 'online'}
             title="Conéctate para recibir solicitudes"
             description={
-              identityDone ? 'Toca CONECTARME aquí abajo.' : 'Se habilita en cuanto aprobemos tu identidad.'
+              identityDone ? 'Toca «Conectarme» aquí abajo.' : 'Se habilita en cuanto aprobemos tu identidad.'
             }
           />
         </View>
       </Card>
     </Animated.View>
   );
+}
+
+/** Datos rápidos del mecánico, con el mismo estilo que las insignias de Inicio del cliente. */
+function mechanicBadges(profile: MechanicProfile | null): Array<{ icon: keyof typeof Ionicons.glyphMap; label: string }> {
+  const active = profile?.status === 'active';
+  return [
+    { icon: 'location-outline', label: profile ? `${profile.zone}, ${profile.city}` : 'Tu zona de trabajo' },
+    { icon: 'cash-outline', label: profile?.laborRate ? `Tarifa: $${Math.round(profile.laborRate)}` : 'Sin tarifa todavía' },
+    { icon: active ? 'shield-checkmark-outline' : 'time-outline', label: active ? 'Cuenta verificada' : 'Verificación pendiente' },
+    { icon: 'wallet-outline', label: 'El cliente te paga directo' },
+  ];
 }
 
 function MechanicHome(props: HomeScreenProps) {
@@ -433,8 +444,8 @@ function MechanicHome(props: HomeScreenProps) {
   const address = detail ? detail.serviceAddress || `${detail.city}, ${detail.zone}` : '';
   // Una cuenta pendiente o suspendida no puede conectarse (el servidor lo
   // rechaza igual); desconectarse siempre se permite.
-  const connectBlocked =
-    props.mechanicProfile !== null && props.mechanicProfile.status !== 'active' && mechanicConnection !== 'online';
+  const online = mechanicConnection === 'online';
+  const connectBlocked = props.mechanicProfile !== null && props.mechanicProfile.status !== 'active' && !online;
 
   return (
     <View style={styles.stack}>
@@ -491,31 +502,56 @@ function MechanicHome(props: HomeScreenProps) {
         </Animated.View>
       )}
 
-      <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
+      {activeId === null && (
+        <>
+          <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
+            <Illustration source={online ? ILLUSTRATIONS.newRequest : ILLUSTRATIONS.firstRequest} />
+            <Text style={styles.title}>{online ? 'Estás conectado' : '¿Listo para trabajar?'}</Text>
+            <Text style={styles.subtitle}>
+              {online
+                ? 'Te avisamos con una notificación en cuanto un cliente cerca de ti pida un mecánico.'
+                : 'Conéctate y empieza a recibir solicitudes de clientes cerca de ti.'}
+            </Text>
+          </Animated.View>
+          <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
+            <View style={styles.trustRow}>
+              {mechanicBadges(props.mechanicProfile).map((badge) => (
+                <TrustBadge key={badge.label} icon={badge.icon} label={badge.label} />
+              ))}
+            </View>
+          </Animated.View>
+        </>
+      )}
+
+      <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         <Card
-          title="Modo conductor mecánico"
+          title="Tu estado"
           subtitle={
             connectBlocked
               ? 'Podrás conectarte en cuanto tu cuenta esté activa.'
               : liveLocationRequest
-                ? `Compartiendo ubicación durante la solicitud #${liveLocationRequest.id}.`
-                : 'Al conectarte compartimos tu ubicación para ofrecerte solicitudes cercanas.'
+                ? `Compartiendo tu ubicación durante la solicitud #${liveLocationRequest.id}.`
+                : online
+                  ? 'Recibes solicitudes de clientes cerca de ti.'
+                  : 'Mientras estés desconectado no te llegan solicitudes.'
           }
         >
-          <Pressable
-            style={[
-              styles.connectionButton,
-              mechanicConnection === 'online' ? styles.connectionOn : styles.connectionOff,
-              connectBlocked && styles.connectionBlocked,
-            ]}
-            disabled={connectBlocked}
-            accessibilityState={{ disabled: connectBlocked }}
-            onPress={() => props.onToggleMechanicConnection(mechanicConnection === 'online' ? 'offline' : 'online')}
-          >
-            <Text style={styles.connectionButtonText}>
-              {mechanicConnection === 'online' ? 'DESCONECTARME' : 'CONECTARME'}
-            </Text>
-          </Pressable>
+          <View style={styles.stack}>
+            <View style={styles.connectionStatus}>
+              <View style={[styles.connectionDot, online && styles.connectionDotOn]} />
+              <Text style={styles.connectionStatusText}>{online ? 'Conectado' : 'Desconectado'}</Text>
+            </View>
+            {online ? (
+              <SecondaryButton title="Desconectarme" busy={busy} onPress={() => props.onToggleMechanicConnection('offline')} />
+            ) : (
+              <PrimaryButton
+                title="Conectarme"
+                busy={busy}
+                disabled={connectBlocked}
+                onPress={() => props.onToggleMechanicConnection('online')}
+              />
+            )}
+          </View>
         </Card>
       </Animated.View>
     </View>

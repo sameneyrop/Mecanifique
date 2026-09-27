@@ -494,9 +494,6 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     textDecorationLine: 'line-through',
   },
-  connectionBlocked: {
-    opacity: 0.45,
-  },
   selectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -653,17 +650,29 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: fonts.semibold,
   },
-  connectionButton: {
-    borderRadius: 18,
-    minHeight: 70,
+  connectionStatus: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 10,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLighter,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
   },
-  connectionOn: {
+  connectionDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.textSecondary,
+  },
+  connectionDotOn: {
     backgroundColor: '#16a34a',
   },
-  connectionOff: {
-    backgroundColor: '#ef4444',
+  connectionStatusText: {
+    fontFamily: fonts.bold,
+    fontSize: 17,
+    color: colors.textDark,
   },
   emergencyButton: {
     flexDirection: 'row',
@@ -679,12 +688,6 @@ export const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: fonts.bold,
     fontSize: 15,
-  },
-  connectionButtonText: {
-    color: colors.white,
-    fontSize: 20,
-    fontFamily: fonts.extrabold,
-    letterSpacing: 0.6,
   },
   sessionHeader: {
     flexDirection: 'row',

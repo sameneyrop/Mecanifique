@@ -459,21 +459,23 @@ export function PrimaryButton({
   title,
   onPress,
   busy = false,
+  disabled = false,
 }: {
   title: string;
   onPress: () => void;
   busy?: boolean;
+  disabled?: boolean;
 }) {
   const { animatedStyle, onPressIn, onPressOut } = usePressScale();
   return (
     <AnimatedPressable
-      style={[styles.primaryButton, busy && styles.primaryButtonBusy, animatedStyle]}
+      style={[styles.primaryButton, (busy || disabled) && styles.primaryButtonBusy, animatedStyle]}
       hitSlop={8}
       onPress={onPress}
       onPressIn={onPressIn}
       onPressOut={onPressOut}
-      disabled={busy}
-      accessibilityState={{ busy, disabled: busy }}
+      disabled={busy || disabled}
+      accessibilityState={{ busy, disabled: busy || disabled }}
     >
       {busy ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>{title}</Text>}
     </AnimatedPressable>
