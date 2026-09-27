@@ -27,8 +27,7 @@ Otros archivos:
 - script.js: traducciones (es/en), idioma recordado y lógica del formulario.
 
 Pendiente antes del lanzamiento formal:
-- Completar el código postal del domicilio del responsable en el aviso de
-  privacidad y pedir a un abogado que lo revise.
+- Pedir a un abogado que revise el aviso de privacidad.
 - Una imagen para compartir (1200 x 630 px) en assets/ y apuntar og:image a
   ella; hoy la vista previa usa el logo.
 - Dominio propio y correo de contacto del proyecto.
