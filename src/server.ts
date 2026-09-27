@@ -1076,10 +1076,64 @@ function startHoldSweep(): void {
   holdSweepTimer.unref();
 }
 
+// Conexión real del mecánico: sigue "conectado" mientras su teléfono dé
+// señales (sondeo con la app abierta, o el servicio en primer plano con el
+// aviso "Estás conectado" si cambió de app). Si cerró la app por completo o
+// se quedó sin señal, deja de llegar y se le desconecta con un aviso.
+const STALE_MECHANIC_MINUTES = 5;
+const PRESENCE_SWEEP_INTERVAL_MS = 60 * 1000;
+let presenceSweepTimer: NodeJS.Timeout | null = null;
+
+async function touchMechanicPresence(mechanicId: number): Promise<void> {
+  await run(
+    `UPDATE mechanics SET last_seen_at = CURRENT_TIMESTAMP
+     WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < datetime('now', '-60 seconds'))`,
+    [mechanicId]
+  );
+}
+
+export async function sweepStaleMechanics(): Promise<number> {
+  const stale = await all<{ mechanicId: number; userId: number | null }>(
+    `SELECT m.id AS mechanicId, u.id AS userId
+     FROM mechanics m
+     LEFT JOIN users u ON u.mechanic_id = m.id
+     WHERE m.is_online = 1
+       AND (m.last_seen_at IS NULL OR m.last_seen_at < datetime('now', '-${STALE_MECHANIC_MINUTES} minutes'))`
+  );
+  for (const row of stale) {
+    const updated = await run(
+      "UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id = ? AND is_online = 1",
+      [row.mechanicId]
+    );
+    if (updated.changes > 0 && row.userId) {
+      await createNotification(
+        row.userId,
+        "Te desconectamos",
+        "Cerraste Mecanifique, así que dejamos de mandarte solicitudes. Ábrela y toca «Conectarme» para seguir recibiéndolas."
+      );
+    }
+  }
+  return stale.length;
+}
+
+function startPresenceSweep(): void {
+  if (presenceSweepTimer) {
+    return;
+  }
+  presenceSweepTimer = setInterval(() => {
+    sweepStaleMechanics().catch((error) => console.error("Presence sweep failed:", error));
+  }, PRESENCE_SWEEP_INTERVAL_MS);
+  presenceSweepTimer.unref();
+}
+
 function stopHoldSweep(): void {
   if (holdSweepTimer) {
     clearInterval(holdSweepTimer);
     holdSweepTimer = null;
+  }
+  if (presenceSweepTimer) {
+    clearInterval(presenceSweepTimer);
+    presenceSweepTimer = null;
   }
   if (serviceFeeSweepTimer) {
     clearInterval(serviceFeeSweepTimer);
@@ -1174,7 +1228,10 @@ export async function applyMechanicConnection(
     [mechanicId]
   );
   const isAvailable = !activeJob;
-  await run("UPDATE mechanics SET is_online = 1, is_available = ? WHERE id = ?", [isAvailable ? 1 : 0, mechanicId]);
+  await run(
+    "UPDATE mechanics SET is_online = 1, is_available = ?, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [isAvailable ? 1 : 0, mechanicId]
+  );
   return { ok: true, isAvailable };
 }
 
@@ -1869,6 +1926,9 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
     }
   }
 
+  if (payload.targetRole === "customer" && authUser.mechanicId) {
+    await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id = ?", [authUser.mechanicId]);
+  }
   await run("UPDATE users SET role = ? WHERE id = ?", [payload.targetRole, authUser.id]);
 
   const updatedUser = await get<AuthUser>(
@@ -3246,17 +3306,23 @@ app.patch(
     }
 
     const updated = await run(
-      "UPDATE mechanics SET latitude = ?, longitude = ?, location_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      "UPDATE mechanics SET latitude = ?, longitude = ?, location_updated_at = CURRENT_TIMESTAMP, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?",
       [payload.latitude, payload.longitude, mechanicId]
     );
     if (updated.changes === 0) {
       res.status(404).json({ error: "Mecánico no encontrado" });
       return;
     }
-    // tracking: si un cliente lo sigue ahora mismo (ver src/tracking.ts).
-    // Cuando deja de haberlo (llegó, el cliente canceló), el seguimiento en
-    // segundo plano del teléfono se apaga solo.
-    res.status(200).json({ ok: true, tracking: await isMechanicBeingTracked(mechanicId) });
+    // tracking: si un cliente lo sigue ahora mismo (ver src/tracking.ts);
+    // online: si sigue conectado. Cuando ninguna de las dos aplica (llegó,
+    // el cliente canceló, se desconectó), el servicio en segundo plano del
+    // teléfono se apaga solo.
+    const connection = await get<{ isOnline: number }>("SELECT is_online AS isOnline FROM mechanics WHERE id = ?", [mechanicId]);
+    res.status(200).json({
+      ok: true,
+      tracking: await isMechanicBeingTracked(mechanicId),
+      online: connection?.isOnline === 1
+    });
   })
 );
 
@@ -3505,6 +3571,9 @@ app.get(
       res.status(200).json({ request: null });
       return;
     }
+    // Con la app abierta, este sondeo (cada 10 s) es la señal de que sigue
+    // ahí. Se escribe a lo más una vez por minuto.
+    await touchMechanicPresence(mechanicId);
 
     const incoming = await get(
       `
@@ -4285,6 +4354,7 @@ export async function startServer(): Promise<typeof httpServer> {
       httpServer.off("error", onError);
       startHoldSweep();
       startServiceFeeSweep();
+      startPresenceSweep();
       httpServer.once("close", stopHoldSweep);
       console.log(`Mecanifique API escuchando en http://localhost:${port}`);
       resolve(httpServer);

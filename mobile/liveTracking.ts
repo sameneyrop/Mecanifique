@@ -1,22 +1,27 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 
-// Seguimiento del mecánico en segundo plano: mientras va en camino o fue por
-// refacciones, el teléfono sigue mandando su ubicación aunque esté usando
-// Waze o Google Maps. Android exige un aviso fijo visible mientras dura, y
-// solo se puede iniciar con la app en pantalla (al tocar el botón del paso).
-// Con eso basta el permiso de ubicación normal: no se pide "permitir
-// siempre".
+// Servicio en segundo plano del mecánico, con un aviso fijo visible (Android
+// lo exige). Tres motivos:
+// - online: está conectado. Si cambia de app sigue recibiendo solicitudes, y
+//   cada minuto su teléfono le dice al servidor que sigue ahí.
+// - en_route / awaiting_parts: va con el cliente o fue por refacciones; manda
+//   su ubicación seguido para que el cliente lo siga en el radar, aunque use
+//   Waze o Google Maps.
+// Solo se inicia con la app en pantalla (al conectarse o tocar el paso), así
+// que basta el permiso de ubicación normal: no se pide "permitir siempre".
+// Si cierra la app por completo, el servicio se apaga; el servidor deja de
+// recibir señal y lo desconecta con un aviso (sweepStaleMechanics).
 
 export const LIVE_TRACKING_TASK = 'mecanifique-seguimiento';
 
-export type TrackingReason = 'en_route' | 'awaiting_parts';
+export type TrackingReason = 'online' | 'en_route' | 'awaiting_parts';
 
-type LocationSender = (coords: { latitude: number; longitude: number }) => Promise<{ tracking?: boolean }>;
+type LocationSender = (coords: { latitude: number; longitude: number }) => Promise<{ tracking?: boolean; online?: boolean }>;
 
 // La app registra aquí cómo mandar la ubicación (con su sesión y la
 // renovación del token). Si el sistema reinició la tarea sin la app abierta
-// no hay sesión a mano: el seguimiento se apaga y se reanuda al abrirla.
+// no hay sesión a mano: el servicio se apaga y se reanuda al abrirla.
 let sendLocation: LocationSender | null = null;
 // Motivo con el que está corriendo, para no reiniciarlo si ya va igual.
 let activeReason: TrackingReason | null = null;
@@ -36,8 +41,9 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(LIVE_TRACKING_T
   const latest = data.locations[data.locations.length - 1];
   try {
     const result = await sendLocation({ latitude: latest.coords.latitude, longitude: latest.coords.longitude });
-    // El servidor avisa cuando ya nadie lo sigue (llegó, el cliente canceló).
-    if (result.tracking === false) {
+    // El servidor avisa cuando ya no hace falta: nadie lo sigue y ya no está
+    // conectado (se desconectó, o el cliente canceló estando desconectado).
+    if (result.tracking === false && result.online === false) {
       await stopLiveTracking();
     }
   } catch (sendError) {
@@ -45,9 +51,19 @@ TaskManager.defineTask<{ locations: Location.LocationObject[] }>(LIVE_TRACKING_T
   }
 });
 
-const NOTIFICATION_BODY: Record<TrackingReason, string> = {
-  en_route: 'Tu cliente ve que vas en camino. Se apaga al marcar «Ya llegué».',
-  awaiting_parts: 'Tu cliente ve que fuiste por refacciones. Se apaga al retomar la reparación.',
+const NOTIFICATION: Record<TrackingReason, { title: string; body: string }> = {
+  online: {
+    title: 'Estás conectado',
+    body: 'Te avisamos cuando llegue una solicitud cerca de ti. Para dejar de recibirlas, toca «Desconectarme» en la app.',
+  },
+  en_route: {
+    title: 'Compartiendo tu ubicación',
+    body: 'Tu cliente ve que vas en camino. Se apaga al marcar «Ya llegué».',
+  },
+  awaiting_parts: {
+    title: 'Compartiendo tu ubicación',
+    body: 'Tu cliente ve que fuiste por refacciones. Se apaga al retomar la reparación.',
+  },
 };
 
 export async function startLiveTracking(reason: TrackingReason) {
@@ -61,16 +77,21 @@ export async function startLiveTracking(reason: TrackingReason) {
       throw new Error('Sin permiso de ubicación');
     }
   }
+  // Conectado y esperando: una señal por minuto aunque no se mueva (ahorra
+  // batería). En camino o por refacciones: seguido y preciso.
+  const waiting = reason === 'online';
   await Location.startLocationUpdatesAsync(LIVE_TRACKING_TASK, {
-    accuracy: Location.Accuracy.High,
-    timeInterval: 15_000,
-    distanceInterval: 30,
+    accuracy: waiting ? Location.Accuracy.Balanced : Location.Accuracy.High,
+    timeInterval: waiting ? 60_000 : 15_000,
+    distanceInterval: waiting ? 0 : 30,
     pausesUpdatesAutomatically: false,
     foregroundService: {
-      notificationTitle: 'Compartiendo tu ubicación',
-      notificationBody: NOTIFICATION_BODY[reason],
+      notificationTitle: NOTIFICATION[reason].title,
+      notificationBody: NOTIFICATION[reason].body,
       // Mismo azul que los avisos push (app.json).
       notificationColor: '#0072B2',
+      // Cerrar la app por completo apaga el servicio (y lo desconecta).
+      killServiceOnDestroy: true,
     },
   });
   activeReason = reason;

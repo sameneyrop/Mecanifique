@@ -99,6 +99,10 @@ export async function initDb(): Promise<void> {
   // Cuándo llegó el último punto: el cliente que sigue al mecánico ve
   // "actualizado hace X".
   await ensureColumn("mechanics", "location_updated_at", "ALTER TABLE mechanics ADD COLUMN location_updated_at TEXT");
+  // Última señal del teléfono del mecánico (sondeo con la app abierta o
+  // servicio en primer plano con la app en otra pantalla). Si deja de
+  // llegar, el barrido lo desconecta (sweepStaleMechanics).
+  await ensureColumn("mechanics", "last_seen_at", "ALTER TABLE mechanics ADD COLUMN last_seen_at TEXT");
   // Propina directa (src/tips.ts): CLABE opcional del mecánico y a nombre de
   // quién está. Solo la ve el cliente de un servicio terminado.
   await ensureColumn("mechanics", "tip_clabe", "ALTER TABLE mechanics ADD COLUMN tip_clabe TEXT");

@@ -5,7 +5,8 @@ const {
   sweepExpiredHolds,
   applyMechanicConnection,
   activateMechanicIfIdentityApproved,
-  lastBookableSlotDate
+  lastBookableSlotDate,
+  sweepStaleMechanics
 } = require("../src/server.ts");
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
@@ -416,8 +417,8 @@ function uniquePhone() {
 
 async function createOnlineMechanic(city, zone, coords = null) {
   const result = await run(
-    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online, latitude, longitude)
-     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1, ?, ?)`,
+    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online, latitude, longitude, last_seen_at)
+     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1, ?, ?, CURRENT_TIMESTAMP)`,
     [`Mecánico ${crypto.randomUUID().slice(0, 6)}`, uniquePhone(), city, zone, coords?.latitude ?? null, coords?.longitude ?? null]
   );
   createdRows.mechanics.push(result.lastID);
@@ -582,6 +583,31 @@ test("turnos: solo se apartan dentro de los próximos 7 días, con la fecha de M
   // 27 sep 2026, 23:30 en México = 28 sep 05:30 UTC: el "hoy" de los turnos es el 27.
   assert.equal(lastBookableSlotDate(new Date("2026-09-28T05:30:00Z")), "2026-10-03");
   assert.equal(lastBookableSlotDate(new Date("2026-09-27T18:00:00Z")), "2026-10-03");
+});
+
+test("conexión: un mecánico cuyo teléfono dejó de dar señal se desconecta y recibe un aviso", async () => {
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const silent = await createOnlineMechanic(city, "Centro");
+  const active = await createOnlineMechanic(city, "Centro");
+  await run("UPDATE mechanics SET last_seen_at = datetime('now', '-10 minutes') WHERE id = ?", [silent]);
+  const supabaseUserId = crypto.randomUUID();
+  const user = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
+     VALUES ('mechanic', ?, ?, 'Mecánico Silencioso', 'x', 'x', ?)`,
+    [`${supabaseUserId}@example.test`, supabaseUserId, silent]
+  );
+  try {
+    await sweepStaleMechanics();
+    const rows = await all("SELECT id, is_online AS isOnline FROM mechanics WHERE id IN (?, ?)", [silent, active]);
+    const byId = Object.fromEntries(rows.map((row) => [row.id, row.isOnline]));
+    assert.equal(byId[silent], 0, "sin señal en 10 minutos: desconectado");
+    assert.equal(byId[active], 1, "con señal reciente: sigue conectado");
+    const notice = await get("SELECT title FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 1", [user.lastID]);
+    assert.equal(notice?.title, "Te desconectamos");
+  } finally {
+    await run("DELETE FROM notifications WHERE user_id = ?", [user.lastID]);
+    await run("DELETE FROM users WHERE id = ?", [user.lastID]);
+  }
 });
 
 test("propina: la CLABE se valida con su dígito de control", () => {

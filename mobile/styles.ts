@@ -117,6 +117,10 @@ export const styles = StyleSheet.create({
     width: 130,
     height: 25,
   },
+  // En la barra de arriba: centrado con el saludo y la campana.
+  topBarLogo: {
+    alignSelf: 'center',
+  },
   title: {
     fontSize: 24,
     fontFamily: fonts.extrabold,

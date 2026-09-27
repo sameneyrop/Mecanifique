@@ -630,11 +630,15 @@ export default function App() {
         : undefined,
     [myRequests, user?.role],
   );
-  // En camino o por refacciones, el cliente sigue al mecánico en el radar.
-  const trackingReason: TrackingReason | null =
+  // Servicio en segundo plano del mecánico (ver liveTracking.ts): en camino o
+  // por refacciones, el cliente lo sigue en el radar; conectado y esperando,
+  // sigue recibiendo solicitudes aunque cambie de app.
+  const backgroundReason: TrackingReason | null =
     liveLocationRequest?.status === 'en_route' || liveLocationRequest?.status === 'awaiting_parts'
       ? liveLocationRequest.status
-      : null;
+      : user?.role === 'mechanic' && mechanicConnection === 'online'
+        ? 'online'
+        : null;
 
   useEffect(() => {
     async function restoreSession() {
@@ -1058,19 +1062,22 @@ export default function App() {
     );
   }, [user?.role, user?.mechanicId, token]);
 
-  // Seguimiento en segundo plano mientras va en camino o por refacciones
-  // (ver liveTracking.ts). Se vuelve a intentar al regresar a la app, por si
-  // el sistema lo apagó. Si no se puede, queda el de primer plano de abajo.
+  // Servicio en segundo plano mientras está conectado, va en camino o fue
+  // por refacciones (ver liveTracking.ts). Se vuelve a intentar al regresar
+  // a la app, por si el sistema lo apagó. Si no se puede (Expo Go), queda el
+  // de primer plano de abajo.
   const signedIn = Boolean(token);
+  const loadMechanicProfileRef = useRef(loadMechanicProfile);
+  loadMechanicProfileRef.current = loadMechanicProfile;
   useEffect(() => {
-    if (!trackingReason || !signedIn) {
+    if (!backgroundReason || !signedIn) {
       setBackgroundTracking(false);
       stopLiveTracking().catch(() => undefined);
       return;
     }
     let cancelled = false;
     const start = () => {
-      startLiveTracking(trackingReason)
+      startLiveTracking(backgroundReason)
         .then(() => {
           if (!cancelled) setBackgroundTracking(true);
         })
@@ -1081,13 +1088,18 @@ export default function App() {
     };
     start();
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') start();
+      if (state === 'active') {
+        start();
+        // Si el servidor lo desconectó mientras la app estaba cerrada, que
+        // la pantalla lo diga en cuanto vuelve.
+        loadMechanicProfileRef.current().catch(() => undefined);
+      }
     });
     return () => {
       cancelled = true;
       subscription.remove();
     };
-  }, [trackingReason, signedIn]);
+  }, [backgroundReason, signedIn]);
 
   useEffect(() => {
     if (
@@ -1230,6 +1242,20 @@ export default function App() {
       });
     }
     return renewSessionInFlight.current;
+  }
+
+  // Cerrar sesión desconecta al mecánico: sin sesión no puede recibir
+  // solicitudes ni desconectarse después.
+  async function handleLogout() {
+    if (user?.role === 'mechanic' && user.mechanicId && mechanicConnection === 'online' && token) {
+      await apiRequest(`/api/mechanics/${user.mechanicId}/online`, {
+        method: 'PATCH',
+        token,
+        body: { isOnline: false },
+      }).catch(() => undefined);
+    }
+    await stopLiveTracking();
+    await clearSession();
   }
 
   async function clearSession() {
@@ -2872,7 +2898,12 @@ export default function App() {
       <Toast message={message} onDismiss={() => setMessage('')} />
       <View style={styles.content}>
         <View style={styles.topBar}>
-          <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+          <Image
+            source={APP_LOGO_IMAGE}
+            resizeMode="contain"
+            style={[styles.logoWordmark, styles.topBarLogo]}
+            accessibilityLabel="Mecanifique"
+          />
           <View style={styles.topBarRight}>
             <Text style={styles.topBarGreeting} numberOfLines={1}>
               Bienvenido
@@ -2973,7 +3004,7 @@ export default function App() {
                 onChangePassword={handleChangePassword}
                 onSendSupport={handleSendSupport}
                 onStartIdentityVerification={handleStartIdentityVerification}
-                onClearSession={clearSession}
+                onClearSession={handleLogout}
                 onSwitchRole={handleSwitchRole}
               />
             </View>
@@ -3122,7 +3153,7 @@ export default function App() {
               onRemoveProfilePhoto={handleRemoveProfilePhoto}
               onCreateScheduleSlot={handleCreateScheduleSlot}
               onResolveDispute={handleResolveDispute}
-              onClearSession={clearSession}
+              onClearSession={handleLogout}
               onSwitchRole={handleSwitchRole}
             />
             </View>
