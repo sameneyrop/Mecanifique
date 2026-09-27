@@ -6,6 +6,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, EmptyState, InfoRow, PrimaryButton, SecondaryButton } from '../components/ui';
+import { ILLUSTRATIONS } from '../illustrations';
 import { openExternalNavigation, parseServerTimestamp } from '../utils';
 
 export function MapScreen({
@@ -106,6 +107,7 @@ export function MapScreen({
           {mechanicConnection === 'online' && !incomingRequest && !activeJobHasLocation && (
             <EmptyState
               icon="radio-outline"
+              image={ILLUSTRATIONS.newRequest}
               title="Estás conectado"
               text="Te avisamos en cuanto llegue una solicitud cerca de ti."
             />

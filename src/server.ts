@@ -43,6 +43,7 @@ import {
   serviceFeeAmount,
   settleServiceFee
 } from "./serviceFees";
+import { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } from "./tracking";
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, findPhoto, savePhoto } from "./uploads";
 
 const app = express();
@@ -2226,7 +2227,7 @@ app.get(
       FROM notifications
       WHERE user_id = ?
       ORDER BY created_at DESC
-      LIMIT 20
+      LIMIT 50
       `,
       [userId]
     );
@@ -2244,6 +2245,18 @@ app.get(
       notifications,
       unreadCount: unreadCountRow?.unreadCount ?? 0
     });
+  })
+);
+
+app.post(
+  "/api/notifications/read-all",
+  requireAuth,
+  handleAsync(async (req, res) => {
+    const updated = await run(
+      "UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE user_id = ? AND read_at IS NULL",
+      [req.auth!.user.id]
+    );
+    res.status(200).json({ ok: true, marked: updated.changes });
   })
 );
 
@@ -3169,14 +3182,39 @@ app.patch(
     }
 
     const updated = await run(
-      "UPDATE mechanics SET latitude = ?, longitude = ? WHERE id = ?",
+      "UPDATE mechanics SET latitude = ?, longitude = ?, location_updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [payload.latitude, payload.longitude, mechanicId]
     );
     if (updated.changes === 0) {
       res.status(404).json({ error: "Mecánico no encontrado" });
       return;
     }
-    res.status(200).json({ ok: true });
+    // tracking: si un cliente lo sigue ahora mismo (ver src/tracking.ts).
+    // Cuando deja de haberlo (llegó, el cliente canceló), el seguimiento en
+    // segundo plano del teléfono se apaga solo.
+    res.status(200).json({ ok: true, tracking: await isMechanicBeingTracked(mechanicId) });
+  })
+);
+
+app.get(
+  "/api/service-requests/:id/mechanic-location",
+  requireAuth,
+  requireRole("customer", "admin"),
+  handleAsync(async (req, res) => {
+    const requestId = Number(req.params.id);
+    if (!Number.isInteger(requestId) || requestId <= 0) {
+      res.status(400).json({ error: "requestId inválido" });
+      return;
+    }
+    try {
+      res.json(await getMechanicLocationForRequest(requestId, req.auth!.user, calculateDistanceKm));
+    } catch (error) {
+      if (error instanceof TrackingError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
   })
 );
 

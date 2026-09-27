@@ -80,7 +80,7 @@ $env:EXPO_PUBLIC_API_BASE_URL = "https://mecanifique.onrender.com"
 ## Inventario de pantallas móviles (para debugging)
 
 Ver README.md → "Inventario de pantallas (app móvil)" para la tabla
-completa numerada (0-7). Úsala para ubicar rápido a qué archivo corresponde
+completa numerada (0-9). Úsala para ubicar rápido a qué archivo corresponde
 un bug reportado como "Pantalla N".
 
 ## Cómo leer este proyecto sin gastar contexto de más

@@ -2,7 +2,8 @@ import { Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { styles } from '../styles';
-import { Card, ChoiceTile, Field, ImagePlaceholder, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import { Card, ChoiceTile, Field, Illustration, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import { ILLUSTRATIONS } from '../illustrations';
 import { openPrivacyNotice } from '../utils';
 
 type AuthMode = 'login' | 'customer' | 'mechanic';
@@ -98,8 +99,7 @@ export function LoginScreen({
   return (
     <View style={styles.screenStack}>
       <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-        {/* PLACEHOLDER: ilustración de marca para la entrada */}
-        <ImagePlaceholder icon={authMode === 'mechanic' ? 'construct-outline' : 'car-sport-outline'} />
+        <Illustration source={authMode === 'mechanic' ? ILLUSTRATIONS.mechanicDashboard : ILLUSTRATIONS.homeHero} />
         <Text style={styles.title}>{hero.title}</Text>
         <Text style={styles.subtitle}>{hero.subtitle}</Text>
       </Animated.View>

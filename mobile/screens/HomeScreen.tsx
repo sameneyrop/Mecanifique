@@ -6,7 +6,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, ChoiceTile, Field, ImagePlaceholder, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Card, ChoiceTile, Field, Illustration, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { ILLUSTRATIONS } from '../illustrations';
 import {
   ACTIVE_REQUEST_STATUSES,
   ContactRow,
@@ -15,6 +16,8 @@ import {
   SearchingStatus,
   ServiceProgress,
 } from '../components/ActiveService';
+import { MechanicTracker } from '../components/MechanicTracker';
+import type { ApiCall } from '../App';
 import { openExternalNavigation, serviceFeeStatusText } from '../utils';
 
 type RequestFormShape = {
@@ -48,6 +51,7 @@ export type MechanicProfile = {
 };
 
 type HomeScreenProps = {
+  api: ApiCall;
   mechanicProfile: MechanicProfile | null;
   onStartIdentityVerification: () => void;
   onSaveLaborRate: (rate: string) => void;
@@ -165,8 +169,7 @@ function CustomerSearch({
   return (
     <View style={styles.stack}>
       <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-        {/* PLACEHOLDER: reemplazar por ilustración de marca final (mascota) */}
-        <ImagePlaceholder icon="car-sport-outline" />
+        <Illustration source={ILLUSTRATIONS.homeHero} />
         <Text style={styles.title}>Tu auto, en buenas manos</Text>
         <Text style={styles.subtitle}>
           Encuentra mecánicos verificados, cerca de ti o agenda para cuando lo necesites.
@@ -270,6 +273,7 @@ function CustomerHome(props: HomeScreenProps) {
           {feeText && <InfoRow icon="card-outline" text={feeText} />}
         </View>
       </Card>
+      <MechanicTracker api={props.api} requestId={detail.id} status={detail.status} mechanicName={detail.mechanicName} />
       {detail.status === 'pending' && (
         <SearchingStatus request={detail} busy={busy} onSearchAgain={props.onSearchAgain} />
       )}

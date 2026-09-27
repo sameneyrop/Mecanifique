@@ -21,6 +21,7 @@ const {
   settleServiceFee
 } = require("../src/serviceFees.ts");
 const { setStripeGatewayForTests } = require("../src/stripe.ts");
+const { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } = require("../src/tracking.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -491,6 +492,59 @@ test("con coordenadas: un mecánico lejano no se elige solo porque su ciudad/zon
 
   const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
   assert.equal(request.mechanicId, null, "a 100 km no es un mecánico cercano, aunque el texto de la zona coincida");
+});
+
+test("notificaciones: marcar todas como leídas exige sesión", async () => {
+  const { response } = await request("/api/notifications/read-all", { method: "POST" });
+  assert.equal(response.status, 401);
+});
+
+test("seguimiento: sin sesión no se puede ver dónde va un mecánico", async () => {
+  const { response } = await request("/api/service-requests/1/mechanic-location");
+  assert.equal(response.status, 401);
+});
+
+test("seguimiento: el cliente ve a su mecánico solo en camino o por refacciones", async () => {
+  const { cliente, a1Km } = pointsAround(-95);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro", a1Km);
+  await run("UPDATE mechanics SET location_updated_at = datetime('now', '-30 seconds') WHERE id = ?", [mechanicId]);
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Seguimiento", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const created = await run(
+    `INSERT INTO service_requests (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time,
+       city, zone, status, mechanic_id, latitude, longitude)
+     VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', 'Ciudad-Seguimiento', 'Centro', 'en_route', ?, ?, ?)`,
+    [customer.lastID, mechanicId, cliente.latitude, cliente.longitude]
+  );
+  createdRows.requests.push(created.lastID);
+  const requestId = created.lastID;
+  const owner = { role: "customer", customerId: customer.lastID };
+  const distanceKm = (latA, lngA, latB, lngB) => Math.hypot(latA - latB, lngA - lngB) * 111;
+
+  // En camino: ve la posición, hace cuánto llegó y a qué distancia está del auto.
+  const enRoute = await getMechanicLocationForRequest(requestId, owner, distanceKm);
+  assert.equal(enRoute.tracking, true);
+  assert.deepEqual([enRoute.mechanic.latitude, enRoute.mechanic.longitude], [a1Km.latitude, a1Km.longitude]);
+  assert.ok(enRoute.mechanic.secondsAgo >= 29 && enRoute.mechanic.secondsAgo < 90);
+  assert.equal(enRoute.distanceKm, 1);
+  assert.equal(await isMechanicBeingTracked(mechanicId), true);
+
+  // Nadie más puede verlo: ni otro cliente ni un mecánico.
+  for (const stranger of [{ role: "customer", customerId: customer.lastID + 100000 }, { role: "mechanic", customerId: null }]) {
+    await assert.rejects(
+      getMechanicLocationForRequest(requestId, stranger, distanceKm),
+      (error) => error instanceof TrackingError && error.status === 403
+    );
+  }
+
+  // Ya llegó: la ubicación deja de exponerse y el teléfono sabe que puede apagar el seguimiento.
+  await run("UPDATE service_requests SET status = 'on_site' WHERE id = ?", [requestId]);
+  assert.deepEqual(await getMechanicLocationForRequest(requestId, owner, distanceKm), { tracking: false, status: "on_site", mechanic: null });
+  assert.equal(await isMechanicBeingTracked(mechanicId), false);
+
+  // Salió por refacciones: se vuelve a ver.
+  await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
+  assert.equal((await getMechanicLocationForRequest(requestId, owner, distanceKm)).tracking, true);
 });
 
 // --- Conexión del mecánico ---

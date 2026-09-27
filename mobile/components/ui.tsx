@@ -1,5 +1,15 @@
 import { useEffect, type ComponentProps, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  type ImageSourcePropType,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   FadeInUp,
   FadeOutUp,
@@ -11,6 +21,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 
 import { colors } from '../colors';
+import { ILLUSTRATIONS } from '../illustrations';
 import { styles } from '../styles';
 import { formatServerDate, getServiceRequestStatusLabel } from '../utils';
 
@@ -52,21 +63,39 @@ export function ImagePlaceholder({ icon, compact = false }: { icon: IconName; co
   );
 }
 
-/** Pantalla o lista vacía: recuadro de imagen, qué pasa y qué hacer. */
+/**
+ * Ilustración de marca (ver illustrations.ts). Completa se ve entera a lo
+ * ancho; compacta ocupa la misma altura que el recuadro reservado.
+ */
+export function Illustration({ source, compact = false }: { source: ImageSourcePropType; compact?: boolean }) {
+  const { width, height } = Image.resolveAssetSource(source);
+  return (
+    <Image
+      source={source}
+      resizeMode="contain"
+      style={[styles.illustration, compact ? styles.illustrationCompact : { aspectRatio: width / height }]}
+      accessibilityIgnoresInvertColors
+    />
+  );
+}
+
+/** Pantalla o lista vacía: ilustración (o recuadro con ícono), qué pasa y qué hacer. */
 export function EmptyState({
   icon,
+  image,
   title,
   text,
   children,
 }: {
   icon: IconName;
+  image?: ImageSourcePropType;
   title: string;
   text?: string;
   children?: ReactNode;
 }) {
   return (
     <View style={styles.stack}>
-      <ImagePlaceholder icon={icon} compact />
+      {image ? <Illustration source={image} compact /> : <ImagePlaceholder icon={icon} compact />}
       <View style={styles.emptyState}>
         <Text style={styles.emptyStateTitle}>{title}</Text>
         {text ? <Text style={styles.emptyStateText}>{text}</Text> : null}
@@ -496,7 +525,7 @@ export function IdentityVerificationCard({
               : 'Tu verificación está en revisión.'
       }
     >
-      {identityState.status !== 'approved' && <ImagePlaceholder icon="id-card-outline" compact />}
+      {identityState.status !== 'approved' && <Illustration source={ILLUSTRATIONS.identity} compact />}
       {identityState.status === 'approved' && (
         <InfoRow icon="shield-checkmark-outline" text="Los mecánicos y clientes ven que eres una persona verificada." />
       )}

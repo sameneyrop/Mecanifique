@@ -15,6 +15,7 @@ import { IncomingRequestOverlay } from './components/IncomingRequestOverlay';
 import { LoginScreen } from './screens/LoginScreen';
 import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
 import { PromotionsScreen } from './screens/PromotionsScreen';
+import { NotificationsScreen, notificationTarget } from './screens/NotificationsScreen';
 import { BottomNavButton, ServerWakingBanner, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
 import {
@@ -30,6 +31,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
+import { ILLUSTRATIONS } from './illustrations';
+import { setLiveTrackingSender, startLiveTracking, stopLiveTracking, type TrackingReason } from './liveTracking';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
@@ -53,7 +56,17 @@ import {
 type Role = 'customer' | 'mechanic' | 'admin';
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicStatus = 'pending_verification' | 'active' | 'suspended';
-type AppScreen = 'home' | 'requests' | 'mechanics' | 'map' | 'actions' | 'account' | 'vehicles' | 'community' | 'promotions';
+type AppScreen =
+  | 'home'
+  | 'requests'
+  | 'mechanics'
+  | 'map'
+  | 'actions'
+  | 'account'
+  | 'vehicles'
+  | 'community'
+  | 'promotions'
+  | 'notifications';
 type RequestsView = 'list' | 'create' | 'detail';
 type ActionsView = 'assign' | 'status' | 'requestStatus' | 'availability' | 'update' | 'schedule';
 type MechanicSignupStep = 'account' | 'work';
@@ -329,17 +342,17 @@ const ONBOARDING_STEPS = [
   {
     title: 'Encuentra mecánicos cerca de ti',
     body: 'Busca por zona o GPS y ve perfiles públicos con calificaciones, estado y contacto.',
-    icon: 'search-outline' as const,
+    image: ILLUSTRATIONS.search,
   },
   {
     title: 'Solicita un servicio',
     body: 'Pide ayuda directo a un mecánico, reserva turnos y sigue el flujo del servicio.',
-    icon: 'car-sport-outline' as const,
+    image: ILLUSTRATIONS.profileReview,
   },
   {
-    title: 'Mecánicos se conectan y reciben pedidos',
+    title: 'Mecánicos se conectan y reciben solicitudes',
     body: 'El mecánico se conecta, recibe solicitudes y avisa cada paso del servicio.',
-    icon: 'notifications-outline' as const,
+    image: ILLUSTRATIONS.firstRequest,
   },
 ] as const;
 
@@ -386,6 +399,8 @@ function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
       return 'Comunidad';
     case 'promotions':
       return 'Promociones';
+    case 'notifications':
+      return 'Notificaciones';
     default:
       return 'Mecanifique';
   }
@@ -515,7 +530,13 @@ export default function App() {
   // En Mecánicos, el perfil de uno se ve solo en pantalla, no debajo de la
   // lista (antes había que bajar a buscarlo).
   const [mechanicsView, setMechanicsView] = useState<'list' | 'profile'>('list');
+  // El seguimiento en segundo plano del mecánico está corriendo (en Expo Go
+  // no se puede y se usa el de primer plano).
+  const [backgroundTracking, setBackgroundTracking] = useState(false);
   const mainScrollRef = useRef<ScrollView>(null);
+  // Notificaciones se abre desde cualquier pantalla (campana de arriba);
+  // "atrás" regresa a donde estaba.
+  const notificationsReturnScreen = useRef<AppScreen>('home');
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
     coverPhotoUrl: '',
@@ -586,6 +607,11 @@ export default function App() {
         : undefined,
     [myRequests, user?.role],
   );
+  // En camino o por refacciones, el cliente sigue al mecánico en el radar.
+  const trackingReason: TrackingReason | null =
+    liveLocationRequest?.status === 'en_route' || liveLocationRequest?.status === 'awaiting_parts'
+      ? liveLocationRequest.status
+      : null;
 
   useEffect(() => {
     async function restoreSession() {
@@ -902,6 +928,10 @@ export default function App() {
       setMechanicsView('list');
       return true;
     }
+    if (currentScreen === 'notifications') {
+      setCurrentScreen(notificationsReturnScreen.current);
+      return true;
+    }
     if (currentScreen === 'community' || currentScreen === 'promotions') {
       setCurrentScreen(user?.role === 'customer' ? 'account' : 'actions');
       return true;
@@ -988,13 +1018,62 @@ export default function App() {
     }
   }, [mechanics, user]);
 
+  // Cómo manda la ubicación la tarea de segundo plano: con la sesión actual y
+  // la renovación del token de apiRequest.
+  useEffect(() => {
+    const mechanicId = user?.role === 'mechanic' ? user.mechanicId : null;
+    if (!mechanicId || !token) {
+      setLiveTrackingSender(null);
+      return;
+    }
+    setLiveTrackingSender((coords) =>
+      apiRequest<{ tracking?: boolean }>(`/api/mechanics/${mechanicId}/location`, {
+        method: 'PATCH',
+        token: tokenRef.current,
+        body: coords,
+      }),
+    );
+  }, [user?.role, user?.mechanicId, token]);
+
+  // Seguimiento en segundo plano mientras va en camino o por refacciones
+  // (ver liveTracking.ts). Se vuelve a intentar al regresar a la app, por si
+  // el sistema lo apagó. Si no se puede, queda el de primer plano de abajo.
+  const signedIn = Boolean(token);
+  useEffect(() => {
+    if (!trackingReason || !signedIn) {
+      setBackgroundTracking(false);
+      stopLiveTracking().catch(() => undefined);
+      return;
+    }
+    let cancelled = false;
+    const start = () => {
+      startLiveTracking(trackingReason)
+        .then(() => {
+          if (!cancelled) setBackgroundTracking(true);
+        })
+        .catch((error) => {
+          console.warn('Seguimiento en segundo plano no disponible:', error);
+          if (!cancelled) setBackgroundTracking(false);
+        });
+    };
+    start();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') start();
+    });
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, [trackingReason, signedIn]);
+
   useEffect(() => {
     if (
       user?.role !== 'mechanic' ||
       !user.mechanicId ||
       mechanicConnection !== 'online' ||
       !liveLocationRequest ||
-      !token
+      !token ||
+      backgroundTracking
     ) {
       return;
     }
@@ -1034,7 +1113,7 @@ export default function App() {
       cancelled = true;
       subscription?.remove();
     };
-  }, [liveLocationRequest, mechanicConnection, token, user?.mechanicId, user?.role]);
+  }, [liveLocationRequest, mechanicConnection, token, user?.mechanicId, user?.role, backgroundTracking]);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -1879,17 +1958,44 @@ export default function App() {
     setRequestMessages(data);
   }
 
-  async function handleMarkNotificationRead(notificationId: number) {
-    if (!token) {
+  function openNotifications() {
+    if (currentScreen !== 'notifications') {
+      notificationsReturnScreen.current = currentScreen;
+    }
+    setCurrentScreen('notifications');
+    loadNotifications().catch(() => undefined);
+  }
+
+  // Tocar un aviso lo marca como leído y lleva a lo que avisa: la solicitud o
+  // la pregunta de la Comunidad.
+  async function handleOpenNotification(notification: AppNotification) {
+    if (!notification.readAt) {
+      apiRequest(`/api/notifications/${notification.id}/read`, { method: 'POST', token })
+        .then(() => loadNotifications())
+        .catch(() => undefined);
+    }
+    const target = notificationTarget(notification);
+    if (!target) {
       return;
     }
+    if ('questionId' in target) {
+      setCommunityView({ mode: 'detail', questionId: target.questionId });
+      setCurrentScreen('community');
+      return;
+    }
+    try {
+      await loadRequestDetailById(target.requestId);
+      setRequestsView('detail');
+      setCurrentScreen('requests');
+    } catch (error) {
+      setMessage(formatError(error));
+    }
+  }
 
+  async function handleMarkAllNotificationsRead() {
     setBusy(true);
     try {
-      await apiRequest(`/api/notifications/${notificationId}/read`, {
-        method: 'POST',
-        token,
-      });
+      await apiRequest('/api/notifications/read-all', { method: 'POST', token });
       await loadNotifications();
     } catch (error) {
       setMessage(formatError(error));
@@ -2744,14 +2850,40 @@ export default function App() {
       <View style={styles.content}>
         <View style={styles.topBar}>
           <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
-          <Text style={styles.topBarGreeting} numberOfLines={1}>
-            Bienvenido
-            {getFirstName(currentUser?.fullName) ? (
-              <>
-                , <Text style={styles.topBarGreetingName}>{getFirstName(currentUser?.fullName)}</Text>
-              </>
-            ) : null}
-          </Text>
+          <View style={styles.topBarRight}>
+            <Text style={styles.topBarGreeting} numberOfLines={1}>
+              Bienvenido
+              {getFirstName(currentUser?.fullName) ? (
+                <>
+                  , <Text style={styles.topBarGreetingName}>{getFirstName(currentUser?.fullName)}</Text>
+                </>
+              ) : null}
+            </Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.bellButton,
+                currentScreen === 'notifications' && styles.bellButtonActive,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={openNotifications}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={
+                unreadNotifications > 0 ? `Notificaciones, ${unreadNotifications} sin leer` : 'Notificaciones'
+              }
+            >
+              <Ionicons
+                name={unreadNotifications > 0 ? 'notifications' : 'notifications-outline'}
+                size={22}
+                color={colors.textDark}
+              />
+              {unreadNotifications > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
         </View>
         <ServerWakingBanner visible={serverWaking} />
         <ScrollView
@@ -2787,6 +2919,7 @@ export default function App() {
           {currentScreen === 'home' && (
             <View style={styles.screenStack}>
               <HomeScreen
+                api={api}
                 mechanicProfile={mechanicProfile}
                 onStartIdentityVerification={handleStartIdentityVerification}
                 onSaveLaborRate={handleSaveLaborRate}
@@ -2805,15 +2938,6 @@ export default function App() {
             </View>
           )}
 
-          {currentScreen === 'home' && unreadNotifications > 0 && (
-            <Pressable style={styles.notificationBanner} onPress={() => setCurrentScreen('account')}>
-              <Ionicons name="notifications-outline" size={18} color={colors.textDark} />
-              <Text style={styles.sessionText}>
-                {unreadNotifications} notificaciones sin leer — ver en Cuenta
-              </Text>
-            </Pressable>
-          )}
-
           {currentScreen === 'account' && (
             <View style={styles.screenStack}>
               <AccountScreen
@@ -2826,7 +2950,6 @@ export default function App() {
                 onChangePassword={handleChangePassword}
                 onSendSupport={handleSendSupport}
                 onStartIdentityVerification={handleStartIdentityVerification}
-                onMarkNotificationRead={handleMarkNotificationRead}
                 onClearSession={clearSession}
                 onSwitchRole={handleSwitchRole}
               />
@@ -2842,6 +2965,7 @@ export default function App() {
           {currentScreen === 'requests' && (
             <View style={styles.screenStack}>
             <RequestsScreen
+              api={api}
               serviceFee={serviceFeeConfig}
               requestForm={requestForm}
               setRequestForm={setRequestForm}
@@ -2915,6 +3039,15 @@ export default function App() {
                 view={communityView}
                 setView={setCommunityView}
                 onOpenMechanic={openMechanicProfile}
+              />
+            </View>
+          )}
+
+          {currentScreen === 'notifications' && currentUser && (
+            <View style={styles.screenStack}>
+              <NotificationsScreen
+                onOpenNotification={handleOpenNotification}
+                onMarkAllRead={handleMarkAllNotificationsRead}
               />
             </View>
           )}

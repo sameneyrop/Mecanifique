@@ -30,7 +30,8 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Mecanifique necesita tu ubicación para mostrar mecánicos cercanos."
+          "locationWhenInUsePermission": "Mecanifique necesita tu ubicación para mostrar mecánicos cercanos.",
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [

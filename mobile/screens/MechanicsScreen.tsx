@@ -8,6 +8,7 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, EmptyState, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
 import { MechanicRadar } from '../components/MechanicRadar';
+import { ILLUSTRATIONS } from '../illustrations';
 import { PromotionItem, type Promotion } from './PromotionsScreen';
 import type { ApiCall } from '../App';
 import { formatError, getMechanicPublicStatus, formatCalendarDate } from '../utils';
@@ -204,6 +205,7 @@ export function MechanicsScreen({
                 ) : (
                   <EmptyState
                     icon="map-outline"
+                    image={ILLUSTRATIONS.search}
                     title={currentLocation ? 'Nadie conectado cerca todavía' : 'Sin ubicación'}
                     text={
                       currentLocation
@@ -249,6 +251,7 @@ export function MechanicsScreen({
               <Card title="Resultados">
                 <EmptyState
                   icon="people-outline"
+                  image={ILLUSTRATIONS.error}
                   title="Sin mecánicos por ahora"
                   text="Prueba con otra ciudad o zona."
                 />

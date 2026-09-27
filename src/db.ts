@@ -96,6 +96,9 @@ export async function initDb(): Promise<void> {
 
   await ensureColumn("mechanics", "latitude", "ALTER TABLE mechanics ADD COLUMN latitude REAL");
   await ensureColumn("mechanics", "longitude", "ALTER TABLE mechanics ADD COLUMN longitude REAL");
+  // Cuándo llegó el último punto: el cliente que sigue al mecánico ve
+  // "actualizado hace X".
+  await ensureColumn("mechanics", "location_updated_at", "ALTER TABLE mechanics ADD COLUMN location_updated_at TEXT");
   await ensureColumn("mechanics", "is_online", "ALTER TABLE mechanics ADD COLUMN is_online INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("mechanics", "bio", "ALTER TABLE mechanics ADD COLUMN bio TEXT");
   await ensureColumn("mechanics", "cover_photo_url", "ALTER TABLE mechanics ADD COLUMN cover_photo_url TEXT");

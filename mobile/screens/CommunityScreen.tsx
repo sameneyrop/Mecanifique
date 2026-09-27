@@ -18,6 +18,7 @@ import {
   SecondaryButton,
   Segmented,
 } from '../components/ui';
+import { ILLUSTRATIONS } from '../illustrations';
 import { formatError, formatServerDate } from '../utils';
 import type { ApiCall } from '../App';
 
@@ -204,6 +205,7 @@ function QuestionList({ api, setView }: { api: ApiCall; setView: (view: Communit
           ) : questions.length === 0 ? (
             <EmptyState
               icon="chatbubbles-outline"
+              image={ILLUSTRATIONS.profileReview}
               title={scope === 'mine' ? 'Todavía no preguntas nada' : 'No hay preguntas aquí'}
               text={search || category ? 'Prueba con otra búsqueda o categoría.' : 'Sé el primero en preguntar.'}
             />

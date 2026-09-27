@@ -10,7 +10,7 @@ import {
   ChoiceTile,
   EmptyState,
   Field,
-  ImagePlaceholder,
+  Illustration,
   InfoRow,
   Input,
   PrimaryButton,
@@ -18,6 +18,7 @@ import {
   SecondaryButton,
   Segmented,
 } from '../components/ui';
+import { ILLUSTRATIONS } from '../illustrations';
 import {
   ACTIVE_REQUEST_STATUSES,
   EmergencyButton,
@@ -25,6 +26,8 @@ import {
   SearchingStatus,
   ServiceProgress,
 } from '../components/ActiveService';
+import { MechanicTracker } from '../components/MechanicTracker';
+import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
 
 type ScheduleSlot = {
@@ -69,6 +72,7 @@ type DisputeFormShape = {
 const PAGE_SIZE = 8;
 
 export function RequestsScreen({
+  api,
   serviceFee,
   requestForm,
   setRequestForm,
@@ -100,6 +104,7 @@ export function RequestsScreen({
   onSubmitDispute,
   onSendMessage,
 }: {
+  api: ApiCall;
   serviceFee: { enabled: boolean; amount: number };
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
@@ -245,6 +250,7 @@ export function RequestsScreen({
             {myRequests.length === 0 ? (
               <EmptyState
                 icon="document-text-outline"
+                image={ILLUSTRATIONS.newRequest}
                 title="Todavía no tienes solicitudes"
                 text={
                   user.role === 'mechanic'
@@ -532,18 +538,30 @@ export function RequestsScreen({
                   {detailIsActive && <ServiceProgress status={selectedRequest.status} />}
                 </View>
               </Card>
+              {user.role === 'customer' && (
+                <MechanicTracker
+                  api={api}
+                  requestId={selectedRequest.id}
+                  status={selectedRequest.status}
+                  mechanicName={selectedRequest.mechanicName}
+                />
+              )}
               {user.role === 'customer' && selectedRequest.status === 'pending' && (
                 <SearchingStatus request={selectedRequest} busy={busy} onSearchAgain={onSearchAgain} />
               )}
-              {detailIsActive && <EmergencyButton onPress={onEmergencyCall} />}
+              {detailIsActive && (
+                <>
+                  <Illustration source={ILLUSTRATIONS.emergency} compact />
+                  <EmergencyButton onPress={onEmergencyCall} />
+                </>
+              )}
               {user.role === 'mechanic' && detailIsActive && selectedRequest.status !== 'pending' && (
                 <PrimaryButton title="Ir a mi trabajo en curso" onPress={() => setCurrentScreen('home')} />
               )}
               {selectedRequest.status === 'completed' && user.role === 'customer' && selectedRequest.mechanicId && (
                 <Card title="Califica el servicio" subtitle="Tu opinión ayuda a otros clientes a elegir.">
                   <View style={styles.stack}>
-                    {/* PLACEHOLDER: ilustración de servicio terminado */}
-                    <ImagePlaceholder icon="star-outline" compact />
+                    <Illustration source={ILLUSTRATIONS.completed} compact />
                     <Field label="Calificación">
                       <Segmented
                         value={reviewForm.rating}

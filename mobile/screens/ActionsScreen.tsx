@@ -17,7 +17,9 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
   RequestCard,
+  Illustration,
 } from '../components/ui';
+import { ILLUSTRATIONS } from '../illustrations';
 import { formatCalendarDate, openExternalNavigation, openPrivacyNotice } from '../utils';
 import { MechanicPromotions } from '../components/MechanicPromotions';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
@@ -288,6 +290,7 @@ export function ActionsScreen({
             <Animated.View entering={FadeInDown.delay(60).duration(300)} style={styles.screenStack}>
               <Card title="Tu perfil público" subtitle="Esto es lo que ven los clientes cuando te buscan.">
                 <View style={styles.stack}>
+                  <Illustration source={ILLUSTRATIONS.mechanicDashboard} compact />
                   <Text style={styles.label}>Foto principal</Text>
                   {coverPhotoUrl ? (
                     <View style={styles.stack}>
@@ -390,6 +393,7 @@ export function ActionsScreen({
             <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
               <Card title="Tu agenda" subtitle="Publica los horarios en que puedes atender. Los clientes pueden apartarlos.">
                 <View style={styles.stack}>
+                  <Illustration source={ILLUSTRATIONS.settings} compact />
                   {calendar}
                   <View style={styles.publicProfileBox}>
                     <Text style={styles.publicProfileTitle}>Nuevo turno</Text>

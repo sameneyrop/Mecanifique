@@ -4,7 +4,8 @@ import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native'
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, CharCounter, Field, Input, PrimaryButton } from './ui';
+import { ILLUSTRATIONS } from '../illustrations';
+import { Card, CharCounter, Field, Illustration, Input, PrimaryButton } from './ui';
 
 export const ACTIVE_REQUEST_STATUSES = new Set([
   'pending',
@@ -78,34 +79,40 @@ export function SearchingStatus({
 
   if (request.mechanicId) {
     return (
-      <View style={styles.searchingCard}>
-        <ActivityIndicator color={colors.primary} />
-        <View style={styles.flex}>
-          <Text style={styles.itemTitle}>Esperando respuesta</Text>
-          <Text style={styles.smallText}>
-            {request.mechanicName || 'Un mecánico'} está revisando tu solicitud.
-            {direct ? '' : ' Si no puede tomarla, buscamos a otro automáticamente.'}
-          </Text>
+      <View style={styles.stack}>
+        <Illustration source={ILLUSTRATIONS.waiting} compact />
+        <View style={styles.searchingCard}>
+          <ActivityIndicator color={colors.primary} />
+          <View style={styles.flex}>
+            <Text style={styles.itemTitle}>Esperando respuesta</Text>
+            <Text style={styles.smallText}>
+              {request.mechanicName || 'Un mecánico'} está revisando tu solicitud.
+              {direct ? '' : ' Si no puede tomarla, buscamos a otro automáticamente.'}
+            </Text>
+          </View>
         </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.searchingCard}>
-      <Ionicons name="search-outline" size={22} color={colors.primary} />
-      <View style={[styles.flex, styles.stack]}>
-        <Text style={styles.itemTitle}>
-          {direct ? 'El mecánico no pudo tomar tu solicitud' : 'No hay mecánicos disponibles ahora'}
-        </Text>
-        <Text style={styles.smallText}>
-          {direct ? 'Podemos buscarte otro mecánico disponible en tu zona.' : 'Puedes intentar de nuevo en unos minutos.'}
-        </Text>
-        <PrimaryButton
-          title={direct ? 'Buscar otro mecánico' : 'Buscar de nuevo'}
-          busy={busy}
-          onPress={() => onSearchAgain(request.id)}
-        />
+    <View style={styles.stack}>
+      <Illustration source={ILLUSTRATIONS.error} compact />
+      <View style={styles.searchingCard}>
+        <Ionicons name="search-outline" size={22} color={colors.primary} />
+        <View style={[styles.flex, styles.stack]}>
+          <Text style={styles.itemTitle}>
+            {direct ? 'El mecánico no pudo tomar tu solicitud' : 'No hay mecánicos disponibles ahora'}
+          </Text>
+          <Text style={styles.smallText}>
+            {direct ? 'Podemos buscarte otro mecánico disponible en tu zona.' : 'Puedes intentar de nuevo en unos minutos.'}
+          </Text>
+          <PrimaryButton
+            title={direct ? 'Buscar otro mecánico' : 'Buscar de nuevo'}
+            busy={busy}
+            onPress={() => onSearchAgain(request.id)}
+          />
+        </View>
       </View>
     </View>
   );

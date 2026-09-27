@@ -69,6 +69,45 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.textSecondary,
   },
+  topBarRight: {
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bellButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+  },
+  bellButtonActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLighter,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.bgApp,
+  },
+  bellBadgeText: {
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    color: colors.white,
+  },
   topBarGreetingName: {
     fontFamily: fonts.bold,
     color: colors.textDark,
@@ -156,6 +195,15 @@ export const styles = StyleSheet.create({
   },
   placeholderCompact: {
     height: 110,
+    marginVertical: 4,
+  },
+  illustration: {
+    width: '100%',
+    borderRadius: 20,
+    marginVertical: 12,
+  },
+  illustrationCompact: {
+    height: 130,
     marginVertical: 4,
   },
   screenStack: {
@@ -648,15 +696,6 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  notificationBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.warningBg,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
   },
   sessionText: {
     flex: 1,

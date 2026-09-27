@@ -160,6 +160,21 @@ mantener informadas a ambas partes.
   mecánico llega directo ahí. Los componentes (progreso, chat, espera,
   emergencia) están en `mobile/components/ActiveService.tsx` y también los
   usa el detalle de Solicitudes. El chat se refresca solo cada 10 s.
+- **Seguimiento del mecánico** (en camino y por refacciones): mientras la
+  solicitud está en `en_route` o `awaiting_parts`, el cliente ve al
+  mecánico en el radar con su auto al centro, la distancia, hace cuánto
+  llegó el último punto y "Ver en Google Maps"
+  (`mobile/components/MechanicTracker.tsx`, sondeo de 10 s a `GET
+  /api/service-requests/:id/mechanic-location`). En cualquier otro estado
+  el servidor no expone la ubicación (`src/tracking.ts`). El teléfono del
+  mecánico la manda en segundo plano con un servicio en primer plano de
+  Android y aviso fijo ("Compartiendo tu ubicación",
+  `mobile/liveTracking.ts`): basta el permiso de ubicación normal, no se
+  pide "permitir siempre". Se apaga al cambiar de estado, y también solo si
+  el servidor responde que ya nadie lo sigue. No funciona en Expo Go (ahí
+  solo se manda con la app en pantalla); se prueba con el APK. **Al
+  publicar en Play Store** hay que llenar la declaración de servicios en
+  primer plano de tipo ubicación (Play Console → Contenido de la app).
 - **Reasignación automática**: si el mecánico rechaza o deja vencer el hold,
   la solicitud pasa sola al siguiente mecánico disponible en la zona (sin
   volver a ofrecérsela a quien ya no la tomó). Los holds vencidos se
@@ -172,8 +187,12 @@ mantener informadas a ambas partes.
   solicitud dirigida en automática.
 - Dirección textual del servicio, además de coordenadas cuando hay permiso de
   ubicación.
-- Actualizaciones de avance, chat entre las partes, notificaciones push y
-  centro de notificaciones.
+- Actualizaciones de avance, chat entre las partes y notificaciones push.
+- **Notificaciones**: pantalla propia que se abre con la campana junto a
+  "Bienvenido, (nombre)" (con el número sin leer). Tocar un aviso lo marca
+  como leído y lleva a la solicitud o a la pregunta de la Comunidad que
+  avisa; "Marcar todas como leídas" usa `POST /api/notifications/read-all`.
+  "Atrás" regresa a la pantalla donde estabas.
 - Reseña posterior a un servicio terminado.
 - Perfiles de vehículos: marca, modelo, año, color, kilometraje, alias y fotos
   mediante URL. Las placas se devuelven parcialmente ocultas.
@@ -210,11 +229,18 @@ veo este bug"):
 | 6 | Acciones | `mobile/screens/ActionsScreen.tsx` | Mechanic/Admin |
 | 7 | Cuenta | `mobile/screens/AccountScreen.tsx` | Customer |
 | 8 | Vehículos | `mobile/screens/VehiclesScreen.tsx` | Customer, desde Cuenta → "Mis vehículos" |
+| 9 | Notificaciones | `mobile/screens/NotificationsScreen.tsx` | Todos, desde la campana de arriba |
 
 Barra inferior: el cliente tiene 4 botones (Inicio, Solicitudes, Mecánicos,
 Cuenta); el mecánico, 4 (Inicio, Solicitudes, Mapa, Acciones). Mapa y
 Vehículos ya no son botones del cliente: el radar vive en Mecánicos y los
-vehículos en Cuenta (y se eligen o guardan al pedir un servicio).
+vehículos en Cuenta (y se eligen o guardan al pedir un servicio). Las
+notificaciones no están en la barra: tienen su campana arriba.
+
+Ilustraciones: las del personaje azul están en `mobile/illustrations.ts` y
+se muestran con `<Illustration>` (o `EmptyState image=...`) de
+`components/ui.tsx`; para cambiar cuál va en cada lugar basta con cambiar la
+referencia ahí.
 
 **Pendiente de UX conocido:** React Navigation está instalado
 (`mobile/index.tsx`) pero no se usa para navegar — el cambio entre

@@ -17,14 +17,13 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
 } from '../components/ui';
-import { formatServerDate, normalizeSpecialties, openPrivacyNotice } from '../utils';
+import { normalizeSpecialties, openPrivacyNotice } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 
 // Cuántos avisos se muestran antes de "Ver más".
-const NOTIFICATIONS_PAGE_SIZE = 5;
 
 const ROLE_LABELS = { customer: 'Cliente', mechanic: 'Mecánico', admin: 'Administrador' } as const;
 
@@ -237,7 +236,6 @@ export function AccountScreen({
   onChangePassword,
   onSendSupport,
   onStartIdentityVerification,
-  onMarkNotificationRead,
   onClearSession,
   onSwitchRole,
 }: {
@@ -250,7 +248,6 @@ export function AccountScreen({
   onChangePassword: (password: string) => Promise<boolean>;
   onSendSupport: (kind: 'problem' | 'help', message: string) => Promise<boolean>;
   onStartIdentityVerification: () => void;
-  onMarkNotificationRead: (id: number) => void;
   onClearSession: () => Promise<void>;
   onSwitchRole: (payload: {
     targetRole: 'customer' | 'mechanic';
@@ -260,17 +257,15 @@ export function AccountScreen({
     specialties?: string[];
   }) => Promise<void>;
 }) {
-  const { user, identityState, identityBusy, notifications, busy, setMessage, setCurrentScreen, vehicles } = useAppContext();
+  const { user, identityState, identityBusy, busy, setMessage, setCurrentScreen, vehicles } = useAppContext();
   const [expanded, setExpanded] = useState<Section | null>(null);
   const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
-  const [visibleNotifications, setVisibleNotifications] = useState(NOTIFICATIONS_PAGE_SIZE);
 
   if (!user) {
     return null;
   }
 
   const roleLabel = ROLE_LABELS[user.role];
-  const unreadCount = notifications.filter((notification) => !notification.readAt).length;
 
   function toggle(section: Section) {
     setExpanded((current) => (current === section ? null : section));
@@ -324,45 +319,6 @@ export function AccountScreen({
           identityBusy={identityBusy}
           onStart={onStartIdentityVerification}
         />
-      </Animated.View>
-
-      <Animated.View entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
-        <Card
-          title="Notificaciones"
-          subtitle={
-            notifications.length === 0
-              ? 'Aquí te avisamos de tus solicitudes.'
-              : unreadCount > 0
-                ? `${unreadCount} sin leer`
-                : 'Estás al día.'
-          }
-        >
-          <View style={styles.list}>
-            {notifications.slice(0, visibleNotifications).map((notification) => (
-              <View key={notification.id} style={[styles.notificationItem, notification.readAt && styles.notificationItemRead]}>
-                <View style={styles.itemHeader}>
-                  <Ionicons
-                    name={notification.readAt ? 'notifications-outline' : 'notifications'}
-                    size={20}
-                    color={colors.primary}
-                  />
-                  <Text style={[styles.itemTitle, styles.flex]}>{notification.title}</Text>
-                </View>
-                <Text style={styles.itemText}>{notification.body}</Text>
-                <Text style={styles.smallText}>{formatServerDate(notification.createdAt)}</Text>
-                {!notification.readAt && (
-                  <SecondaryButton title="Marcar como leída" compact onPress={() => onMarkNotificationRead(notification.id)} />
-                )}
-              </View>
-            ))}
-            {notifications.length > visibleNotifications && (
-              <SecondaryButton
-                title="Ver más"
-                onPress={() => setVisibleNotifications((count) => count + NOTIFICATIONS_PAGE_SIZE)}
-              />
-            )}
-          </View>
-        </Card>
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
