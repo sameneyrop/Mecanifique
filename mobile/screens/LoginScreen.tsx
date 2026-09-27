@@ -3,6 +3,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { styles } from '../styles';
 import { Card, ChoiceTile, Field, ImagePlaceholder, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import { openPrivacyNotice } from '../utils';
 
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicSignupStep = 'account' | 'work';
@@ -31,6 +32,19 @@ const EMAIL_INPUT_PROPS = {
   autoComplete: 'email',
   placeholder: 'correo@ejemplo.com',
 } as const;
+
+// Al registrarse: el aviso queda a la vista antes de crear la cuenta.
+function PrivacyConsent() {
+  return (
+    <Text style={styles.consentNote}>
+      Al crear tu cuenta aceptas el{' '}
+      <Text style={styles.textLink} onPress={() => void openPrivacyNotice()} accessibilityRole="link">
+        Aviso de privacidad
+      </Text>
+      .
+    </Text>
+  );
+}
 
 const HERO_COPY: Record<AuthMode, { title: string; subtitle: string }> = {
   login: {
@@ -192,6 +206,7 @@ export function LoginScreen({
                     />
                   </Field>
                   <PrimaryButton title="Crear cuenta" onPress={onSubmit} busy={busy} />
+                  <PrivacyConsent />
                 </>
               )}
 
@@ -267,6 +282,7 @@ export function LoginScreen({
                       <Text style={styles.smallText}>Tu ubicación se toma sola al abrir la app.</Text>
                       <SecondaryButton title="Volver" onPress={() => setMechanicSignupStep('account')} />
                       <PrimaryButton title="Crear cuenta" onPress={onSubmit} busy={busy} />
+                      <PrivacyConsent />
                     </>
                   )}
                 </>
@@ -277,6 +293,11 @@ export function LoginScreen({
       </Animated.View>
 
       <SecondaryButton title="Ver introducción" onPress={onShowOnboarding} />
+      <Text style={styles.consentNote}>
+        <Text style={styles.textLink} onPress={() => void openPrivacyNotice()} accessibilityRole="link">
+          Aviso de privacidad
+        </Text>
+      </Text>
     </View>
   );
 }

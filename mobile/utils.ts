@@ -1,4 +1,18 @@
 import { Linking, Platform } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+
+// Mismo aviso que publica el sitio web (web/privacidad.html): un solo texto
+// que mantener, y es el enlace que va en la ficha de Google Play.
+export const PRIVACY_NOTICE_URL = 'https://mecanifique.vercel.app/privacidad';
+
+/** Abre el aviso de privacidad en un navegador dentro de la app (al cerrarlo, se vuelve a donde estaba). */
+export async function openPrivacyNotice() {
+  try {
+    await WebBrowser.openBrowserAsync(PRIVACY_NOTICE_URL);
+  } catch {
+    await Linking.openURL(PRIVACY_NOTICE_URL).catch(() => undefined);
+  }
+}
 
 type Mechanic = {
   isOnline?: boolean;

@@ -18,7 +18,7 @@ import {
   IdentityVerificationCard,
   RequestCard,
 } from '../components/ui';
-import { formatCalendarDate, openExternalNavigation } from '../utils';
+import { formatCalendarDate, openExternalNavigation, openPrivacyNotice } from '../utils';
 import { MechanicPromotions } from '../components/MechanicPromotions';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
@@ -625,6 +625,7 @@ export function ActionsScreen({
                 setMessage('Sesión cerrada');
               }}
             />
+            <SecondaryButton title="Aviso de privacidad" compact onPress={() => void openPrivacyNotice()} />
             {user.role === 'mechanic' && <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />}
           </View>
         </Card>

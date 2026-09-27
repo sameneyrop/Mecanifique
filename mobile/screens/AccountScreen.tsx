@@ -17,7 +17,7 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
 } from '../components/ui';
-import { formatServerDate, normalizeSpecialties } from '../utils';
+import { formatServerDate, normalizeSpecialties, openPrivacyNotice } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 
@@ -406,6 +406,7 @@ export function AccountScreen({
                 <Text style={styles.smallText}>Conecta clientes con mecánicos verificados.</Text>
               </View>
             )}
+            <MenuRow icon="document-text-outline" label="Aviso de privacidad" onPress={() => void openPrivacyNotice()} />
             <MenuRow icon="bug-outline" label="Reportar un problema" onPress={() => toggle('problem')} />
             {expanded === 'problem' && (
               <SupportPanel kind="problem" email={user.login} busy={busy} onSendSupport={onSendSupport} />

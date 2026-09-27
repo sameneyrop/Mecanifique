@@ -870,6 +870,17 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 15,
   },
+  consentNote: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+  },
+  textLink: {
+    color: colors.primaryDark,
+    fontFamily: fonts.bold,
+    textDecorationLine: 'underline',
+  },
   menuPanel: {
     marginTop: 4,
     marginBottom: 8,

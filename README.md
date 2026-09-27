@@ -62,6 +62,12 @@ mantener informadas a ambas partes.
   conectado a este repo y publica solo `web/` gracias al `vercel.json` de la
   raíz (sin instalar ni compilar); se actualiza solo con cada push a `main`.
   La raíz del servidor de Render (`/`) redirige al sitio (`SITE_URL`).
+- **Aviso de privacidad dentro de la app** (lo exige Google Play además del
+  enlace en la ficha): al crear cuenta ("Al crear tu cuenta aceptas el Aviso
+  de privacidad"), en el Login, en Cuenta → "Aviso de privacidad" y en
+  Acciones → Sesión. Abre `https://mecanifique.vercel.app/privacidad`
+  (`web/privacidad.html`) en un navegador dentro de la app
+  (`openPrivacyNotice` en `mobile/utils.ts`): un solo texto que mantener.
 - **Lista de espera del sitio web**: formulario HTML normal que hace POST a
   `/lista-de-espera` (cliente o mecánico, nombre opcional, WhatsApp o correo,
   ciudad). Guarda en `waitlist_signups` sin duplicar (contacto normalizado),
