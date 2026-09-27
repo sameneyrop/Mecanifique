@@ -80,7 +80,7 @@ export function SearchingStatus({
   if (request.mechanicId) {
     return (
       <View style={styles.stack}>
-        <Illustration source={ILLUSTRATIONS.waiting} compact />
+        <Illustration source={ILLUSTRATIONS.waiting} compact fit="contain" />
         <View style={styles.searchingCard}>
           <ActivityIndicator color={colors.primary} />
           <View style={styles.flex}>

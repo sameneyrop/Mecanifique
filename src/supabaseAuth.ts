@@ -35,6 +35,75 @@ function getSupabaseError(data: Record<string, unknown>, fallback: string): stri
   return String(data.error_description || data.msg || data.message || data.error || fallback);
 }
 
+export type SignupErrorCode =
+  | "already_registered"
+  | "phone_taken"
+  | "weak_password"
+  | "invalid_email"
+  | "rate_limited"
+  | "other";
+
+/** Error del registro en Supabase, ya con un mensaje en español para la app. */
+export class SignupError extends Error {
+  constructor(public code: SignupErrorCode, message: string) {
+    super(message);
+  }
+}
+
+// Supabase responde en inglés ("User already registered", etc.); aquí se
+// traduce a lo que la persona puede hacer.
+function signupErrorFrom(data: Record<string, unknown>): SignupError {
+  const code = String(data.error_code || data.code || "");
+  const raw = getSupabaseError(data, "").toLowerCase();
+  if (code === "user_already_exists" || /already (registered|exists)/.test(raw)) {
+    return new SignupError("already_registered", "Ya existe una cuenta con ese correo.");
+  }
+  if (code === "weak_password" || raw.includes("password")) {
+    return new SignupError("weak_password", "Esa contraseña es muy débil. Usa una más larga, con letras y números.");
+  }
+  if (code === "email_address_invalid" || code === "validation_failed" || raw.includes("email")) {
+    return new SignupError("invalid_email", "Revisa tu correo: parece que está mal escrito.");
+  }
+  if (code === "over_email_send_rate_limit" || raw.includes("rate limit")) {
+    return new SignupError(
+      "rate_limited",
+      "Hay demasiados registros seguidos. Espera unos minutos e intenta de nuevo."
+    );
+  }
+  console.error("Supabase signup error:", data);
+  return new SignupError("other", "No pudimos crear tu cuenta. Intenta de nuevo en unos minutos.");
+}
+
+type ProfileTable = "mechanics" | "customers";
+
+// El teléfono es único en cada tabla. Una fila con ese teléfono solo se
+// reutiliza si ya es de esta misma cuenta (dos peticiones a la vez al entrar
+// por primera vez); si es de otra persona, o de un perfil sin cuenta, la
+// cuenta nueva nace con un teléfono de relleno que puede corregir en Cuenta.
+// Antes se ligaba a esa fila: la base lo rechazaba y la persona se quedaba
+// sin poder entrar ("No se pudo crear el perfil local").
+export async function phoneForNewProfile(table: ProfileTable, phone: string, supabaseUserId: string): Promise<string> {
+  const placeholder = `supabase-${supabaseUserId}`;
+  if (!phone) {
+    return placeholder;
+  }
+  const link = table === "mechanics" ? "mechanic_id" : "customer_id";
+  const row = await get<{ supabaseUserId: string | null }>(
+    `SELECT u.supabase_user_id AS supabaseUserId FROM ${table} t LEFT JOIN users u ON u.${link} = t.id WHERE t.phone = ?`,
+    [phone]
+  );
+  if (!row) {
+    return phone;
+  }
+  return row.supabaseUserId === supabaseUserId ? phone : placeholder;
+}
+
+export async function isPhoneTaken(table: ProfileTable, phone: string): Promise<boolean> {
+  return Boolean(await get<{ id: number }>(`SELECT id FROM ${table} WHERE phone = ?`, [phone]));
+}
+
+const PHONE_TAKEN_MESSAGE = "Ese teléfono ya está registrado en otra cuenta. Si es tuya, inicia sesión con ella; si no, usa otro número.";
+
 // Exportada para poder testear directamente la resolución de condiciones de
 // carrera (ver tests/api.test.js) sin depender de una llamada real a la API
 // de Supabase Auth.
@@ -73,13 +142,25 @@ export async function ensureLocalUser(supabaseUser: {
   // concurrentes logra insertar; la(s) otra(s) simplemente no hacen nada
   // ahí, y todas relogran leyendo el resultado final al final de la
   // función — sin importar cuál "ganó", todas devuelven la misma fila.
+  // users.login es único y un correo solo puede tener una cuenta en Supabase.
+  // Si una fila local vieja todavía lo tiene (su cuenta de Supabase ya no
+  // existe, p. ej. se borró a mano), se le cambia el login para liberarlo;
+  // sin esto el INSERT de abajo se ignoraba y la persona no podía entrar.
+  if (email) {
+    await run(
+      `UPDATE users SET login = 'reemplazada-' || id || '@mecanifique.invalid'
+       WHERE login = ? AND (supabase_user_id IS NULL OR supabase_user_id <> ?)`,
+      [email, supabaseUser.id]
+    );
+  }
+
   if (role === "mechanic") {
     // mechanics.phone es UNIQUE, así que dos peticiones concurrentes con el
     // mismo teléfono (el caso real: es la misma persona registrándose dos
     // veces en paralelo) competirían por esa fila también, no solo por la
     // de `users`. INSERT OR IGNORE aquí evita que la segunda petición
     // lance una excepción en vez de simplemente no insertar nada.
-    const phoneValue = phone || `supabase-${supabaseUser.id}`;
+    const phoneValue = await phoneForNewProfile("mechanics", phone, supabaseUser.id);
     await run(
       `
       INSERT OR IGNORE INTO mechanics (
@@ -113,7 +194,7 @@ export async function ensureLocalUser(supabaseUser: {
     );
   } else {
     // customers.phone también es UNIQUE — mismo patrón que mechanics.
-    const phoneValue = phone || `supabase-${supabaseUser.id}`;
+    const phoneValue = await phoneForNewProfile("customers", phone, supabaseUser.id);
     await run(
       `INSERT OR IGNORE INTO customers (full_name, phone, created_at) VALUES (?, ?, datetime('now'))`,
       [fullName, phoneValue]
@@ -163,6 +244,11 @@ export async function registerCustomerWithSupabase(
   phone: string
 ) {
   try {
+    // Antes de crear la cuenta en Supabase: si algo local falla después, la
+    // cuenta queda a medias (existe allá, no aquí).
+    if (phone && (await isPhoneTaken("customers", phone))) {
+      throw new SignupError("phone_taken", PHONE_TAKEN_MESSAGE);
+    }
     // Call Supabase Auth REST API
     const response = await supabaseFetch(`${supabaseUrl}/auth/v1/signup`, {
       method: "POST",
@@ -187,8 +273,7 @@ export async function registerCustomerWithSupabase(
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Supabase signup error:", data);
-      throw new Error(`Signup failed: ${getSupabaseError(data, "No fue posible crear la cuenta")}`);
+      throw signupErrorFrom(data);
     }
 
     if (!data.user) {
@@ -200,35 +285,15 @@ export async function registerCustomerWithSupabase(
       };
     }
 
-    // Also create customer record in local SQLite for reference
-    const result = await run(
-      `
-      INSERT INTO customers (full_name, phone, created_at)
-      VALUES (?, ?, datetime('now'))
-      `,
-      [fullName, phone]
-    );
-    await run(
-      `
-      INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, customer_id)
-      VALUES ('customer', ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        email,
-        data.user.id,
-        fullName,
-        crypto.randomBytes(16).toString("hex"),
-        crypto.randomBytes(32).toString("hex"),
-        result.lastID
-      ]
-    );
-
+    // Perfil local con la misma lógica que al entrar por primera vez.
+    const localUser = await ensureLocalUser(data.user);
     return {
       userId: data.user.id,
-      customerId: result.lastID,
+      customerId: localUser.customerId ?? null,
       email: data.user.email,
     };
   } catch (err) {
+    if (err instanceof SignupError) throw err;
     throw new Error(`Failed to register customer: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -247,6 +312,9 @@ export async function registerMechanicWithSupabase(
   specialties: string[]
 ) {
   try {
+    if (phone && (await isPhoneTaken("mechanics", phone))) {
+      throw new SignupError("phone_taken", PHONE_TAKEN_MESSAGE);
+    }
     // Call Supabase Auth REST API
     const response = await supabaseFetch(`${supabaseUrl}/auth/v1/signup`, {
       method: "POST",
@@ -273,7 +341,7 @@ export async function registerMechanicWithSupabase(
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(`Signup failed: ${getSupabaseError(data, "No fue posible crear la cuenta")}`);
+      throw signupErrorFrom(data);
     }
 
     if (!data.user) {
@@ -285,45 +353,15 @@ export async function registerMechanicWithSupabase(
       };
     }
 
-    // Create mechanic record in SQLite
-    const result = await run(
-      `
-      INSERT INTO mechanics (
-        full_name, phone, city, zone, years_experience, specialties,
-        status, is_available, is_online, created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, 'pending_verification', 0, 0, datetime('now'))
-      `,
-      [
-        fullName,
-        phone,
-        city,
-        zone,
-        yearsExperience,
-        JSON.stringify(specialties)
-      ]
-    );
-    await run(
-      `
-      INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id)
-      VALUES ('mechanic', ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        email,
-        data.user.id,
-        fullName,
-        crypto.randomBytes(16).toString("hex"),
-        crypto.randomBytes(32).toString("hex"),
-        result.lastID
-      ]
-    );
-
+    // Perfil local con la misma lógica que al entrar por primera vez.
+    const localUser = await ensureLocalUser(data.user);
     return {
       userId: data.user.id,
-      mechanicId: result.lastID,
+      mechanicId: localUser.mechanicId ?? null,
       email: data.user.email,
     };
   } catch (err) {
+    if (err instanceof SignupError) throw err;
     throw new Error(`Failed to register mechanic: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

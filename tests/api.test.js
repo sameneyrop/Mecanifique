@@ -22,6 +22,7 @@ const {
 } = require("../src/serviceFees.ts");
 const { setStripeGatewayForTests } = require("../src/stripe.ts");
 const { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } = require("../src/tracking.ts");
+const { TipError, getTipInfoForRequest, isValidClabe, saveMechanicTipInfo } = require("../src/tips.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -330,6 +331,35 @@ test("creación concurrente de usuario local no duplica la fila ni pierde el rol
   assert.equal(rows.length, 1, "no debe haber filas duplicadas para el mismo supabase_user_id");
 });
 
+test("entrar por primera vez con un teléfono que ya es de otra cuenta: entra con teléfono de relleno, sin tocar el perfil ajeno", async () => {
+  // Pasó en producción: el registro se cortó a la mitad por el teléfono
+  // repetido y la cuenta quedaba sin poder entrar ("No se pudo crear el perfil local").
+  const takenPhone = uniquePhone();
+  const other = await ensureLocalUser({
+    id: `test-${crypto.randomUUID()}`,
+    email: `${crypto.randomUUID()}@example.test`,
+    user_metadata: { role: "mechanic", full_name: "Mecánico Original", phone: takenPhone }
+  });
+  const supabaseUserId = `test-${crypto.randomUUID()}`;
+  const newcomer = await ensureLocalUser({
+    id: supabaseUserId,
+    email: `${supabaseUserId}@example.test`,
+    user_metadata: { role: "mechanic", full_name: "Mecánico Nuevo", phone: takenPhone }
+  });
+  try {
+    assert.equal(newcomer.role, "mechanic");
+    assert.ok(newcomer.mechanicId);
+    assert.notEqual(newcomer.mechanicId, other.mechanicId, "no se liga al perfil de otra persona");
+    const phone = (await get("SELECT phone FROM mechanics WHERE id = ?", [newcomer.mechanicId])).phone;
+    assert.equal(phone, `supabase-${supabaseUserId}`);
+  } finally {
+    for (const user of [newcomer, other]) {
+      await run("DELETE FROM users WHERE id = ?", [user.id]);
+      await run("DELETE FROM mechanics WHERE id = ?", [user.mechanicId]);
+    }
+  }
+});
+
 test("registrarse diciendo 'admin' en los metadatos de Supabase crea un cliente, nunca un admin", async () => {
   const supabaseUserId = `test-${crypto.randomUUID()}`;
   const user = await ensureLocalUser({
@@ -545,6 +575,53 @@ test("seguimiento: el cliente ve a su mecánico solo en camino o por refacciones
   // Salió por refacciones: se vuelve a ver.
   await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
   assert.equal((await getMechanicLocationForRequest(requestId, owner, distanceKm)).tracking, true);
+});
+
+test("propina: la CLABE se valida con su dígito de control", () => {
+  assert.equal(isValidClabe("032180000118359719"), true);
+  assert.equal(isValidClabe("032180000118359718"), false, "dígito de control equivocado");
+  assert.equal(isValidClabe("03218000011835971"), false, "17 dígitos");
+  assert.equal(isValidClabe("0321800001183597a9"), false);
+});
+
+test("propina: sin sesión no se ven los datos para dejar propina", async () => {
+  const { response } = await request("/api/service-requests/1/tip-info");
+  assert.equal(response.status, 401);
+});
+
+test("propina: solo el cliente de un servicio terminado ve la CLABE del mecánico", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await assert.rejects(
+    saveMechanicTipInfo(mechanicId, "032180000118359718", "Juan Pérez"),
+    (error) => error instanceof TipError && error.status === 400
+  );
+  await saveMechanicTipInfo(mechanicId, "032180000118359719", "Juan Pérez");
+
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Propina", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const created = await run(
+    `INSERT INTO service_requests (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time,
+       city, zone, status, mechanic_id)
+     VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', 'Ciudad-Propina', 'Centro', 'on_site', ?)`,
+    [customer.lastID, mechanicId]
+  );
+  createdRows.requests.push(created.lastID);
+  const owner = { role: "customer", customerId: customer.lastID };
+
+  await assert.rejects(getTipInfoForRequest(created.lastID, owner), (error) => error.status === 409, "todavía no termina");
+
+  await run("UPDATE service_requests SET status = 'completed' WHERE id = ?", [created.lastID]);
+  const info = await getTipInfoForRequest(created.lastID, owner);
+  assert.equal(info.clabe, "032180000118359719");
+  assert.equal(info.holderName, "Juan Pérez");
+
+  for (const stranger of [{ role: "customer", customerId: customer.lastID + 100000 }, { role: "mechanic", customerId: null }]) {
+    await assert.rejects(getTipInfoForRequest(created.lastID, stranger), (error) => error instanceof TipError && error.status === 403);
+  }
+
+  // La CLABE nunca sale en el listado público de mecánicos.
+  const { body } = await request(`/mechanics?city=${encodeURIComponent("x")}`);
+  assert.ok(!JSON.stringify(body).includes("032180000118359719"));
 });
 
 // --- Conexión del mecánico ---

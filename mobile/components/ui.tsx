@@ -64,16 +64,25 @@ export function ImagePlaceholder({ icon, compact = false }: { icon: IconName; co
 }
 
 /**
- * Ilustración de marca (ver illustrations.ts). Completa se ve entera a lo
- * ancho; compacta ocupa la misma altura que el recuadro reservado.
+ * Ilustración de marca (ver illustrations.ts): a todo lo ancho y con altura
+ * fija, para que nunca tape lo que sigue en la pantalla. Llena el recuadro
+ * recortando un poco las orillas; las cuadradas van con fit="contain" para
+ * no cortarles la cabeza.
  */
-export function Illustration({ source, compact = false }: { source: ImageSourcePropType; compact?: boolean }) {
-  const { width, height } = Image.resolveAssetSource(source);
+export function Illustration({
+  source,
+  compact = false,
+  fit = 'cover',
+}: {
+  source: ImageSourcePropType;
+  compact?: boolean;
+  fit?: 'cover' | 'contain';
+}) {
   return (
     <Image
       source={source}
-      resizeMode="contain"
-      style={[styles.illustration, compact ? styles.illustrationCompact : { aspectRatio: width / height }]}
+      resizeMode={fit}
+      style={[styles.illustration, compact && styles.illustrationCompact]}
       accessibilityIgnoresInvertColors
     />
   );

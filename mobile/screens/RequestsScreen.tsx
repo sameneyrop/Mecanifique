@@ -27,6 +27,7 @@ import {
   ServiceProgress,
 } from '../components/ActiveService';
 import { MechanicTracker } from '../components/MechanicTracker';
+import { TipCard } from '../components/TipCard';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
 
@@ -580,6 +581,9 @@ export function RequestsScreen({
                     <PrimaryButton title="Enviar reseña" onPress={onSubmitReview} />
                   </View>
                 </Card>
+              )}
+              {selectedRequest.status === 'completed' && user.role === 'customer' && selectedRequest.mechanicId && (
+                <TipCard api={api} requestId={selectedRequest.id} />
               )}
               {selectedRequest.status === 'completed' && user.role === 'customer' && (
                 <Card title="¿Algo salió mal?" subtitle="Reporta un problema con este servicio.">

@@ -22,6 +22,7 @@ import {
 import { ILLUSTRATIONS } from '../illustrations';
 import { formatCalendarDate, openExternalNavigation, openPrivacyNotice } from '../utils';
 import { MechanicPromotions } from '../components/MechanicPromotions';
+import { TipInfoCard } from '../components/TipInfoCard';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -375,6 +376,7 @@ export function ActionsScreen({
                   <PrimaryButton title="Guardar cambios" busy={busy} onPress={onSavePublicProfile} />
                 </View>
               </Card>
+              <TipInfoCard api={api} />
               <IdentityVerificationCard
                 identityState={identityState}
                 identityBusy={identityBusy}

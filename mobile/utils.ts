@@ -58,6 +58,13 @@ export function formatServerDate(value: string | null | undefined): string {
 }
 
 /** Fecha sin hora ("2026-09-30") como "30 sep" (con año si no es el actual). */
+/** CLABE en grupos (banco, plaza, cuenta, control) para leerla y dictarla fácil. */
+export function formatClabe(clabe: string): string {
+  const digits = clabe.replace(/\D/g, '');
+  if (digits.length !== 18) return clabe;
+  return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 17)} ${digits.slice(17)}`;
+}
+
 export function formatDateOnly(value: string): string {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) {

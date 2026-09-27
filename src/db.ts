@@ -99,6 +99,10 @@ export async function initDb(): Promise<void> {
   // Cuándo llegó el último punto: el cliente que sigue al mecánico ve
   // "actualizado hace X".
   await ensureColumn("mechanics", "location_updated_at", "ALTER TABLE mechanics ADD COLUMN location_updated_at TEXT");
+  // Propina directa (src/tips.ts): CLABE opcional del mecánico y a nombre de
+  // quién está. Solo la ve el cliente de un servicio terminado.
+  await ensureColumn("mechanics", "tip_clabe", "ALTER TABLE mechanics ADD COLUMN tip_clabe TEXT");
+  await ensureColumn("mechanics", "tip_holder_name", "ALTER TABLE mechanics ADD COLUMN tip_holder_name TEXT");
   await ensureColumn("mechanics", "is_online", "ALTER TABLE mechanics ADD COLUMN is_online INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("mechanics", "bio", "ALTER TABLE mechanics ADD COLUMN bio TEXT");
   await ensureColumn("mechanics", "cover_photo_url", "ALTER TABLE mechanics ADD COLUMN cover_photo_url TEXT");

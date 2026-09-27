@@ -199,11 +199,12 @@ export const styles = StyleSheet.create({
   },
   illustration: {
     width: '100%',
+    height: 180,
     borderRadius: 20,
     marginVertical: 12,
   },
   illustrationCompact: {
-    height: 130,
+    height: 160,
     marginVertical: 4,
   },
   screenStack: {

@@ -175,6 +175,14 @@ mantener informadas a ambas partes.
   solo se manda con la app en pantalla); se prueba con el APK. **Al
   publicar en Play Store** hay que llenar la declaración de servicios en
   primer plano de tipo ubicación (Play Console → Contenido de la app).
+- **Propina directa**: el mecánico puede poner, si quiere, su CLABE y el
+  nombre del titular (Acciones → Mi perfil → Propinas; `PUT/DELETE
+  /api/mechanics/me/tip-info`, se valida el dígito de control). Al terminar
+  un servicio, el cliente ve "¿Quieres dejarle propina?" con la CLABE y
+  "Copiar CLABE", o la sugerencia de dársela en efectivo (`GET
+  /api/service-requests/:id/tip-info`, solo el cliente de un servicio
+  terminado; `src/tips.ts`). Mecanifique no cobra ni pasa ese dinero, por la
+  misma razón que no cobra el trabajo del mecánico (ver "Modelo de pagos").
 - **Reasignación automática**: si el mecánico rechaza o deja vencer el hold,
   la solicitud pasa sola al siguiente mecánico disponible en la zona (sin
   volver a ofrecérsela a quien ya no la tomó). Los holds vencidos se

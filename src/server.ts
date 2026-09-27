@@ -19,7 +19,9 @@ import {
   refreshSupabaseSession,
   updateSupabaseUser,
   isSupabaseAdminConfigured,
-  deleteSupabaseAuthUser
+  deleteSupabaseAuthUser,
+  SignupError,
+  isPhoneTaken
 } from "./supabaseAuth";
 import {
   anonymizeAccount,
@@ -44,6 +46,13 @@ import {
   settleServiceFee
 } from "./serviceFees";
 import { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } from "./tracking";
+import {
+  TipError,
+  clearMechanicTipInfo,
+  getMechanicTipInfo,
+  getTipInfoForRequest,
+  saveMechanicTipInfo
+} from "./tips";
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, findPhoto, savePhoto } from "./uploads";
 
 const app = express();
@@ -1597,21 +1606,12 @@ app.post(
           : "Cuenta creada exitosamente. Verifica tu correo electrónico."
       });
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message.includes("already exists")) {
-          res.status(409).json({ error: "Ya existe una cuenta con ese email" });
-          return;
-        }
-        if (
-          error.message.includes("over_email_send_rate_limit") ||
-          error.message.toLowerCase().includes("email rate limit")
-        ) {
-          res.status(429).json({
-            error: "Supabase limitó temporalmente el envío de correos de confirmación. Desactiva la confirmación de email durante las pruebas o configura un proveedor SMTP."
-          });
-          return;
-        }
-        res.status(400).json({ error: error.message });
+      if (error instanceof SignupError) {
+        const status =
+          error.code === "already_registered" || error.code === "phone_taken" ? 409 : error.code === "rate_limited" ? 429 : 400;
+        res.status(status).json({
+          error: error.code === "already_registered" ? "Ya existe una cuenta con ese correo. Inicia sesión con ella." : error.message
+        });
         return;
       }
       throw error;
@@ -1647,21 +1647,12 @@ app.post(
           : "Cuenta creada exitosamente. Verifica tu correo electrónico."
       });
     } catch (error) {
-      if (error instanceof Error) {
-        if (error.message.includes("already exists")) {
-          res.status(409).json({ error: "Ya existe una cuenta con ese email" });
-          return;
-        }
-        if (
-          error.message.includes("over_email_send_rate_limit") ||
-          error.message.toLowerCase().includes("email rate limit")
-        ) {
-          res.status(429).json({
-            error: "Supabase limitó temporalmente el envío de correos de confirmación. Desactiva la confirmación de email durante las pruebas o configura un proveedor SMTP."
-          });
-          return;
-        }
-        res.status(400).json({ error: error.message });
+      if (error instanceof SignupError) {
+        const status =
+          error.code === "already_registered" || error.code === "phone_taken" ? 409 : error.code === "rate_limited" ? 429 : 400;
+        res.status(status).json({
+          error: error.code === "already_registered" ? "Ya existe una cuenta con ese correo. Inicia sesión con ella y activa el modo profesional desde Cuenta: una misma cuenta sirve para cliente y mecánico." : error.message
+        });
         return;
       }
       throw error;
@@ -1694,12 +1685,20 @@ app.post(
         expiresIn: result.session.expires_in ?? 3600
       });
     } catch (error) {
-      if (error instanceof Error && error.message.toLowerCase().includes("invalid credentials")) {
-        res.status(401).json({ error: "Email o contraseña inválidos" });
+      // Supabase responde en inglés ("Invalid login credentials",
+      // "Email not confirmed"); a la app le llega qué hacer, en español.
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
+      if (/invalid (login )?credentials/.test(message)) {
+        res.status(401).json({ error: "Correo o contraseña incorrectos." });
+        return;
+      }
+      if (message.includes("email not confirmed")) {
+        res.status(401).json({ error: "Confirma tu correo con el enlace que te mandamos al registrarte y vuelve a intentar." });
         return;
       }
       if (error instanceof Error) {
-        res.status(400).json({ error: error.message });
+        console.error("Login con Supabase falló:", error);
+        res.status(400).json({ error: "No pudimos iniciar tu sesión. Intenta de nuevo en unos minutos." });
         return;
       }
       throw error;
@@ -1815,10 +1814,9 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
       const mechanicPhone = authUser.mechanicId
         ? (await get<{ phone: string }>("SELECT phone FROM mechanics WHERE id = ?", [authUser.mechanicId]))?.phone
         : null;
-      const result = await run(
-        "INSERT INTO customers (full_name, phone) VALUES (?, ?)",
-        [authUser.fullName, mechanicPhone || `sin-telefono-${authUser.id}`]
-      );
+      // El teléfono es único por tabla: si ya lo tiene otro cliente, va de relleno.
+      const phone = mechanicPhone && !(await isPhoneTaken("customers", mechanicPhone)) ? mechanicPhone : `sin-telefono-${authUser.id}`;
+      const result = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", [authUser.fullName, phone]);
       customerId = result.lastID;
       await run("UPDATE users SET customer_id = ? WHERE id = ?", [customerId, authUser.id]);
     }
@@ -1838,12 +1836,13 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
       // activo: no puede volver a verificarse (didit-session responde 409) y
       // el webhook de Didit solo activa a un mecánico que ya existía.
       const initialStatus = (await isIdentityApproved(authUser.id)) ? "active" : "pending_verification";
+      const phone = customerPhone && !(await isPhoneTaken("mechanics", customerPhone)) ? customerPhone : `sin-telefono-${authUser.id}`;
       const result = await run(
         `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available)
          VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           authUser.fullName,
-          customerPhone || `sin-telefono-${authUser.id}`,
+          phone,
           payload.city,
           payload.zone,
           payload.yearsExperience,
@@ -3164,6 +3163,52 @@ app.get(
     });
   })
 );
+
+// Propina directa (ver src/tips.ts): el mecánico guarda, si quiere, su CLABE.
+const tipInfoSchema = z.object({
+  clabe: z.string().max(40).transform((value) => value.replace(/\s/g, "")),
+  holderName: z.string().trim().min(3).max(120)
+});
+
+app.get("/api/mechanics/me/tip-info", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  res.json(await getMechanicTipInfo(req.auth!.user.mechanicId!));
+}));
+
+app.put("/api/mechanics/me/tip-info", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const payload = tipInfoSchema.parse(req.body);
+  try {
+    await saveMechanicTipInfo(req.auth!.user.mechanicId!, payload.clabe, payload.holderName);
+  } catch (error) {
+    if (error instanceof TipError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+  res.json({ clabe: payload.clabe, holderName: payload.holderName });
+}));
+
+app.delete("/api/mechanics/me/tip-info", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  await clearMechanicTipInfo(req.auth!.user.mechanicId!);
+  res.json({ clabe: null, holderName: null });
+}));
+
+app.get("/api/service-requests/:id/tip-info", requireAuth, requireRole("customer"), handleAsync(async (req, res) => {
+  const requestId = Number(req.params.id);
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    res.status(400).json({ error: "requestId inválido" });
+    return;
+  }
+  try {
+    res.json(await getTipInfoForRequest(requestId, req.auth!.user));
+  } catch (error) {
+    if (error instanceof TipError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}));
 
 app.patch(
   "/api/mechanics/:id/location",
