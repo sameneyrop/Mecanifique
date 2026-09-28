@@ -118,6 +118,22 @@ export const styles = StyleSheet.create({
     height: 25,
   },
   // En la barra de arriba: centrado con el saludo y la campana.
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 8,
+  },
+  updateBannerText: {
+    flex: 1,
+    color: colors.white,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+  },
   consentText: {
     textAlign: 'left',
   },

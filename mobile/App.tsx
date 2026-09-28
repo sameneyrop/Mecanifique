@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as Updates from 'expo-updates';
 import { colors } from './colors';
 import { styles } from './styles';
 import { useAppContext } from './context/AppContext';
@@ -329,7 +330,11 @@ const defaultApiBaseUrl =
     : expoHost
       ? `http://${expoHost}:4000`
       : 'http://10.0.2.2:4000';
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || defaultApiBaseUrl;
+// Fuera de desarrollo siempre es el servidor de Render: una actualización
+// por EAS Update no trae las variables del build, y sin esto apuntaría a la
+// computadora de desarrollo.
+const PRODUCTION_API_BASE_URL = 'https://mecanifique.onrender.com';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (__DEV__ ? defaultApiBaseUrl : PRODUCTION_API_BASE_URL);
 const AUTH_TOKEN_KEY = 'mecanifique.auth.token';
 const AUTH_USER_KEY = 'mecanifique.auth.user';
 const AUTH_REFRESH_KEY = 'mecanifique.auth.refresh';
@@ -559,6 +564,8 @@ export default function App() {
   // Verificación por teléfono pendiente (ver PhoneVerificationScreen).
   const deviceIdRef = useRef<string | null>(null);
   const [phoneVerification, setPhoneVerification] = useState<PhoneVerificationStatus | null>(null);
+  // Actualización descargada por EAS Update, lista para aplicarse.
+  const [updateReady, setUpdateReady] = useState(false);
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
     coverPhotoUrl: '',
@@ -935,6 +942,29 @@ export default function App() {
     });
     return () => subscription.remove();
   }, [user, onboardingSeen, onboardingStep, authMode, mechanicSignupStep, currentScreen, requestsView, requestCreateStep, communityView, mechanicsView]);
+
+  // EAS Update: al abrir la app y al volver a ella se busca una versión
+  // nueva; si hay, se descarga y aparece un aviso para aplicarla (reinicia
+  // la app). Si no se toca, se aplica sola la próxima vez que se abra.
+  useEffect(() => {
+    if (__DEV__ || !Updates.isEnabled) {
+      return;
+    }
+    const check = () => {
+      Updates.checkForUpdateAsync()
+        .then(async (result) => {
+          if (!result.isAvailable) return;
+          await Updates.fetchUpdateAsync();
+          setUpdateReady(true);
+        })
+        .catch(() => undefined);
+    };
+    check();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') check();
+    });
+    return () => subscription.remove();
+  }, []);
 
   const refreshUserRef = useRef(refreshUserFromServer);
   refreshUserRef.current = refreshUserFromServer;
@@ -3012,6 +3042,16 @@ export default function App() {
           </View>
         </View>
         <ServerWakingBanner visible={serverWaking} />
+        {updateReady && (
+          <Pressable
+            style={({ pressed }) => [styles.updateBanner, pressed && styles.buttonPressed]}
+            onPress={() => void Updates.reloadAsync().catch(() => undefined)}
+            accessibilityRole="button"
+          >
+            <Ionicons name="sparkles-outline" size={18} color={colors.white} />
+            <Text style={styles.updateBannerText}>Hay una versión nueva de Mecanifique. Toca para actualizar.</Text>
+          </Pressable>
+        )}
         <ScrollView
           ref={mainScrollRef}
           style={styles.scroll}

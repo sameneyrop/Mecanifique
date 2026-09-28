@@ -24,7 +24,16 @@ npm test        # tsx --test tests/api.test.js
 npx expo start -c        # -c limpia caché Metro; usar tras cambiar env vars o deps nativas
 npx tsc --noEmit         # type-check, obligatorio antes de dar por terminado un cambio
 npx expo-doctor          # valida config nativa/Expo, debe dar 18/18
+npx eas-cli update --channel preview --message "..."   # actualización sin reinstalar (solo JS)
+npx eas-cli build -p android --profile preview          # APK nuevo (cambios nativos)
 ```
+
+Los APK se instalan a mano (sin Play Store por ahora) y se actualizan solos
+con **EAS Update** (canal `preview`). Un cambio solo de JavaScript/pantallas
+se publica con `eas update`; si se agrega un módulo nativo, un permiso o se
+cambia `app.json` de forma nativa, hay que subir `version` en `app.json`
+(p. ej. 1.0.1) y compilar un APK nuevo: el runtime cambia y los APK viejos
+ya no reciben esa actualización.
 
 Backend remoto para probar en emulador/dispositivo:
 

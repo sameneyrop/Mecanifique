@@ -570,6 +570,23 @@ El perfil `preview` genera un APK que apunta al servidor de Render;
 `production` genera el AAB para Play Store y sube solo el `versionCode`
 (`appVersionSource: remote` en `eas.json`).
 
+**Actualizaciones sin reinstalar (EAS Update, gratis hasta 1,000 usuarios al
+mes).** Mientras la app se instala a mano, los APK del perfil `preview`
+escuchan el canal `preview`:
+
+```bash
+npx eas-cli update --channel preview --message "Qué cambió"
+```
+
+La app busca versiones nuevas al abrirse y al volver a ella; si hay, la
+descarga y muestra "Hay una versión nueva de Mecanifique. Toca para
+actualizar" (si no se toca, se aplica la siguiente vez que se abra). Fuera de
+desarrollo la app usa siempre `https://mecanifique.onrender.com`, porque una
+actualización no trae las variables del build. `runtimeVersion` sigue a
+`version` de `app.json`: si un cambio agrega un módulo nativo o un permiso,
+hay que subir `version` (1.0.1, 1.0.2…) y compilar un APK nuevo; los APK
+viejos no reciben actualizaciones de otro runtime.
+
 **Notificaciones push (Firebase Cloud Messaging).** Desde el SDK 53, Expo Go
 ya no recibe avisos push en Android: se prueban con el APK. Se necesitan dos
 piezas del proyecto de Firebase `mecanifique-a9018`:
