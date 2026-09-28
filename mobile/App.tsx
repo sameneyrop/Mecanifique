@@ -1364,6 +1364,27 @@ export default function App() {
     }
   }
 
+  // "¿No te llegó el correo de confirmación?": Supabase lo manda otra vez.
+  async function handleResendConfirmation(email: string) {
+    const trimmed = email.trim();
+    if (!trimmed.includes('@')) {
+      setMessage('Escribe tu correo arriba y vuelve a tocar «¿No te llegó el correo de confirmación?»');
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await apiRequest<{ message: string }>('/auth/v2/resend-confirmation', {
+        method: 'POST',
+        body: { email: trimmed },
+      });
+      setMessage(response.message);
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function completeOnboarding() {
     await AsyncStorage.setItem(ONBOARDING_KEY, '1');
     setOnboardingSeen(true);
@@ -2951,6 +2972,7 @@ export default function App() {
                 onSubmit={handleAuthSubmit}
                 onShowOnboarding={showOnboardingAgain}
                 onForgotPassword={handleForgotPassword}
+                onResendConfirmation={handleResendConfirmation}
               />
             </View>
             </ScrollView>

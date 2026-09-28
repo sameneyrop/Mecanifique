@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Confirma tu nuevo correo de Mecanifique</title>
+</head>
+<body style="margin:0;padding:0;background-color:#E3ECF8;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#E3ECF8;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+          <tr>
+            <td style="padding:0 4px 20px;">
+              <img src="https://mecanifique.vercel.app/assets/mecanifique-logo-blue.png" width="170" alt="Mecanifique" style="display:block;border:0;width:170px;height:auto;">
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#ffffff;border-radius:20px;padding:32px 28px;font-family:'Plus Jakarta Sans','Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0b0f22;">
+              <h1 style="margin:0 0 12px;font-size:24px;line-height:1.25;font-weight:800;color:#0b0f22;">Confirma tu nuevo correo</h1>
+              <p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#4A5568;">Pediste cambiar el correo de tu cuenta de Mecanifique a <b style="color:#0b0f22;">{{ .NewEmail }}</b>. Toca el botón para confirmarlo.</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-radius:999px;background-color:#2F8FEA;">
+                    <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 28px;font-family:'Plus Jakarta Sans','Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;font-weight:800;color:#ffffff;text-decoration:none;border-radius:999px;">Confirmar nuevo correo</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#4A5568;">Si el botón no funciona, copia este enlace en tu navegador:<br><a href="{{ .ConfirmationURL }}" style="color:#1C6DC4;word-break:break-all;">{{ .ConfirmationURL }}</a></p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 4px 0;font-family:'Plus Jakarta Sans','Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#4A5568;">
+              Si no pediste este cambio, ignora este correo y tu cuenta seguirá igual.<br>
+              Mecanifique · Aguascalientes, México
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

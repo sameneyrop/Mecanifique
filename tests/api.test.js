@@ -597,6 +597,15 @@ test("registro: una contraseña sin números se rechaza con un mensaje claro, si
   assert.equal(body.error, "La contraseña necesita al menos un número");
 });
 
+test("confirmación de correo: la página de regreso abre y reenviar pide un correo válido", async () => {
+  const page = await fetch(`${baseUrl}/auth/callback`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /confirmaste tu correo/);
+
+  const badEmail = await request("/auth/v2/resend-confirmation", { method: "POST", body: JSON.stringify({ email: "sin-arroba" }) });
+  assert.equal(badEmail.response.status, 400);
+});
+
 test("nueva contraseña: la página abre y los datos inválidos se rechazan sin llamar a Supabase", async () => {
   const page = await fetch(`${baseUrl}/restablecer-contrasena`);
   assert.equal(page.status, 200);

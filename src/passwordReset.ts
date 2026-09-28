@@ -10,6 +10,61 @@
 export const FORGOT_PASSWORD_MESSAGE =
   "Si hay una cuenta con ese correo, te mandamos un enlace para crear una nueva contraseña. Revisa también tu correo no deseado.";
 
+export const RESEND_CONFIRMATION_MESSAGE =
+  "Si tu cuenta está pendiente de confirmar, te mandamos otro correo. Revisa también tu correo no deseado.";
+
+// El mismo logo que los correos (email-templates/).
+const LOGO =
+  '<img src="https://mecanifique.vercel.app/assets/mecanifique-logo-blue.png" alt="Mecanifique" width="170" style="display:block;height:auto">';
+
+/**
+ * A donde regresa el enlace del correo de confirmación (y el de cambio de
+ * correo). Supabase manda el resultado en el hash: si trae error, el enlace
+ * venció o ya se usó.
+ */
+export function emailConfirmedPage(): string {
+  return `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Correo confirmado · Mecanifique</title>
+<style>
+  body { margin: 0; background: #E3ECF8; color: #0b0f22; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  .card { background: #fff; border-radius: 20px; padding: 24px 20px; margin-top: 20px; }
+  h1 { font-size: 24px; margin: 0 0 8px; }
+  p { font-size: 16px; line-height: 1.55; color: #4A5568; margin: 0; }
+  .check { width: 56px; height: 56px; border-radius: 28px; background: #E3F4EA; color: #1a7f4b; font-size: 30px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body><main>
+${LOGO}
+<div class="card" id="ok">
+  <div class="check" aria-hidden="true">✓</div>
+  <h1>¡Listo, confirmaste tu correo!</h1>
+  <p>Regresa a la app Mecanifique e inicia sesión con tu correo y tu contraseña.</p>
+</div>
+<div class="card" id="expired" hidden>
+  <h1>Este enlace ya no sirve</h1>
+  <p>Vence después de un rato o ya se usó. Abre la app, toca «Iniciar sesión» y luego «¿No te llegó el correo de confirmación?» para pedir otro.</p>
+</div>
+<script>
+  (function () {
+    var params = new URLSearchParams(location.hash.slice(1));
+    if (params.get("error") || params.get("error_code")) {
+      document.getElementById("ok").hidden = true;
+      document.getElementById("expired").hidden = false;
+    }
+    // La sesión que trae el enlace no se usa aquí: no se deja en la dirección.
+    if (location.hash) history.replaceState(null, "", location.pathname);
+  })();
+</script>
+</main></body>
+</html>`;
+}
+
 export function resetPasswordPage(): string {
   return `<!doctype html>
 <html lang="es">
@@ -20,7 +75,6 @@ export function resetPasswordPage(): string {
 <style>
   body { margin: 0; background: #E3ECF8; color: #0b0f22; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
-  .logo { color: #1C6DC4; font-weight: 800; font-size: 22px; }
   .card { background: #fff; border-radius: 20px; padding: 20px; margin-top: 16px; }
   h1 { font-size: 24px; margin: 16px 0 8px; }
   p { font-size: 16px; line-height: 1.5; color: #4A5568; }
@@ -33,7 +87,7 @@ export function resetPasswordPage(): string {
 </style>
 </head>
 <body><main>
-<div class="logo">Mecanifique</div>
+${LOGO}
 <h1>Crea una nueva contraseña</h1>
 <div class="card" id="form-card">
   <form id="form">

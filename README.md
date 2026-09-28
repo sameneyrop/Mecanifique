@@ -184,6 +184,17 @@ mantener informadas a ambas partes.
   /api/service-requests/:id/tip-info`, solo el cliente de un servicio
   terminado; `src/tips.ts`). Mecanifique no cobra ni pasa ese dinero, por la
   misma razón que no cobra el trabajo del mecánico (ver "Modelo de pagos").
+- **Pantalla de carga**: la nativa (`expo-splash-screen` en `app.json`: fondo
+  `#0072B2` y el logo blanco `assets/splash-logo.png` a 180 de ancho) se
+  cambia sin que se note por `components/AnimatedSplash.tsx`: el logo queda
+  igual y en el mismo lugar (no se altera), y encima aparece el coche del
+  ícono (`assets/splash-car.png`, recortado de `android-icon-monochrome.png`)
+  sobre un elevador de taller que lo sube y lo baja como indicador de carga;
+  al terminar el elevador baja y la pantalla se desvanece. Con "reducir
+  movimiento" activado el coche se queda quieto. Se queda mientras la app
+  revisa la sesión, al menos 1.4 s, y si tarda más de 6 s explica que el
+  servidor puede tardar en despertar. Cambiar la animada llega por EAS
+  Update; cambiar la nativa requiere un APK nuevo.
 - **Verificación por teléfono (SMS)** (`src/phoneVerification.ts`,
   `mobile/screens/PhoneVerificationScreen.tsx`): con Twilio Verify
   configurado (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,

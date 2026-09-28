@@ -19,6 +19,7 @@ import {
   refreshSupabaseSession,
   updateSupabaseUser,
   sendSupabasePasswordRecovery,
+  resendSupabaseSignupConfirmation,
   isSupabaseAdminConfigured,
   deleteSupabaseAuthUser,
   SignupError,
@@ -47,7 +48,12 @@ import {
   settleServiceFee
 } from "./serviceFees";
 import { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } from "./tracking";
-import { FORGOT_PASSWORD_MESSAGE, resetPasswordPage } from "./passwordReset";
+import {
+  FORGOT_PASSWORD_MESSAGE,
+  RESEND_CONFIRMATION_MESSAGE,
+  emailConfirmedPage,
+  resetPasswordPage
+} from "./passwordReset";
 import {
   PhoneVerificationError,
   confirmVerificationCode,
@@ -264,15 +270,9 @@ app.get(
     res.send(photo.data);
   })
 );
+// A donde regresa el enlace del correo de confirmación (ver src/passwordReset.ts).
 app.get("/auth/callback", (_req, res) => {
-  res.type("html").send(`<!doctype html>
-<html lang="es">
-  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mecanifique</title></head>
-  <body style="font-family:system-ui,sans-serif;padding:2rem;max-width:42rem;margin:auto">
-    <h1>Correo confirmado</h1>
-    <p>Tu correo fue confirmado correctamente. Regresa a la app Mecanifique e inicia sesión.</p>
-  </body>
-</html>`);
+  res.type("html").send(emailConfirmedPage());
 });
 
 app.get("/supabase/health", handleAsync(async (_req, res) => {
@@ -2144,6 +2144,21 @@ app.post("/auth/v2/forgot-password", handleAsync(async (req, res) => {
     console.error("No se pudo mandar el correo de nueva contraseña:", error);
   }
   res.json({ message: FORGOT_PASSWORD_MESSAGE });
+}));
+
+// "¿No te llegó el correo de confirmación?": Supabase vuelve a mandarlo. La
+// respuesta es la misma haya o no cuenta pendiente.
+app.post("/auth/v2/resend-confirmation", handleAsync(async (req, res) => {
+  if (applyRateLimit("resend-confirmation", req, res, 3)) {
+    return;
+  }
+  const { email } = z.object({ email: z.string().trim().email().max(254) }).parse(req.body);
+  try {
+    await resendSupabaseSignupConfirmation(email.toLowerCase(), `${publicBaseUrl(req)}/auth/callback`);
+  } catch (error) {
+    console.error("No se pudo reenviar el correo de confirmación:", error);
+  }
+  res.json({ message: RESEND_CONFIRMATION_MESSAGE });
 }));
 
 app.get("/restablecer-contrasena", (_req, res) => {

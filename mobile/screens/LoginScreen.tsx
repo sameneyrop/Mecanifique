@@ -95,6 +95,7 @@ export function LoginScreen({
   onSubmit,
   onShowOnboarding,
   onForgotPassword,
+  onResendConfirmation,
 }: {
   authMode: AuthMode;
   setAuthMode: (mode: AuthMode) => void;
@@ -110,6 +111,7 @@ export function LoginScreen({
   onSubmit: () => void;
   onShowOnboarding: () => void;
   onForgotPassword: (email: string) => void;
+  onResendConfirmation: (email: string) => void;
 }) {
   const { setMessage } = useAppContext();
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -179,6 +181,13 @@ export function LoginScreen({
                 accessibilityRole="link"
               >
                 ¿Olvidaste tu contraseña?
+              </Text>
+              <Text
+                style={[styles.textLink, styles.forgotPasswordLink]}
+                onPress={() => onResendConfirmation(loginForm.email)}
+                accessibilityRole="link"
+              >
+                ¿No te llegó el correo de confirmación?
               </Text>
             </View>
           </Card>

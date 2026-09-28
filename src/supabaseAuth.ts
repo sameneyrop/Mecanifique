@@ -497,6 +497,21 @@ export async function sendSupabasePasswordRecovery(email: string, redirectTo: st
   }
 }
 
+/** Vuelve a mandar el correo de confirmación de una cuenta sin confirmar. */
+export async function resendSupabaseSignupConfirmation(email: string, redirectTo: string): Promise<void> {
+  const url = new URL(`${supabaseUrl}/auth/v1/resend`);
+  url.searchParams.set("redirect_to", redirectTo);
+  const response = await supabaseFetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: supabaseAnonKey },
+    body: JSON.stringify({ type: "signup", email }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(getSupabaseError(data as Record<string, unknown>, "No se pudo reenviar el correo"));
+  }
+}
+
 export async function updateSupabaseUser(
   token: string,
   changes: { password?: string; data?: Record<string, unknown> }

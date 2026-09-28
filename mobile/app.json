@@ -50,6 +50,15 @@
           "cameraPermission": "Mecanifique usa la cámara para que tomes fotos de tu trabajo o tu taller.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0072B2",
+          "image": "./assets/splash-logo.png",
+          "imageWidth": 180,
+          "resizeMode": "contain"
+        }
       ]
     ],
     "web": {
