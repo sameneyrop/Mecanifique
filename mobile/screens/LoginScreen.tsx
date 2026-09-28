@@ -1,10 +1,14 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { colors } from '../colors';
 import { styles } from '../styles';
+import { useAppContext } from '../context/AppContext';
 import { Card, ChoiceTile, Field, Illustration, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
-import { openPrivacyNotice, openTerms } from '../utils';
+import { PASSWORD_RULE_TEXT, isValidPassword, openPrivacyNotice, openTerms } from '../utils';
 
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicSignupStep = 'account' | 'work';
@@ -34,21 +38,30 @@ const EMAIL_INPUT_PROPS = {
   placeholder: 'correo@ejemplo.com',
 } as const;
 
-// Al registrarse: los términos y el aviso quedan a la vista antes de crear
-// la cuenta.
-function PrivacyConsent() {
+// Al registrarse: casilla obligatoria de mayoría de edad y aceptación de
+// los términos y el aviso (antes era solo un texto).
+function ConsentCheck({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
   return (
-    <Text style={styles.consentNote}>
-      Al crear tu cuenta aceptas los{' '}
-      <Text style={styles.textLink} onPress={() => void openTerms()} accessibilityRole="link">
-        Términos y condiciones
-      </Text>{' '}
-      y el{' '}
-      <Text style={styles.textLink} onPress={() => void openPrivacyNotice()} accessibilityRole="link">
-        Aviso de privacidad
+    <Pressable
+      style={styles.consentRow}
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      hitSlop={6}
+    >
+      <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={24} color={colors.primary} />
+      <Text style={[styles.consentNote, styles.consentText, styles.flex]}>
+        Tengo 18 años o más y acepto los{' '}
+        <Text style={styles.textLink} onPress={() => void openTerms()} accessibilityRole="link">
+          Términos y condiciones
+        </Text>{' '}
+        y el{' '}
+        <Text style={styles.textLink} onPress={() => void openPrivacyNotice()} accessibilityRole="link">
+          Aviso de privacidad
+        </Text>
+        .
       </Text>
-      .
-    </Text>
+    </Pressable>
   );
 }
 
@@ -98,7 +111,26 @@ export function LoginScreen({
   onShowOnboarding: () => void;
   onForgotPassword: (email: string) => void;
 }) {
+  const { setMessage } = useAppContext();
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const hero = HERO_COPY[authMode];
+
+  function passwordOk(password: string): boolean {
+    if (!isValidPassword(password)) {
+      setMessage(`Tu contraseña necesita ${PASSWORD_RULE_TEXT.toLowerCase()}.`);
+      return false;
+    }
+    return true;
+  }
+
+  function submitSignup(password: string) {
+    if (!passwordOk(password)) return;
+    if (!acceptedTerms) {
+      setMessage('Para crear tu cuenta, confirma que tienes 18 años o más y aceptas los Términos.');
+      return;
+    }
+    onSubmit();
+  }
   const signingUp = authMode !== 'login';
 
   return (
@@ -213,11 +245,11 @@ export function LoginScreen({
                       onChangeText={(value) => setCustomerForm({ ...customerForm, password: value })}
                       secureTextEntry
                       autoCapitalize="none"
-                      placeholder="Mínimo 8 caracteres"
+                      placeholder={PASSWORD_RULE_TEXT}
                     />
                   </Field>
-                  <PrimaryButton title="Crear cuenta" onPress={onSubmit} busy={busy} />
-                  <PrivacyConsent />
+                  <ConsentCheck checked={acceptedTerms} onToggle={() => setAcceptedTerms((value) => !value)} />
+                  <PrimaryButton title="Crear cuenta" onPress={() => submitSignup(customerForm.password)} busy={busy} />
                 </>
               )}
 
@@ -261,10 +293,15 @@ export function LoginScreen({
                           onChangeText={(value) => setMechanicForm({ ...mechanicForm, password: value })}
                           secureTextEntry
                           autoCapitalize="none"
-                          placeholder="Mínimo 8 caracteres"
+                          placeholder={PASSWORD_RULE_TEXT}
                         />
                       </Field>
-                      <PrimaryButton title="Continuar" onPress={() => setMechanicSignupStep('work')} />
+                      <PrimaryButton
+                        title="Continuar"
+                        onPress={() => {
+                          if (passwordOk(mechanicForm.password)) setMechanicSignupStep('work');
+                        }}
+                      />
                     </>
                   ) : (
                     <>
@@ -292,8 +329,8 @@ export function LoginScreen({
                       </Field>
                       <Text style={styles.smallText}>Tu ubicación se toma sola al abrir la app.</Text>
                       <SecondaryButton title="Volver" onPress={() => setMechanicSignupStep('account')} />
-                      <PrimaryButton title="Crear cuenta" onPress={onSubmit} busy={busy} />
-                      <PrivacyConsent />
+                      <ConsentCheck checked={acceptedTerms} onToggle={() => setAcceptedTerms((value) => !value)} />
+                      <PrimaryButton title="Crear cuenta" onPress={() => submitSignup(mechanicForm.password)} busy={busy} />
                     </>
                   )}
                 </>

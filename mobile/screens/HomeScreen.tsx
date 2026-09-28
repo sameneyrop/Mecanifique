@@ -79,11 +79,13 @@ type HomeScreenProps = {
   onUseMyLocation: () => void;
 };
 
+// Solo lo que la app de verdad hace: prometer algo que no se garantiza
+// ("garantía", "llegada rápida") puede contar como publicidad engañosa.
 const TRUST_BADGES: Array<{ icon: keyof typeof Ionicons.glyphMap; label: string }> = [
   { icon: 'shield-checkmark-outline', label: 'Mecánicos verificados' },
-  { icon: 'star-outline', label: 'Experiencia comprobada' },
-  { icon: 'location-outline', label: 'Llegada rápida' },
-  { icon: 'ribbon-outline', label: 'Garantía real' },
+  { icon: 'star-outline', label: 'Reseñas de clientes reales' },
+  { icon: 'document-text-outline', label: 'Cotización antes de reparar' },
+  { icon: 'navigate-outline', label: 'Síguelo en camino' },
 ];
 
 // Un solo botón grande por paso: el mecánico no tiene que elegir el estado

@@ -17,7 +17,7 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
 } from '../components/ui';
-import { normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
+import { PASSWORD_RULE_TEXT, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 
@@ -98,8 +98,8 @@ function SecurityPanel({
   const [form, setForm] = useState({ password: '', confirm: '' });
 
   async function submit() {
-    if (form.password.length < 8) {
-      setMessage('La contraseña debe tener al menos 8 caracteres');
+    if (!isValidPassword(form.password)) {
+      setMessage(`La contraseña necesita ${PASSWORD_RULE_TEXT.toLowerCase()}`);
       return;
     }
     if (form.password !== form.confirm) {
@@ -119,7 +119,7 @@ function SecurityPanel({
           value={form.password}
           secureTextEntry
           autoCapitalize="none"
-          placeholder="Mínimo 8 caracteres"
+          placeholder={PASSWORD_RULE_TEXT}
           onChangeText={(value) => setForm({ ...form, password: value })}
         />
       </Field>

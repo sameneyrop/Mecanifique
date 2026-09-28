@@ -3,6 +3,14 @@ import * as WebBrowser from 'expo-web-browser';
 
 // Mismo aviso que publica el sitio web (web/privacidad.html): un solo texto
 // que mantener, y es el enlace que va en la ficha de Google Play.
+// Contraseña: al menos 8 caracteres, con letras y números (el servidor
+// revisa lo mismo).
+export const PASSWORD_RULE_TEXT = 'Mínimo 8 caracteres, con letras y números';
+
+export function isValidPassword(password: string): boolean {
+  return password.length >= 8 && password.length <= 72 && /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(password) && /\d/.test(password);
+}
+
 export const PRIVACY_NOTICE_URL = 'https://mecanifique.vercel.app/privacidad';
 export const TERMS_URL = 'https://mecanifique.vercel.app/terminos';
 

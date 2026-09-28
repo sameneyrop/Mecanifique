@@ -184,6 +184,22 @@ mantener informadas a ambas partes.
   /api/service-requests/:id/tip-info`, solo el cliente de un servicio
   terminado; `src/tips.ts`). Mecanifique no cobra ni pasa ese dinero, por la
   misma razón que no cobra el trabajo del mecánico (ver "Modelo de pagos").
+- **Verificación por teléfono (SMS)** (`src/phoneVerification.ts`,
+  `mobile/screens/PhoneVerificationScreen.tsx`): con Twilio Verify
+  configurado (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+  `TWILIO_VERIFY_SERVICE_SID`), cada cuenta confirma su número con un código
+  al registrarse o al cambiarlo, y otra vez al entrar desde un teléfono nuevo.
+  El servidor crea el identificador del teléfono al confirmar el primer
+  código; la app lo guarda cifrado y lo manda en `X-Device-Id`. Mientras
+  falte, todo responde 403 `PHONE_VERIFICATION_REQUIRED` salvo `/auth/*`,
+  `/api/account/verification*` y eliminar la cuenta. Sin esas variables queda
+  apagada. **Encenderla solo cuando todos tengan un APK con esta pantalla**:
+  uno viejo se quedaría bloqueado sin forma de verificarse.
+- **Registro**: casilla obligatoria de mayoría de edad y aceptación de
+  Términos y Aviso de privacidad; contraseñas de al menos 8 caracteres con
+  letras y números (app y servidor); límite de intentos. El servidor confía
+  en el proxy de Render (`trust proxy`): antes todos los usuarios compartían
+  la IP del proxy y los límites de intentos eran para todos juntos.
 - **Cotización obligatoria antes de reparar** (`src/quotes.ts`,
   `mobile/components/Quote.tsx`): la tarifa del perfil es "Visita y
   diagnóstico" (`mechanics.labor_rate`). Después del diagnóstico el mecánico

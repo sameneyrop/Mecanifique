@@ -16,6 +16,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
 import { PromotionsScreen } from './screens/PromotionsScreen';
 import { NotificationsScreen, notificationTarget } from './screens/NotificationsScreen';
+import { PhoneVerificationScreen, type PhoneVerificationStatus } from './screens/PhoneVerificationScreen';
 import { BottomNavButton, ServerWakingBanner, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
 import {
@@ -332,6 +333,9 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || defaultApiBaseUrl;
 const AUTH_TOKEN_KEY = 'mecanifique.auth.token';
 const AUTH_USER_KEY = 'mecanifique.auth.user';
 const AUTH_REFRESH_KEY = 'mecanifique.auth.refresh';
+// Identificador de este teléfono para la verificación por SMS (lo crea el
+// servidor al confirmar el primer código). No se borra al cerrar sesión.
+const DEVICE_ID_KEY = 'mecanifique.device.id';
 const SESSION_EXPIRED_MESSAGE = 'Tu sesión expiró. Vuelve a iniciar sesión.';
 const ONBOARDING_KEY = 'mecanifique.onboarding.seen';
 // El servidor (Render gratis) se duerme tras 15 min sin uso y tarda de 30 a
@@ -552,6 +556,9 @@ export default function App() {
   // Notificaciones se abre desde cualquier pantalla (campana de arriba);
   // "atrás" regresa a donde estaba.
   const notificationsReturnScreen = useRef<AppScreen>('home');
+  // Verificación por teléfono pendiente (ver PhoneVerificationScreen).
+  const deviceIdRef = useRef<string | null>(null);
+  const [phoneVerification, setPhoneVerification] = useState<PhoneVerificationStatus | null>(null);
   const [publicProfileForm, setPublicProfileForm] = useState({
     bio: '',
     coverPhotoUrl: '',
@@ -657,6 +664,7 @@ export default function App() {
   useEffect(() => {
     async function restoreSession() {
       let hadSession = false;
+      deviceIdRef.current = await SecureStore.getItemAsync(DEVICE_ID_KEY).catch(() => null);
       try {
         let [storedToken, storedUser, storedRefreshToken] = await Promise.all([
           SecureStore.getItemAsync(AUTH_TOKEN_KEY),
@@ -818,6 +826,7 @@ export default function App() {
       return;
     }
 
+    checkPhoneVerification().catch(() => undefined);
     loadNotifications().catch((error) => setMessage(formatError(error)));
     // Sin avisos push la app sigue funcionando; el error queda en el log
     // (adb logcat) para poder diagnosticar por qué un teléfono no se registró.
@@ -1356,6 +1365,9 @@ export default function App() {
     if (options.token) {
       headers.Authorization = `Bearer ${options.token}`;
     }
+    if (deviceIdRef.current) {
+      headers['X-Device-Id'] = deviceIdRef.current;
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
@@ -1406,6 +1418,10 @@ export default function App() {
     const payload = contentType.includes('application/json') ? await response.json() : await response.text();
 
     if (!response.ok) {
+      // Falta confirmar el teléfono: se muestra la pantalla para hacerlo.
+      if (response.status === 403 && typeof payload === 'object' && payload?.code === 'PHONE_VERIFICATION_REQUIRED') {
+        checkPhoneVerificationRef.current().catch(() => undefined);
+      }
       let errorMessage = 'Error inesperado';
       if (typeof payload === 'string') {
         errorMessage = normalizeServerTextError(payload);
@@ -2046,6 +2062,29 @@ export default function App() {
     setRequestMessages(data);
   }
 
+  async function checkPhoneVerification() {
+    if (!tokenRef.current) return;
+    const status = await apiRequest<PhoneVerificationStatus>('/api/account/verification', { token: tokenRef.current });
+    setPhoneVerification(status.required ? status : null);
+  }
+  const checkPhoneVerificationRef = useRef(checkPhoneVerification);
+  checkPhoneVerificationRef.current = checkPhoneVerification;
+
+  // Confirmado el teléfono: se guarda su identificador y se carga lo que
+  // falló mientras tanto.
+  async function handlePhoneVerified(deviceId: string) {
+    deviceIdRef.current = deviceId;
+    await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceId).catch(() => undefined);
+    setPhoneVerification(null);
+    const activeToken = tokenRef.current || token;
+    loadMyRequests(activeToken).catch(() => undefined);
+    loadNotifications(activeToken).catch(() => undefined);
+    registerPushToken(activeToken).catch(() => undefined);
+    loadFavorites().catch(() => undefined);
+    loadServiceFeeConfig().catch(() => undefined);
+    loadMechanicProfile().catch(() => undefined);
+  }
+
   function openNotifications() {
     if (currentScreen !== 'notifications') {
       notificationsReturnScreen.current = currentScreen;
@@ -2120,9 +2159,6 @@ export default function App() {
 
     try {
       let response: AuthResponse;
-      
-      console.log('🔵 API_BASE_URL:', API_BASE_URL);
-      console.log('🔵 Auth mode:', authMode);
 
       if (authMode === 'login') {
           response = await apiRequest<AuthResponse>('/auth/v2/login', {
@@ -2887,6 +2923,39 @@ export default function App() {
                 onForgotPassword={handleForgotPassword}
               />
             </View>
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (phoneVerification?.required) {
+    return (
+      <View style={styles.safeArea}>
+        <SafeAreaView style={styles.safeAreaInner}>
+          <StatusBar style="dark" />
+          <Toast message={message} onDismiss={() => setMessage('')} />
+          <View style={styles.content}>
+            <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
+            <ServerWakingBanner visible={serverWaking} />
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.appShell}>
+                <PhoneVerificationScreen
+                  api={api}
+                  status={phoneVerification}
+                  onVerified={(deviceId) => void handlePhoneVerified(deviceId)}
+                  onLogout={() => {
+                    setPhoneVerification(null);
+                    void handleLogout();
+                  }}
+                />
+              </View>
             </ScrollView>
           </View>
         </SafeAreaView>

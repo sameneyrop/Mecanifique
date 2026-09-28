@@ -535,6 +535,68 @@ test("con coordenadas: un mecánico lejano no se elige solo porque su ciudad/zon
   assert.equal(request.mechanicId, null, "a 100 km no es un mecánico cercano, aunque el texto de la zona coincida");
 });
 
+test("verificación por teléfono: confirmar el número, confiar en el teléfono y volver a pedirlo en uno nuevo", async () => {
+  const {
+    confirmVerificationCode,
+    getVerificationStatus,
+    normalizeMexicanPhone,
+    sendVerificationCode,
+    setVerifyGatewayForTests
+  } = require("../src/phoneVerification.ts");
+
+  assert.equal(normalizeMexicanPhone("449 123 4567"), "+524491234567");
+  assert.equal(normalizeMexicanPhone("+52 1 449 123 4567"), "+524491234567");
+  assert.equal(normalizeMexicanPhone("sin-telefono-3"), null);
+
+  const sent = [];
+  setVerifyGatewayForTests({
+    async send(to) { sent.push(to); },
+    async check(_to, code) { return code === "123456"; }
+  });
+  const localPhone = uniquePhone();
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Teléfono", localPhone]);
+  createdRows.customers.push(customer.lastID);
+  const supabaseUserId = crypto.randomUUID();
+  const created = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, customer_id)
+     VALUES ('customer', ?, ?, 'Cliente Teléfono', 'x', 'x', ?)`,
+    [`${supabaseUserId}@example.test`, supabaseUserId, customer.lastID]
+  );
+  const viewer = { id: created.lastID, customerId: customer.lastID, mechanicId: null };
+  try {
+    const first = await getVerificationStatus(viewer, "telefono-a");
+    assert.equal(first.required, true);
+    assert.equal(first.reason, "phone");
+
+    await sendVerificationCode(viewer);
+    assert.deepEqual(sent, [`+52${localPhone}`]);
+    await assert.rejects(confirmVerificationCode(viewer, "telefono-a", "000000"), (error) => error.status === 400);
+    await confirmVerificationCode(viewer, "telefono-a", "123456");
+    assert.equal((await getVerificationStatus(viewer, "telefono-a")).required, false);
+
+    // Otro teléfono: pide código otra vez, ya no por el número.
+    const otherDevice = await getVerificationStatus(viewer, "telefono-b");
+    assert.equal(otherDevice.reason, "device");
+
+    // Cambió su número: hay que confirmarlo de nuevo, aun en el teléfono de confianza.
+    await sendVerificationCode(viewer, `449${crypto.randomInt(1_000_000, 9_999_999)}`);
+    assert.equal((await getVerificationStatus(viewer, "telefono-a")).reason, "phone");
+  } finally {
+    setVerifyGatewayForTests(undefined);
+    await run("DELETE FROM trusted_devices WHERE user_id = ?", [created.lastID]);
+    await run("DELETE FROM users WHERE id = ?", [created.lastID]);
+  }
+});
+
+test("registro: una contraseña sin números se rechaza con un mensaje claro, sin llamar a Supabase", async () => {
+  const { response, body } = await request("/auth/v2/register/customer", {
+    method: "POST",
+    body: JSON.stringify({ fullName: "Prueba Contraseña", email: "prueba@example.test", phone: "5512345678", password: "solamenteletras" })
+  });
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "La contraseña necesita al menos un número");
+});
+
 test("nueva contraseña: la página abre y los datos inválidos se rechazan sin llamar a Supabase", async () => {
   const page = await fetch(`${baseUrl}/restablecer-contrasena`);
   assert.equal(page.status, 200);
@@ -628,6 +690,23 @@ test("conexión: un mecánico cuyo teléfono dejó de dar señal se desconecta y
     assert.equal(byId[active], 1, "con señal reciente: sigue conectado");
     const notice = await get("SELECT title FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 1", [user.lastID]);
     assert.equal(notice?.title, "Te desconectamos");
+
+    // Con un servicio en curso: sigue conectado y se le recuerda una sola vez.
+    await run("UPDATE mechanics SET is_online = 1, last_seen_at = datetime('now', '-10 minutes') WHERE id = ?", [silent]);
+    const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Servicio", uniquePhone()]);
+    createdRows.customers.push(customer.lastID);
+    const job = await run(
+      `INSERT INTO service_requests (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time,
+         city, zone, status, mechanic_id)
+       VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', ?, 'Centro', 'en_route', ?)`,
+      [customer.lastID, city, silent]
+    );
+    createdRows.requests.push(job.lastID);
+    await sweepStaleMechanics();
+    await sweepStaleMechanics();
+    assert.equal((await get("SELECT is_online AS isOnline FROM mechanics WHERE id = ?", [silent])).isOnline, 1);
+    const reminders = await all("SELECT id FROM notifications WHERE user_id = ? AND title = 'Tienes un servicio en curso'", [user.lastID]);
+    assert.equal(reminders.length, 1, "un solo recordatorio aunque el barrido corra varias veces");
   } finally {
     await run("DELETE FROM notifications WHERE user_id = ?", [user.lastID]);
     await run("DELETE FROM users WHERE id = ?", [user.lastID]);

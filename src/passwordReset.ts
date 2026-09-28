@@ -37,7 +37,7 @@ export function resetPasswordPage(): string {
 <h1>Crea una nueva contraseña</h1>
 <div class="card" id="form-card">
   <form id="form">
-    <label for="password">Nueva contraseña</label>
+    <label for="password">Nueva contraseña (mínimo 8 caracteres, con letras y números)</label>
     <input id="password" type="password" minlength="8" autocomplete="new-password" required>
     <label for="confirm">Escríbela otra vez</label>
     <input id="confirm" type="password" minlength="8" autocomplete="new-password" required>
@@ -64,7 +64,7 @@ export function resetPasswordPage(): string {
     document.getElementById("form").addEventListener("submit", function (event) {
       event.preventDefault();
       var password = document.getElementById("password").value;
-      if (password.length < 8) { error.textContent = "Usa al menos 8 caracteres."; error.hidden = false; return; }
+      if (password.length < 8 || !/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(password) || !/\\d/.test(password)) { error.textContent = "Usa al menos 8 caracteres, con letras y números."; error.hidden = false; return; }
       if (password !== document.getElementById("confirm").value) { error.textContent = "Las dos contraseñas no coinciden."; error.hidden = false; return; }
       var button = document.getElementById("submit");
       button.disabled = true;

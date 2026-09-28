@@ -118,6 +118,14 @@ export const styles = StyleSheet.create({
     height: 25,
   },
   // En la barra de arriba: centrado con el saludo y la campana.
+  consentText: {
+    textAlign: 'left',
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
   forgotPasswordLink: {
     alignSelf: 'center',
     paddingVertical: 6,
@@ -214,6 +222,18 @@ export const styles = StyleSheet.create({
   illustrationCompact: {
     height: 160,
     marginVertical: 4,
+  },
+  // Color del "papel" de las ilustraciones (su fondo), para enmarcar las que
+  // se muestran enteras.
+  illustrationFrame: {
+    backgroundColor: '#FCFDFC',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  illustrationFill: {
+    width: '100%',
+    height: '100%',
   },
   screenStack: {
     gap: 14,

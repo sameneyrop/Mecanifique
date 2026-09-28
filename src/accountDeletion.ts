@@ -57,6 +57,7 @@ export async function anonymizeAccount(user: DeletableUser): Promise<void> {
   await transaction([
     // Solo de la persona: se borra.
     { sql: "DELETE FROM push_tokens WHERE user_id = ?", params: [userId] },
+    { sql: "DELETE FROM trusted_devices WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM notifications WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM sessions WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM favorite_mechanics WHERE user_id = ? OR mechanic_id = ?", params: [userId, mechanicId] },
@@ -112,7 +113,8 @@ export async function anonymizeAccount(user: DeletableUser): Promise<void> {
     {
       sql: `UPDATE users
             SET full_name = 'Cuenta eliminada', login = 'eliminada-' || id || '@mecanifique.invalid',
-                supabase_user_id = NULL, deleted_at = CURRENT_TIMESTAMP
+                supabase_user_id = NULL, verified_phone = NULL, phone_verified_at = NULL,
+                deleted_at = CURRENT_TIMESTAMP
             WHERE id = ?`,
       params: [userId]
     }

@@ -103,6 +103,9 @@ export async function initDb(): Promise<void> {
   // servicio en primer plano con la app en otra pantalla). Si deja de
   // llegar, el barrido lo desconecta (sweepStaleMechanics).
   await ensureColumn("mechanics", "last_seen_at", "ALTER TABLE mechanics ADD COLUMN last_seen_at TEXT");
+  // Cuándo se le recordó que cerró la app con un servicio en curso (una vez
+  // por cada vez que deja de dar señal).
+  await ensureColumn("mechanics", "stale_notice_at", "ALTER TABLE mechanics ADD COLUMN stale_notice_at TEXT");
   // Propina directa (src/tips.ts): CLABE opcional del mecánico y a nombre de
   // quién está. Solo la ve el cliente de un servicio terminado.
   await ensureColumn("mechanics", "tip_clabe", "ALTER TABLE mechanics ADD COLUMN tip_clabe TEXT");
@@ -576,6 +579,22 @@ export async function initDb(): Promise<void> {
       email TEXT NOT NULL,
       message TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Verificación por teléfono (ver src/phoneVerification.ts): el número
+  // confirmado de cada cuenta y los teléfonos desde los que ya entró.
+  await ensureColumn("users", "verified_phone", "ALTER TABLE users ADD COLUMN verified_phone TEXT");
+  await ensureColumn("users", "phone_verified_at", "ALTER TABLE users ADD COLUMN phone_verified_at TEXT");
+  await run(`
+    CREATE TABLE IF NOT EXISTS trusted_devices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, device_id),
+      FOREIGN KEY(user_id) REFERENCES users(id)
     )
   `);
 

@@ -84,10 +84,19 @@ export function Illustration({
   compact?: boolean;
   fit?: 'cover' | 'contain';
 }) {
+  if (fit === 'contain') {
+    // Entera dentro de un recuadro a todo lo ancho del mismo color que el
+    // fondo de las ilustraciones: se ve como tarjeta, no como un cuadro suelto.
+    return (
+      <View style={[styles.illustration, compact && styles.illustrationCompact, styles.illustrationFrame]}>
+        <Image source={source} resizeMode="contain" style={styles.illustrationFill} accessibilityIgnoresInvertColors />
+      </View>
+    );
+  }
   return (
     <Image
       source={source}
-      resizeMode={fit}
+      resizeMode="cover"
       style={[styles.illustration, compact && styles.illustrationCompact]}
       accessibilityIgnoresInvertColors
     />

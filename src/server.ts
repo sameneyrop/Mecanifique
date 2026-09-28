@@ -49,6 +49,13 @@ import {
 import { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } from "./tracking";
 import { FORGOT_PASSWORD_MESSAGE, resetPasswordPage } from "./passwordReset";
 import {
+  PhoneVerificationError,
+  confirmVerificationCode,
+  getVerificationStatus,
+  isPhoneVerificationEnabled,
+  sendVerificationCode
+} from "./phoneVerification";
+import {
   QuoteError,
   STATUSES_REQUIRING_QUOTE,
   acceptedQuotesTotal,
@@ -67,6 +74,10 @@ import {
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, findPhoto, savePhoto } from "./uploads";
 
 const app = express();
+// Render pone un proxy delante: sin esto, req.ip era la IP del proxy para
+// todos y los límites de intentos (login, registro, nueva contraseña) se
+// compartían entre todos los usuarios.
+app.set("trust proxy", 1);
 const port = Number(process.env.PORT ?? "4000");
 const httpServer = http.createServer(app);
 const realtimeChannels = new Map<string, Set<WebSocket>>();
@@ -185,6 +196,50 @@ app.use((req, res, next) => {
   next();
 });
 app.use(supabaseAuthMiddleware);
+
+// Verificación por teléfono (ver src/phoneVerification.ts): con Twilio
+// configurado, una cuenta con sesión debe tener su número confirmado y
+// entrar desde un teléfono ya verificado. Solo se dejan pasar las rutas para
+// verificarse, la sesión y eliminar la cuenta.
+const VERIFICATION_EXEMPT_PATHS = [/^\/auth\//, /^\/api\/account\/verification/, /^\/api\/account$/, /^\/health$/];
+// Solo se recuerdan los "ya verificado" (5 minutos) para no consultar la base
+// en cada petición.
+const verifiedDevicesCache = new Map<string, number>();
+
+function deviceIdFrom(req: Request): string | undefined {
+  const value = req.get("x-device-id")?.trim();
+  return value && value.length <= 100 ? value : undefined;
+}
+
+function forgetVerifiedDevices(userId: number): void {
+  for (const key of verifiedDevicesCache.keys()) {
+    if (key.startsWith(`${userId}:`)) verifiedDevicesCache.delete(key);
+  }
+}
+
+app.use(async (req, res, next) => {
+  if (!req.auth || !isPhoneVerificationEnabled() || VERIFICATION_EXEMPT_PATHS.some((pattern) => pattern.test(req.path))) {
+    next();
+    return;
+  }
+  try {
+    const deviceId = deviceIdFrom(req);
+    const cacheKey = `${req.auth.user.id}:${deviceId ?? ""}`;
+    if ((verifiedDevicesCache.get(cacheKey) ?? 0) > Date.now()) {
+      next();
+      return;
+    }
+    const status = await getVerificationStatus(req.auth.user, deviceId);
+    if (!status.required) {
+      verifiedDevicesCache.set(cacheKey, Date.now() + 5 * 60 * 1000);
+      next();
+      return;
+    }
+    res.status(403).json({ error: "Confirma tu teléfono para continuar.", code: "PHONE_VERIFICATION_REQUIRED" });
+  } catch (error) {
+    next(error);
+  }
+});
 // El sitio web (carpeta web/, publicada en Vercel) es la cara pública del
 // proyecto; la raíz de este servidor solo redirige ahí. Antes servía aquí un
 // panel de pruebas viejo que ya no funcionaba.
@@ -326,16 +381,26 @@ const serviceRequestSchema = z.object({
   longitude: z.number().optional()
 });
 
+// Contraseñas nuevas: al menos 8 caracteres, con letras y números (la app
+// revisa lo mismo: isValidPassword en mobile/utils.ts). Para entrar no se
+// exige, para no dejar fuera a cuentas creadas antes de la regla.
+const newPasswordSchema = z
+  .string()
+  .min(8)
+  .max(72)
+  .regex(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/, "La contraseña necesita al menos una letra")
+  .regex(/\d/, "La contraseña necesita al menos un número");
+
 const customerRegistrationSchema = z.object({
   fullName: z.string().min(3),
   email: z.string().email(),
   phone: z.string().min(10),
-  password: z.string().min(8)
+  password: newPasswordSchema
 });
 
 const mechanicRegistrationAuthSchema = mechanicRegistrationSchema.extend({
   email: z.string().email(),
-  password: z.string().min(8)
+  password: newPasswordSchema
 });
 
 const loginSchema = z.object({
@@ -1104,14 +1169,40 @@ async function touchMechanicPresence(mechanicId: number): Promise<void> {
 }
 
 export async function sweepStaleMechanics(): Promise<number> {
-  const stale = await all<{ mechanicId: number; userId: number | null }>(
-    `SELECT m.id AS mechanicId, u.id AS userId
+  const stale = await all<{
+    mechanicId: number;
+    userId: number | null;
+    activeJobId: number | null;
+    lastSeenAt: string | null;
+    noticeAt: string | null;
+  }>(
+    `SELECT m.id AS mechanicId, u.id AS userId, m.last_seen_at AS lastSeenAt, m.stale_notice_at AS noticeAt,
+            (SELECT sr.id FROM service_requests sr
+             WHERE sr.mechanic_id = m.id AND sr.status IN ${ACTIVE_JOB_STATUSES_SQL} LIMIT 1) AS activeJobId
      FROM mechanics m
      LEFT JOIN users u ON u.mechanic_id = m.id
      WHERE m.is_online = 1
        AND (m.last_seen_at IS NULL OR m.last_seen_at < datetime('now', '-${STALE_MECHANIC_MINUTES} minutes'))`
   );
   for (const row of stale) {
+    // Con un servicio en curso no se le desconecta (de todos modos no le
+    // llegan solicitudes y al terminar queda disponible): se le recuerda que
+    // abra la app, una vez por cada vez que deja de dar señal.
+    if (row.activeJobId) {
+      const alreadyReminded = row.noticeAt !== null && (row.lastSeenAt === null || row.noticeAt > row.lastSeenAt);
+      if (!alreadyReminded) {
+        await run("UPDATE mechanics SET stale_notice_at = CURRENT_TIMESTAMP WHERE id = ?", [row.mechanicId]);
+        if (row.userId) {
+          await createNotification(
+            row.userId,
+            "Tienes un servicio en curso",
+            "Cerraste Mecanifique con un servicio en curso. Ábrela para que tu cliente vea dónde vas y puedas marcar cada paso.",
+            { requestId: row.activeJobId }
+          );
+        }
+      }
+      continue;
+    }
     const updated = await run(
       "UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id = ? AND is_online = 1",
       [row.mechanicId]
@@ -1671,6 +1762,9 @@ app.patch("/api/admin/identity-verifications/:id", requireAuth, requireRole("adm
 app.post(
   "/auth/v2/register/customer",
   handleAsync(async (req, res) => {
+    if (applyRateLimit("auth-register", req, res, 5)) {
+      return;
+    }
     const payload = customerRegistrationSchema.parse(req.body);
     try {
       const result = await registerCustomerWithSupabase(
@@ -1708,6 +1802,9 @@ app.post(
 app.post(
   "/auth/v2/register/mechanic",
   handleAsync(async (req, res) => {
+    if (applyRateLimit("auth-register", req, res, 5)) {
+      return;
+    }
     const payload = mechanicRegistrationAuthSchema.parse(req.body);
     try {
       const result = await registerMechanicWithSupabase(
@@ -1971,12 +2068,64 @@ app.patch("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
     throw error;
   }
 
+  // Si cambió el teléfono, hay que volver a confirmarlo: verified_phone ya no
+  // coincide con el nuevo número.
+  if (payload.phone) {
+    forgetVerifiedDevices(authUser.id);
+  }
+
   // Mejor esfuerzo: si Supabase falla, el cambio local ya quedó.
   updateSupabaseUser(req.auth!.token, {
     data: { full_name: payload.fullName, ...(payload.phone ? { phone: payload.phone } : {}) }
   }).catch((error) => console.error("No se pudo copiar el nombre a Supabase", error));
 
   res.json({ user: { ...authUser, fullName: payload.fullName } });
+}));
+
+// ============================================================================
+// VERIFICACIÓN POR TELÉFONO (ver src/phoneVerification.ts)
+// ============================================================================
+
+function sendVerificationError(res: Response, error: unknown): boolean {
+  if (error instanceof PhoneVerificationError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+app.get("/api/account/verification", requireAuth, handleAsync(async (req, res) => {
+  res.json(await getVerificationStatus(req.auth!.user, deviceIdFrom(req)));
+}));
+
+app.post("/api/account/verification/send", requireAuth, handleAsync(async (req, res) => {
+  if (applyRateLimit(`verification-send:${req.auth!.user.id}`, req, res, 3, 10 * 60 * 1000)) {
+    return;
+  }
+  const { phone } = z.object({ phone: z.string().max(30).optional() }).parse(req.body ?? {});
+  try {
+    const result = await sendVerificationCode(req.auth!.user, phone);
+    forgetVerifiedDevices(req.auth!.user.id);
+    res.json(result);
+  } catch (error) {
+    if (!sendVerificationError(res, error)) {
+      console.error("No se pudo mandar el código de verificación:", error);
+      res.status(502).json({ error: "No pudimos mandar el SMS. Intenta de nuevo en un momento." });
+    }
+  }
+}));
+
+app.post("/api/account/verification/confirm", requireAuth, handleAsync(async (req, res) => {
+  if (applyRateLimit(`verification-confirm:${req.auth!.user.id}`, req, res, 10, 10 * 60 * 1000)) {
+    return;
+  }
+  const { code } = z.object({ code: z.string().trim().regex(/^\d{4,8}$/) }).parse(req.body);
+  try {
+    const { deviceId } = await confirmVerificationCode(req.auth!.user, deviceIdFrom(req), code);
+    res.json({ ok: true, deviceId });
+  } catch (error) {
+    if (!sendVerificationError(res, error)) throw error;
+  }
 }));
 
 // ============================================================================
@@ -2007,7 +2156,7 @@ app.post("/auth/v2/reset-password", handleAsync(async (req, res) => {
   }
   const payload = z.object({
     accessToken: z.string().min(20).max(4_000),
-    password: z.string().min(8).max(72)
+    password: newPasswordSchema
   }).parse(req.body);
   try {
     await updateSupabaseUser(payload.accessToken, { password: payload.password });
@@ -2031,7 +2180,7 @@ app.post("/api/account/password", requireAuth, handleAsync(async (req, res) => {
   if (applyRateLimit("account-password", req, res)) {
     return;
   }
-  const payload = z.object({ newPassword: z.string().min(8).max(72) }).parse(req.body);
+  const payload = z.object({ newPassword: newPasswordSchema }).parse(req.body);
 
   try {
     await updateSupabaseUser(req.auth!.token, { password: payload.newPassword });
@@ -4444,8 +4593,9 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   }
 
   if (error instanceof z.ZodError) {
+    const spanishMessage = error.issues.find((issue) => issue.message.startsWith("La contraseña"))?.message;
     res.status(400).json({
-      error: "Payload inválido",
+      error: spanishMessage ?? "Payload inválido",
       details: error.issues.map((issue) => ({
         path: issue.path.join("."),
         message: issue.message

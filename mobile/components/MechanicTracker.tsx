@@ -3,7 +3,7 @@ import { Linking, Text, View } from 'react-native';
 
 import { styles } from '../styles';
 import type { ApiCall } from '../App';
-import { Card, SecondaryButton } from './ui';
+import { Card, InfoRow, SecondaryButton } from './ui';
 import { MechanicRadar } from './MechanicRadar';
 
 // Seguimiento del mecánico para el cliente: mientras va en camino o fue por
@@ -21,6 +21,8 @@ type MechanicLocation = {
 
 const TRACKING_STATUSES = new Set(['en_route', 'awaiting_parts']);
 const REFRESH_MS = 10_000;
+// Después de esto sin ubicación nueva, se le avisa al cliente con calma.
+const STALE_SECONDS = 180;
 
 function formatSecondsAgo(seconds: number | null): string {
   if (seconds == null || seconds < 60) return 'hace unos segundos';
@@ -106,6 +108,12 @@ export function MechanicTracker({
             />
             <Text style={styles.smallText}>El punto oscuro es tu auto; el azul, tu mecánico. Se actualiza solo.</Text>
           </>
+        ) : null}
+        {mechanic && mechanic.secondsAgo != null && mechanic.secondsAgo >= STALE_SECONDS ? (
+          <InfoRow
+            icon="cellular-outline"
+            text={`No hemos recibido su ubicación en ${Math.round(mechanic.secondsAgo / 60)} minutos; puede que tenga mala señal. Puedes escribirle por el chat o llamarle.`}
+          />
         ) : null}
         {mechanic ? (
           <SecondaryButton
