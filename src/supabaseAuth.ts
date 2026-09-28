@@ -478,6 +478,25 @@ export async function deleteSupabaseAuthUser(supabaseUserId: string): Promise<vo
  * Cambia datos de la cuenta en Supabase con el token del propio usuario
  * (contraseña y/o metadatos como el nombre).
  */
+/**
+ * Pide a Supabase que mande el correo para crear una nueva contraseña. El
+ * enlace regresa a redirectTo con la sesión en el hash (#access_token=...).
+ * Debe estar en Supabase → Authentication → URL Configuration → Redirect URLs.
+ */
+export async function sendSupabasePasswordRecovery(email: string, redirectTo: string): Promise<void> {
+  const url = new URL(`${supabaseUrl}/auth/v1/recover`);
+  url.searchParams.set("redirect_to", redirectTo);
+  const response = await supabaseFetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", apikey: supabaseAnonKey },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(getSupabaseError(data as Record<string, unknown>, "No se pudo mandar el correo"));
+  }
+}
+
 export async function updateSupabaseUser(
   token: string,
   changes: { password?: string; data?: Record<string, unknown> }

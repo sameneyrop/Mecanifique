@@ -18,6 +18,7 @@ import {
   loginWithSupabase,
   refreshSupabaseSession,
   updateSupabaseUser,
+  sendSupabasePasswordRecovery,
   isSupabaseAdminConfigured,
   deleteSupabaseAuthUser,
   SignupError,
@@ -46,6 +47,16 @@ import {
   settleServiceFee
 } from "./serviceFees";
 import { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } from "./tracking";
+import { FORGOT_PASSWORD_MESSAGE, resetPasswordPage } from "./passwordReset";
+import {
+  QuoteError,
+  STATUSES_REQUIRING_QUOTE,
+  acceptedQuotesTotal,
+  createQuote,
+  getQuotesForRequest,
+  hasAcceptedQuote,
+  respondToQuote
+} from "./quotes";
 import {
   TipError,
   clearMechanicTipInfo,
@@ -1798,34 +1809,6 @@ app.post(
   })
 );
 
-app.get(
-  "/auth/v2/google",
-  handleAsync(async (req, res) => {
-    const activeSupabaseUrl = process.env.SUPABASE_URL || supabaseUrl;
-    if (!activeSupabaseUrl) {
-      res.status(503).json({ error: "La autenticación con Google no está configurada" });
-      return;
-    }
-
-    const requestedRedirect = typeof req.query.redirectTo === "string"
-      ? req.query.redirectTo
-      : typeof req.query.redirect_to === "string"
-        ? req.query.redirect_to
-        : process.env.SUPABASE_MOBILE_REDIRECT_URL || "mecanifique://auth/callback";
-
-    const redirectTo = requestedRedirect.trim();
-    if (!redirectTo) {
-      res.status(400).json({ error: "redirectTo requerido para el flujo de Google OAuth" });
-      return;
-    }
-
-    const authorizeUrl = new URL(`${activeSupabaseUrl}/auth/v1/authorize`);
-    authorizeUrl.searchParams.set("provider", "google");
-    authorizeUrl.searchParams.set("redirect_to", redirectTo);
-    res.json({ url: authorizeUrl.toString() });
-  })
-);
-
 /**
  * Get current user from Supabase Auth
  * GET /auth/v2/me
@@ -1994,6 +1977,54 @@ app.patch("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
   }).catch((error) => console.error("No se pudo copiar el nombre a Supabase", error));
 
   res.json({ user: { ...authUser, fullName: payload.fullName } });
+}));
+
+// ============================================================================
+// ¿OLVIDASTE TU CONTRASEÑA? (ver src/passwordReset.ts)
+// ============================================================================
+
+app.post("/auth/v2/forgot-password", handleAsync(async (req, res) => {
+  if (applyRateLimit("forgot-password", req, res, 5)) {
+    return;
+  }
+  const { email } = z.object({ email: z.string().trim().email().max(254) }).parse(req.body);
+  try {
+    await sendSupabasePasswordRecovery(email.toLowerCase(), `${publicBaseUrl(req)}/restablecer-contrasena`);
+  } catch (error) {
+    // La respuesta es la misma haya o no cuenta: no se revela quién está registrado.
+    console.error("No se pudo mandar el correo de nueva contraseña:", error);
+  }
+  res.json({ message: FORGOT_PASSWORD_MESSAGE });
+}));
+
+app.get("/restablecer-contrasena", (_req, res) => {
+  res.type("html").send(resetPasswordPage());
+});
+
+app.post("/auth/v2/reset-password", handleAsync(async (req, res) => {
+  if (applyRateLimit("reset-password", req, res, 10)) {
+    return;
+  }
+  const payload = z.object({
+    accessToken: z.string().min(20).max(4_000),
+    password: z.string().min(8).max(72)
+  }).parse(req.body);
+  try {
+    await updateSupabaseUser(payload.accessToken, { password: payload.password });
+    res.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (message.includes("different")) {
+      res.status(400).json({ error: "La nueva contraseña debe ser distinta de la anterior." });
+      return;
+    }
+    if (message.includes("weak") || message.includes("password should")) {
+      res.status(400).json({ error: "Esa contraseña es muy débil. Usa una más larga, con letras y números." });
+      return;
+    }
+    // Token vencido, ya usado o inválido.
+    res.status(401).json({ error: "Este enlace ya no sirve. Pide otro desde la app." });
+  }
 }));
 
 app.post("/api/account/password", requireAuth, handleAsync(async (req, res) => {
@@ -3959,7 +3990,8 @@ app.get(
     res.status(200).json({
       ...request,
       updates,
-      serviceFee: await getServiceFeeForRequest(requestId)
+      serviceFee: await getServiceFeeForRequest(requestId),
+      quotes: await getQuotesForRequest(requestId)
     });
   })
 );
@@ -4090,6 +4122,90 @@ app.post(
   })
 );
 
+// ============================================================================
+// COTIZACIÓN (ver src/quotes.ts)
+// ============================================================================
+
+const quoteSchema = z.object({
+  laborAmount: z.number().min(0).max(1_000_000),
+  partsAmount: z.number().min(0).max(1_000_000).optional().default(0),
+  description: z.string().trim().min(5).max(1_000)
+});
+
+function sendQuoteError(res: Response, error: unknown): boolean {
+  if (error instanceof QuoteError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+function formatMxn(amount: number): string {
+  return `$${Math.round(amount).toLocaleString("es-MX")}`;
+}
+
+app.post("/api/service-requests/:id/quotes", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const requestId = Number(req.params.id);
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    res.status(400).json({ error: "requestId inválido" });
+    return;
+  }
+  const payload = quoteSchema.parse(req.body);
+  if (payload.laborAmount + payload.partsAmount <= 0) {
+    res.status(400).json({ error: "Escribe cuánto cobrarás de mano de obra o de refacciones." });
+    return;
+  }
+  try {
+    const quote = await createQuote({ requestId, mechanicId: req.auth!.user.mechanicId!, ...payload });
+    const request = await get<{ customerId: number }>("SELECT customer_id AS customerId FROM service_requests WHERE id = ?", [requestId]);
+    const customerUserId = request ? await getUserIdByCustomerId(request.customerId) : null;
+    if (customerUserId) {
+      await createNotification(
+        customerUserId,
+        "Tienes una cotización",
+        `${req.auth!.user.fullName} te cotizó ${formatMxn(quote.total)}. Revísala para que pueda empezar.`,
+        { requestId }
+      );
+    }
+    res.status(201).json(quote);
+  } catch (error) {
+    if (!sendQuoteError(res, error)) throw error;
+  }
+}));
+
+app.post(
+  "/api/service-requests/:id/quotes/:quoteId/respond",
+  requireAuth,
+  requireRole("customer"),
+  handleAsync(async (req, res) => {
+    const requestId = Number(req.params.id);
+    const quoteId = Number(req.params.quoteId);
+    if (!Number.isInteger(requestId) || requestId <= 0 || !Number.isInteger(quoteId) || quoteId <= 0) {
+      res.status(400).json({ error: "Cotización inválida" });
+      return;
+    }
+    const { accept } = z.object({ accept: z.boolean() }).parse(req.body);
+    try {
+      const quote = await respondToQuote({ requestId, quoteId, customerId: req.auth!.user.customerId, accept });
+      const request = await get<{ mechanicId: number | null }>("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
+      const mechanicUserId = request?.mechanicId ? await getUserIdByMechanicId(request.mechanicId) : null;
+      if (mechanicUserId) {
+        await createNotification(
+          mechanicUserId,
+          accept ? "Cotización aceptada" : "Cotización no aceptada",
+          accept
+            ? `El cliente aceptó ${formatMxn(quote.total)}. Ya puedes empezar.`
+            : "El cliente no aceptó la cotización. Puedes mandarle otra o terminar el servicio.",
+          { requestId }
+        );
+      }
+      res.json(quote);
+    } catch (error) {
+      if (!sendQuoteError(res, error)) throw error;
+    }
+  })
+);
+
 app.patch(
   "/api/service-requests/:id/status",
   requireAuth,
@@ -4129,6 +4245,16 @@ app.patch(
       return;
     }
 
+    if (STATUSES_REQUIRING_QUOTE.has(payload.status) && !(await hasAcceptedQuote(requestId))) {
+      res.status(409).json({ error: "Primero manda la cotización y espera a que el cliente la acepte." });
+      return;
+    }
+
+    // Al terminar, el precio final es lo acordado en las cotizaciones (si el
+    // mecánico no manda otro).
+    const finalPrice =
+      payload.finalPrice ?? (payload.status === "completed" ? await acceptedQuotesTotal(requestId) : null);
+
     await run(
       `
       UPDATE service_requests
@@ -4142,7 +4268,7 @@ app.patch(
         payload.diagnosisNotes ?? null,
         payload.repairNotes ?? null,
         payload.estimatedPrice ?? null,
-        payload.finalPrice ?? null,
+        finalPrice,
         requestId
       ]
     );

@@ -14,7 +14,7 @@ const translations = {
     "vision.eyebrow":"PARA INVERSIONISTAS","vision.title":"Hacer que pedir un mecánico sea tan fácil como pedir un viaje.","vision.lead":"Empezamos en Aguascalientes para crear densidad y validar el mercado. Después, replicamos el modelo ciudad por ciudad en México.","vision.c1":"Construir","vision.c2":"Lanzar","vision.c3":"Validar","vision.c4":"Escalar",
     "ecosystem.eyebrow":"EL ECOSISTEMA","ecosystem.title":"Más que un marketplace de mecánicos.","ecosystem.lead":"Con el tiempo, Mecanifique puede conectar todo el recorrido del servicio automotriz.","ecosystem.drivers":"Conductores","ecosystem.drivers_sub":"Solicitan y agendan","ecosystem.mechanics":"Mecánicos","ecosystem.mechanics_sub":"Servicio y reputación","ecosystem.parts":"Refacciones","ecosystem.parts_sub":"Disponibilidad y suministro","ecosystem.workshops":"Talleres","ecosystem.workshops_sub":"Reparaciones especializadas",
     "contact.eyebrow":"MECANIFIQUE","contact.title":"Estamos construyendo la capa de confianza para el servicio automotriz en México.","contact.lead":"Producto construido por el fundador, con Aguascalientes como mercado inicial. El siguiente paso es formar el equipo y validar el marketplace.","contact.cta":"Contactar al fundador","contact.note":"ameneyro.design@gmail.com",
-    "footer.left":"Mecanifique · Aguascalientes, México","footer.privacy":"Aviso de privacidad","footer.deleteAccount":"Eliminar cuenta","footer.contact":"Contacto"
+    "footer.left":"Mecanifique · Aguascalientes, México","footer.terms":"Términos y condiciones","footer.privacy":"Aviso de privacidad","footer.deleteAccount":"Eliminar cuenta","footer.contact":"Contacto"
   },
   en: {
     "nav.how":"How it works","nav.trust":"Trust","nav.mechanics":"Mechanics","nav.investors":"Investors","nav.cta":"Notify me",
@@ -31,7 +31,7 @@ const translations = {
     "vision.eyebrow":"FOR INVESTORS","vision.title":"Make getting a mechanic as easy as requesting a ride.","vision.lead":"We start in Aguascalientes to build density and validate the marketplace. Then we replicate the model city by city across Mexico.","vision.c1":"Build","vision.c2":"Launch","vision.c3":"Validate","vision.c4":"Scale",
     "ecosystem.eyebrow":"THE ECOSYSTEM","ecosystem.title":"More than a mechanic marketplace.","ecosystem.lead":"Over time, Mecanifique can connect the wider automotive service journey.","ecosystem.drivers":"Drivers","ecosystem.drivers_sub":"Request & schedule","ecosystem.mechanics":"Mechanics","ecosystem.mechanics_sub":"Service & reputation","ecosystem.parts":"Parts","ecosystem.parts_sub":"Availability & sourcing","ecosystem.workshops":"Workshops","ecosystem.workshops_sub":"Specialized repairs",
     "contact.eyebrow":"MECANIFIQUE","contact.title":"We're building the trusted layer for automotive service in Mexico.","contact.lead":"Founder-built product, with Aguascalientes as the launch market. The next phase is building the team and validating the marketplace.","contact.cta":"Contact the founder","contact.note":"ameneyro.design@gmail.com",
-    "footer.left":"Mecanifique · Aguascalientes, Mexico","footer.privacy":"Privacy notice","footer.deleteAccount":"Delete account","footer.contact":"Contact"
+    "footer.left":"Mecanifique · Aguascalientes, Mexico","footer.terms":"Terms and conditions","footer.privacy":"Privacy notice","footer.deleteAccount":"Delete account","footer.contact":"Contact"
   }
 };
 

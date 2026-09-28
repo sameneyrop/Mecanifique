@@ -4,14 +4,24 @@ import * as WebBrowser from 'expo-web-browser';
 // Mismo aviso que publica el sitio web (web/privacidad.html): un solo texto
 // que mantener, y es el enlace que va en la ficha de Google Play.
 export const PRIVACY_NOTICE_URL = 'https://mecanifique.vercel.app/privacidad';
+export const TERMS_URL = 'https://mecanifique.vercel.app/terminos';
 
-/** Abre el aviso de privacidad en un navegador dentro de la app (al cerrarlo, se vuelve a donde estaba). */
-export async function openPrivacyNotice() {
+// Abre una página del sitio en un navegador dentro de la app (al cerrarlo, se
+// vuelve a donde estaba).
+async function openSitePage(url: string) {
   try {
-    await WebBrowser.openBrowserAsync(PRIVACY_NOTICE_URL);
+    await WebBrowser.openBrowserAsync(url);
   } catch {
-    await Linking.openURL(PRIVACY_NOTICE_URL).catch(() => undefined);
+    await Linking.openURL(url).catch(() => undefined);
   }
+}
+
+export function openPrivacyNotice() {
+  return openSitePage(PRIVACY_NOTICE_URL);
+}
+
+export function openTerms() {
+  return openSitePage(TERMS_URL);
 }
 
 type Mechanic = {

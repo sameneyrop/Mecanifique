@@ -20,8 +20,9 @@ mantener informadas a ambas partes.
   el usuario note nada. Si la renovación ya no es posible, cierra la sesión
   con el aviso "Tu sesión expiró. Vuelve a iniciar sesión." (antes la app
   quedaba con un token muerto y todo respondía "Autenticación requerida").
-- Flujo preparado para Google OAuth: botón móvil, deep link
-  `mecanifique://auth/callback` y endpoint `GET /auth/v2/google`.
+- Inicio de sesión solo con correo y contraseña. "Continuar con Google" se
+  quitó (botón y `GET /auth/v2/google`) hasta configurarlo bien; ver
+  "Configuración de Google OAuth" para volver a activarlo.
 - Registro de clientes y mecánicos, con roles `customer`, `mechanic` y `admin`.
   El registro solo crea clientes o mecánicos (pendientes de verificación):
   los metadatos de Supabase los escribe el propio usuario, así que el rol
@@ -183,6 +184,17 @@ mantener informadas a ambas partes.
   /api/service-requests/:id/tip-info`, solo el cliente de un servicio
   terminado; `src/tips.ts`). Mecanifique no cobra ni pasa ese dinero, por la
   misma razón que no cobra el trabajo del mecánico (ver "Modelo de pagos").
+- **Cotización obligatoria antes de reparar** (`src/quotes.ts`,
+  `mobile/components/Quote.tsx`): la tarifa del perfil es "Visita y
+  diagnóstico" (`mechanics.labor_rate`). Después del diagnóstico el mecánico
+  manda mano de obra, refacciones estimadas y qué hará (`POST
+  /api/service-requests/:id/quotes`); el cliente la acepta o no (`.../quotes/
+  :quoteId/respond`), con aviso push a cada uno. Sin una cotización aceptada
+  el servidor no deja pasar a `repairing` ni a `awaiting_parts`; si el
+  cliente no acepta, el mecánico manda otra o termina sin reparar. Ya
+  reparando puede cotizar algo adicional. Al terminar, `final_price` es la
+  suma de lo aceptado. Mecanifique no cobra ese monto: es el registro de lo
+  acordado.
 - **Reasignación automática**: si el mecánico rechaza o deja vencer el hold,
   la solicitud pasa sola al siguiente mecánico disponible en la zona (sin
   volver a ofrecérsela a quien ya no la tomó). Los holds vencidos se
@@ -565,7 +577,13 @@ VALUES (<id del usuario>, 'customer', 'approved', CURRENT_TIMESTAMP, CURRENT_TIM
 ON CONFLICT(user_id) DO UPDATE SET status = 'approved', updated_at = CURRENT_TIMESTAMP;
 ```
 
-## Configuración de Google OAuth
+## Configuración de Google OAuth (desactivado por ahora)
+
+El botón y la ruta se quitaron. Para volver a activarlo hay que restaurar
+`handleGoogleLogin` en `mobile/App.tsx`, el botón de `LoginScreen` y
+`GET /auth/v2/google` (están en el historial de git), además de lo siguiente.
+La pantalla de consentimiento de Google Cloud debe estar "En producción", no en
+"Testing", o solo entran los correos de prueba.
 
 En Supabase, **Authentication → Providers → Google**:
 

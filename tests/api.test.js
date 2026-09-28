@@ -25,6 +25,14 @@ const {
 const { setStripeGatewayForTests } = require("../src/stripe.ts");
 const { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } = require("../src/tracking.ts");
 const { TipError, getTipInfoForRequest, isValidClabe, saveMechanicTipInfo } = require("../src/tips.ts");
+const {
+  QuoteError,
+  acceptedQuotesTotal,
+  createQuote,
+  getQuotesForRequest,
+  hasAcceptedQuote,
+  respondToQuote
+} = require("../src/quotes.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -60,6 +68,7 @@ const createdRows = { mechanics: [], customers: [], requests: [] };
 
 async function cleanupCreatedRows() {
   for (const requestId of createdRows.requests) {
+    await run("DELETE FROM service_quotes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
@@ -526,6 +535,21 @@ test("con coordenadas: un mecánico lejano no se elige solo porque su ciudad/zon
   assert.equal(request.mechanicId, null, "a 100 km no es un mecánico cercano, aunque el texto de la zona coincida");
 });
 
+test("nueva contraseña: la página abre y los datos inválidos se rechazan sin llamar a Supabase", async () => {
+  const page = await fetch(`${baseUrl}/restablecer-contrasena`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /Crea una nueva contraseña/);
+
+  const badEmail = await request("/auth/v2/forgot-password", { method: "POST", body: JSON.stringify({ email: "no-es-correo" }) });
+  assert.equal(badEmail.response.status, 400);
+
+  const shortPassword = await request("/auth/v2/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ accessToken: "x".repeat(40), password: "corta" })
+  });
+  assert.equal(shortPassword.response.status, 400);
+});
+
 test("notificaciones: marcar todas como leídas exige sesión", async () => {
   const { response } = await request("/api/notifications/read-all", { method: "POST" });
   assert.equal(response.status, 401);
@@ -608,6 +632,67 @@ test("conexión: un mecánico cuyo teléfono dejó de dar señal se desconecta y
     await run("DELETE FROM notifications WHERE user_id = ?", [user.lastID]);
     await run("DELETE FROM users WHERE id = ?", [user.lastID]);
   }
+});
+
+test("cotización: el mecánico cotiza, el cliente acepta o no, y solo con una aceptada se repara", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Cotización", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const created = await run(
+    `INSERT INTO service_requests (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time,
+       city, zone, status, mechanic_id)
+     VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', 'Ciudad-Cotización', 'Centro', 'en_route', ?)`,
+    [customer.lastID, mechanicId]
+  );
+  createdRows.requests.push(created.lastID);
+  const requestId = created.lastID;
+  const quote = (laborAmount, partsAmount = 0) =>
+    createQuote({ requestId, mechanicId, laborAmount, partsAmount, description: "Cambio de batería y revisión del alternador" });
+
+  // Todavía en camino: no puede cotizar sin ver el auto.
+  await assert.rejects(quote(500), (error) => error instanceof QuoteError && error.status === 409);
+  await run("UPDATE service_requests SET status = 'diagnosing' WHERE id = ?", [requestId]);
+
+  // Otro mecánico no puede cotizar esta solicitud.
+  await assert.rejects(
+    createQuote({ requestId, mechanicId: mechanicId + 100000, laborAmount: 1, partsAmount: 0, description: "Otra cosa" }),
+    (error) => error.status === 403
+  );
+
+  const first = await quote(500, 1200);
+  assert.equal(first.total, 1700);
+  assert.equal(await hasAcceptedQuote(requestId), false);
+
+  // Una nueva reemplaza a la que no se ha contestado.
+  const second = await quote(450, 1200);
+  const statuses = Object.fromEntries((await getQuotesForRequest(requestId)).map((row) => [row.id, row.status]));
+  assert.equal(statuses[first.id], "replaced");
+  assert.equal(statuses[second.id], "pending");
+  await assert.rejects(
+    respondToQuote({ requestId, quoteId: first.id, customerId: customer.lastID, accept: true }),
+    (error) => error.status === 409,
+    "la reemplazada ya no se puede aceptar"
+  );
+
+  // Solo el cliente de la solicitud contesta.
+  await assert.rejects(
+    respondToQuote({ requestId, quoteId: second.id, customerId: customer.lastID + 100000, accept: true }),
+    (error) => error.status === 403
+  );
+
+  const rejected = await respondToQuote({ requestId, quoteId: second.id, customerId: customer.lastID, accept: false });
+  assert.equal(rejected.status, "rejected");
+  assert.equal(await hasAcceptedQuote(requestId), false);
+
+  const third = await quote(400, 1000);
+  await respondToQuote({ requestId, quoteId: third.id, customerId: customer.lastID, accept: true });
+  assert.equal(await hasAcceptedQuote(requestId), true);
+
+  // Algo adicional ya reparando: se suma a lo acordado si lo acepta.
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+  const extra = await quote(0, 300);
+  await respondToQuote({ requestId, quoteId: extra.id, customerId: customer.lastID, accept: true });
+  assert.equal(await acceptedQuotesTotal(requestId), 1700);
 });
 
 test("propina: la CLABE se valida con su dígito de control", () => {

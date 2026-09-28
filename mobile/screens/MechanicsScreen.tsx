@@ -338,7 +338,7 @@ export function MechanicsScreen({
               />
               <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(selected)} />
               {selected.laborRate ? (
-                <InfoRow icon="cash-outline" text={`Mano de obra: ${formatPesos(selected.laborRate)}`} />
+                <InfoRow icon="cash-outline" text={`Visita y diagnóstico: ${formatPesos(selected.laborRate)}`} />
               ) : null}
               {selected.phone ? <InfoRow icon="call-outline" text={selected.phone} /> : null}
               {selected.bio ? <Text style={styles.itemText}>{selected.bio}</Text> : null}

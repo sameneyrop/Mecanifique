@@ -118,6 +118,10 @@ export const styles = StyleSheet.create({
     height: 25,
   },
   // En la barra de arriba: centrado con el saludo y la campana.
+  forgotPasswordLink: {
+    alignSelf: 'center',
+    paddingVertical: 6,
+  },
   topBarLogo: {
     alignSelf: 'center',
   },

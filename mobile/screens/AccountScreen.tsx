@@ -17,7 +17,7 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
 } from '../components/ui';
-import { normalizeSpecialties, openPrivacyNotice } from '../utils';
+import { normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 
@@ -362,6 +362,7 @@ export function AccountScreen({
                 <Text style={styles.smallText}>Conecta clientes con mecánicos verificados.</Text>
               </View>
             )}
+            <MenuRow icon="reader-outline" label="Términos y condiciones" onPress={() => void openTerms()} />
             <MenuRow icon="document-text-outline" label="Aviso de privacidad" onPress={() => void openPrivacyNotice()} />
             <MenuRow icon="bug-outline" label="Reportar un problema" onPress={() => toggle('problem')} />
             {expanded === 'problem' && (

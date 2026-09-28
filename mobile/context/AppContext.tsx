@@ -64,6 +64,18 @@ type RequestSummary = {
   customerPhone?: string | null;
 };
 
+export type ServiceQuote = {
+  id: number;
+  serviceRequestId: number;
+  laborAmount: number;
+  partsAmount: number;
+  total: number;
+  description: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'replaced';
+  createdAt: string;
+  respondedAt: string | null;
+};
+
 type ServiceRequest = {
   id: number;
   customerId: number;
@@ -91,6 +103,8 @@ type ServiceRequest = {
   scheduleSlotId?: number | null;
   assignmentMode?: 'auto' | 'direct' | null;
   serviceFee?: { amount: number; status: 'pending' | 'authorized' | 'captured' | 'released' | 'failed' } | null;
+  // Cotizaciones del mecánico, la más reciente primero (ver src/quotes.ts).
+  quotes?: ServiceQuote[];
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

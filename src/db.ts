@@ -579,6 +579,25 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // Cotizaciones del mecánico (ver src/quotes.ts). Sin una aceptada no se
+  // puede reparar.
+  await run(`
+    CREATE TABLE IF NOT EXISTS service_quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      labor_amount REAL NOT NULL,
+      parts_amount REAL NOT NULL DEFAULT 0,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'accepted', 'rejected', 'replaced')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      responded_at TEXT,
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_service_quotes_request ON service_quotes(service_request_id)");
+
   // Cuota de servicio (ver src/serviceFees.ts): una fila por pago en Stripe
   // Checkout. claimed_at marca que ya se usó para una solicitud.
   await run(`

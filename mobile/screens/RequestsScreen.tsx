@@ -29,6 +29,7 @@ import {
 } from '../components/ActiveService';
 import { MechanicTracker } from '../components/MechanicTracker';
 import { TipCard } from '../components/TipCard';
+import { CustomerQuoteCard } from '../components/Quote';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
 
@@ -75,6 +76,7 @@ const PAGE_SIZE = 8;
 
 export function RequestsScreen({
   api,
+  onReloadRequest,
   serviceFee,
   requestForm,
   setRequestForm,
@@ -107,6 +109,7 @@ export function RequestsScreen({
   onSendMessage,
 }: {
   api: ApiCall;
+  onReloadRequest: (requestId: number) => Promise<void>;
   serviceFee: { enabled: boolean; amount: number };
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
@@ -541,12 +544,21 @@ export function RequestsScreen({
                 </View>
               </Card>
               {user.role === 'customer' && (
-                <MechanicTracker
-                  api={api}
-                  requestId={selectedRequest.id}
-                  status={selectedRequest.status}
-                  mechanicName={selectedRequest.mechanicName}
-                />
+                <>
+                  <MechanicTracker
+                    api={api}
+                    requestId={selectedRequest.id}
+                    status={selectedRequest.status}
+                    mechanicName={selectedRequest.mechanicName}
+                  />
+                  <CustomerQuoteCard
+                    api={api}
+                    requestId={selectedRequest.id}
+                    quotes={selectedRequest.quotes ?? []}
+                    mechanicName={selectedRequest.mechanicName}
+                    onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
+                  />
+                </>
               )}
               {user.role === 'customer' && selectedRequest.status === 'pending' && (
                 <SearchingStatus request={selectedRequest} busy={busy} onSearchAgain={onSearchAgain} />

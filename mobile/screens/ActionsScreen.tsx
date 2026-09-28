@@ -20,7 +20,7 @@ import {
   Illustration,
 } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
-import { formatCalendarDate, openExternalNavigation, openPrivacyNotice } from '../utils';
+import { formatCalendarDate, openExternalNavigation, openPrivacyNotice, openTerms } from '../utils';
 import { MechanicPromotions } from '../components/MechanicPromotions';
 import { TipInfoCard } from '../components/TipInfoCard';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
@@ -364,14 +364,14 @@ export function ActionsScreen({
                     />
                     <CharCounter value={publicProfileForm.bio} max={500} />
                   </Field>
-                  <Field label="¿Cuánto cobras de mano de obra? (pesos)">
+                  <Field label="¿Cuánto cobras por la visita y el diagnóstico? (pesos)">
                     <Input
                       value={publicProfileForm.laborRate}
                       keyboardType="numeric"
                       placeholder="Ej. 400"
                       onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value.replace(/[^0-9.]/g, '') })}
                     />
-                    <Text style={styles.smallText}>Los clientes la ven en tu perfil antes de pedirte un servicio.</Text>
+                    <Text style={styles.smallText}>Los clientes lo ven en tu perfil. Lo que cueste la reparación se lo mandas después, en la cotización.</Text>
                   </Field>
                   <PrimaryButton title="Guardar cambios" busy={busy} onPress={onSavePublicProfile} />
                 </View>
@@ -631,6 +631,7 @@ export function ActionsScreen({
                 setMessage('Sesión cerrada');
               }}
             />
+            <SecondaryButton title="Términos y condiciones" compact onPress={() => void openTerms()} />
             <SecondaryButton title="Aviso de privacidad" compact onPress={() => void openPrivacyNotice()} />
             {user.role === 'mechanic' && <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />}
           </View>

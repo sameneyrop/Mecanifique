@@ -221,6 +221,18 @@ type AppNotification = {
   createdAt: string;
 };
 
+export type ServiceQuote = {
+  id: number;
+  serviceRequestId: number;
+  laborAmount: number;
+  partsAmount: number;
+  total: number;
+  description: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'replaced';
+  createdAt: string;
+  respondedAt: string | null;
+};
+
 type ServiceRequest = {
   id: number;
   customerId: number;
@@ -249,6 +261,8 @@ type ServiceRequest = {
   assignmentMode?: 'auto' | 'direct' | null;
   updates?: RequestUpdate[];
   serviceFee?: { amount: number; status: 'pending' | 'authorized' | 'captured' | 'released' | 'failed' } | null;
+  // Cotizaciones del mecánico, la más reciente primero (ver src/quotes.ts).
+  quotes?: ServiceQuote[];
 };
 
 type RequestSummary = {
@@ -1161,10 +1175,13 @@ export default function App() {
         );
       }
 
+      // Siempre, aunque tenga una solicitud abierta: así ve las nuevas y el
+      // servidor sabe que sigue conectado (sweepStaleMechanics).
+      if (user?.role === 'mechanic' && mechanicConnection === 'online') {
+        loadIncomingRequest().catch((error) => setMessage(formatError(error)));
+      }
+
       if (!selectedRequest?.id) {
-        if (user?.role === 'mechanic' && mechanicConnection === 'online') {
-          loadIncomingRequest().catch((error) => setMessage(formatError(error)));
-        }
         return;
       }
 
@@ -1284,6 +1301,28 @@ export default function App() {
       AsyncStorage.removeItem(AUTH_TOKEN_KEY),
       AsyncStorage.removeItem(AUTH_USER_KEY),
     ]);
+  }
+
+  // "¿Olvidaste tu contraseña?": Supabase manda un enlace que abre la página
+  // para crear la nueva (servidor: src/passwordReset.ts).
+  async function handleForgotPassword(email: string) {
+    const trimmed = email.trim();
+    if (!trimmed.includes('@')) {
+      setMessage('Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?»');
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await apiRequest<{ message: string }>('/auth/v2/forgot-password', {
+        method: 'POST',
+        body: { email: trimmed },
+      });
+      setMessage(response.message);
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function completeOnboarding() {
@@ -1777,7 +1816,7 @@ export default function App() {
   async function handleSaveLaborRate(rateText: string) {
     const laborRate = Number(rateText);
     if (!mechanicProfile || !Number.isFinite(laborRate) || laborRate <= 0) {
-      setMessage('Escribe tu tarifa en pesos, por ejemplo 400');
+      setMessage('Escribe el precio de tu visita en pesos, por ejemplo 400');
       return;
     }
     setBusy(true);
@@ -1796,7 +1835,7 @@ export default function App() {
         },
       });
       await loadMechanicProfile();
-      setMessage('Tarifa guardada');
+      setMessage('Precio de visita guardado');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
       setMessage(formatError(error));
@@ -2135,42 +2174,6 @@ export default function App() {
       setBusy(false);
     }
 
-  }
-
-  async function handleGoogleLogin() {
-    setBusy(true);
-    setMessage('Abriendo Google...');
-    try {
-      const redirectUri = Linking.createURL('auth/callback');
-      const { url: authUrl } = await apiRequest<{ url: string }>(
-        `/auth/v2/google?redirectTo=${encodeURIComponent(redirectUri)}`,
-      );
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-      if (result.type !== 'success' || !result.url) {
-        setMessage('Inicio con Google cancelado');
-        return;
-      }
-
-      const hash = result.url.split('#')[1] || '';
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get('access_token');
-      if (!accessToken) {
-        throw new Error('Google no devolvió una sesión válida');
-      }
-
-      const me = await apiRequest<{ user: AuthUser }>('/auth/v2/me', { token: accessToken });
-      setToken(accessToken);
-      setUser(me.user);
-      setLocationAutoRequested(false);
-      setCurrentScreen('home');
-      await persistSession(accessToken, me.user, params.get('refresh_token'));
-      await loadMyRequests(accessToken);
-      setMessage(`Sesión iniciada como ${me.user.role}`);
-    } catch (error) {
-      setMessage(formatError(error));
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function handleStartIdentityVerification() {
@@ -2880,8 +2883,8 @@ export default function App() {
                 setMechanicSignupStep={setMechanicSignupStep}
                 busy={busy}
                 onSubmit={handleAuthSubmit}
-                onGoogleLogin={handleGoogleLogin}
                 onShowOnboarding={showOnboardingAgain}
+                onForgotPassword={handleForgotPassword}
               />
             </View>
             </ScrollView>
@@ -3020,6 +3023,7 @@ export default function App() {
             <View style={styles.screenStack}>
             <RequestsScreen
               api={api}
+              onReloadRequest={loadRequestDetailById}
               serviceFee={serviceFeeConfig}
               requestForm={requestForm}
               setRequestForm={setRequestForm}

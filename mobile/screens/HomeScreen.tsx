@@ -27,6 +27,7 @@ import {
   ServiceProgress,
 } from '../components/ActiveService';
 import { MechanicTracker } from '../components/MechanicTracker';
+import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
 import type { ApiCall } from '../App';
 import { openExternalNavigation, serviceFeeStatusText } from '../utils';
 
@@ -284,6 +285,13 @@ function CustomerHome(props: HomeScreenProps) {
         </View>
       </Card>
       <MechanicTracker api={props.api} requestId={detail.id} status={detail.status} mechanicName={detail.mechanicName} />
+      <CustomerQuoteCard
+        api={props.api}
+        requestId={detail.id}
+        quotes={detail.quotes ?? []}
+        mechanicName={detail.mechanicName}
+        onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
+      />
       {detail.status === 'pending' && (
         <SearchingStatus request={detail} busy={busy} onSearchAgain={props.onSearchAgain} />
       )}
@@ -402,10 +410,10 @@ function MechanicOnboarding({
           <ChecklistStep
             number={2}
             done={rateDone}
-            title="Pon tu tarifa de mano de obra"
-            description="Lo que cobras por tu trabajo, en pesos. Es la base para calcular el costo de tus servicios."
+            title="Pon el precio de tu visita y diagnóstico"
+            description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico."
           >
-            <Field label="Tarifa (MXN)">
+            <Field label="Visita y diagnóstico (pesos)">
               <Input
                 value={rateDraft}
                 keyboardType="numeric"
@@ -413,7 +421,7 @@ function MechanicOnboarding({
                 onChangeText={(value) => setRateDraft(value.replace(/[^0-9.]/g, ''))}
               />
             </Field>
-            <PrimaryButton title="Guardar tarifa" busy={busy} onPress={() => onSaveLaborRate(rateDraft)} />
+            <PrimaryButton title="Guardar precio" busy={busy} onPress={() => onSaveLaborRate(rateDraft)} />
           </ChecklistStep>
           <ChecklistStep
             number={3}
@@ -434,7 +442,7 @@ function mechanicBadges(profile: MechanicProfile | null): Array<{ icon: keyof ty
   const active = profile?.status === 'active';
   return [
     { icon: 'location-outline', label: profile ? `${profile.zone}, ${profile.city}` : 'Tu zona de trabajo' },
-    { icon: 'cash-outline', label: profile?.laborRate ? `Tarifa: $${Math.round(profile.laborRate)}` : 'Sin tarifa todavía' },
+    { icon: 'cash-outline', label: profile?.laborRate ? `Visita: $${Math.round(profile.laborRate)}` : 'Sin precio de visita' },
     { icon: active ? 'shield-checkmark-outline' : 'time-outline', label: active ? 'Cuenta verificada' : 'Verificación pendiente' },
     { icon: 'wallet-outline', label: 'El cliente te paga directo' },
   ];
@@ -450,7 +458,13 @@ function MechanicHome(props: HomeScreenProps) {
   );
 
   const nextStep = detail ? NEXT_JOB_STEP[detail.status] : undefined;
-  const canWaitForParts = detail?.status === 'diagnosing' || detail?.status === 'repairing';
+  // Sin cotización aceptada no se repara ni se va por refacciones (el
+  // servidor lo revisa igual).
+  const quotes = detail?.quotes ?? [];
+  const quoteAccepted = quotes.some((quote) => quote.status === 'accepted');
+  const needsQuote = (status: string) => (status === 'repairing' || status === 'awaiting_parts') && !quoteAccepted;
+  const showQuotePanel = detail?.status === 'diagnosing' || detail?.status === 'repairing' || detail?.status === 'awaiting_parts';
+  const canWaitForParts = (detail?.status === 'diagnosing' || detail?.status === 'repairing') && quoteAccepted;
   const address = detail ? detail.serviceAddress || `${detail.city}, ${detail.zone}` : '';
   // Una cuenta pendiente o suspendida no puede conectarse (el servidor lo
   // rechaza igual); desconectarse siempre se permite.
@@ -487,7 +501,16 @@ function MechanicHome(props: HomeScreenProps) {
           <Card title="Avance">
             <View style={styles.stack}>
               <ServiceProgress status={detail.status} />
-              {nextStep && (
+              {showQuotePanel && (
+                <MechanicQuotePanel
+                  api={props.api}
+                  requestId={detail.id}
+                  status={detail.status}
+                  quotes={quotes}
+                  onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
+                />
+              )}
+              {nextStep && !needsQuote(nextStep.status) && (
                 <Pressable
                   style={({ pressed }) => [styles.nextStepButton, (pressed || busy) && styles.buttonPressed]}
                   onPress={() => props.onAdvanceJob(detail.id, nextStep.status)}
@@ -503,6 +526,13 @@ function MechanicHome(props: HomeScreenProps) {
                   title="Esperando refacciones"
                   busy={busy}
                   onPress={() => props.onAdvanceJob(detail.id, 'awaiting_parts')}
+                />
+              )}
+              {detail.status === 'diagnosing' && !quoteAccepted && (
+                <SecondaryButton
+                  title="Terminar sin reparar"
+                  busy={busy}
+                  onPress={() => props.onAdvanceJob(detail.id, 'completed')}
                 />
               )}
             </View>

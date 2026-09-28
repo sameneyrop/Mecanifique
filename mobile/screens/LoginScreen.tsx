@@ -4,7 +4,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { styles } from '../styles';
 import { Card, ChoiceTile, Field, Illustration, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
-import { openPrivacyNotice } from '../utils';
+import { openPrivacyNotice, openTerms } from '../utils';
 
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicSignupStep = 'account' | 'work';
@@ -34,11 +34,16 @@ const EMAIL_INPUT_PROPS = {
   placeholder: 'correo@ejemplo.com',
 } as const;
 
-// Al registrarse: el aviso queda a la vista antes de crear la cuenta.
+// Al registrarse: los términos y el aviso quedan a la vista antes de crear
+// la cuenta.
 function PrivacyConsent() {
   return (
     <Text style={styles.consentNote}>
-      Al crear tu cuenta aceptas el{' '}
+      Al crear tu cuenta aceptas los{' '}
+      <Text style={styles.textLink} onPress={() => void openTerms()} accessibilityRole="link">
+        Términos y condiciones
+      </Text>{' '}
+      y el{' '}
       <Text style={styles.textLink} onPress={() => void openPrivacyNotice()} accessibilityRole="link">
         Aviso de privacidad
       </Text>
@@ -75,8 +80,8 @@ export function LoginScreen({
   setMechanicSignupStep,
   busy,
   onSubmit,
-  onGoogleLogin,
   onShowOnboarding,
+  onForgotPassword,
 }: {
   authMode: AuthMode;
   setAuthMode: (mode: AuthMode) => void;
@@ -90,8 +95,8 @@ export function LoginScreen({
   setMechanicSignupStep: (step: MechanicSignupStep) => void;
   busy: boolean;
   onSubmit: () => void;
-  onGoogleLogin: () => void;
   onShowOnboarding: () => void;
+  onForgotPassword: (email: string) => void;
 }) {
   const hero = HERO_COPY[authMode];
   const signingUp = authMode !== 'login';
@@ -136,7 +141,13 @@ export function LoginScreen({
                 />
               </Field>
               <PrimaryButton title="Entrar" onPress={onSubmit} busy={busy} />
-              <SecondaryButton title="Continuar con Google" onPress={onGoogleLogin} busy={busy} />
+              <Text
+                style={[styles.textLink, styles.forgotPasswordLink]}
+                onPress={() => onForgotPassword(loginForm.email)}
+                accessibilityRole="link"
+              >
+                ¿Olvidaste tu contraseña?
+              </Text>
             </View>
           </Card>
         )}
@@ -294,6 +305,10 @@ export function LoginScreen({
 
       <SecondaryButton title="Ver introducción" onPress={onShowOnboarding} />
       <Text style={styles.consentNote}>
+        <Text style={styles.textLink} onPress={() => void openTerms()} accessibilityRole="link">
+          Términos y condiciones
+        </Text>
+        {'  ·  '}
         <Text style={styles.textLink} onPress={() => void openPrivacyNotice()} accessibilityRole="link">
           Aviso de privacidad
         </Text>
