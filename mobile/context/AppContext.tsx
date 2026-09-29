@@ -35,6 +35,7 @@ type Mechanic = {
   distanceKm?: number;
   bio?: string | null;
   coverPhotoUrl?: string | null;
+  profilePhotoUrl?: string | null;
   gallery?: string[];
   reviewCount?: number;
   laborRate?: number | null;
@@ -132,6 +133,11 @@ type ServiceRequest = {
   mechanicId: number | null;
   mechanicName?: string | null;
   mechanicPhone?: string | null;
+  mechanicPhotoUrl?: string | null;
+  mechanicRating?: number | null;
+  mechanicReviewCount?: number | null;
+  mechanicJobsCompleted?: number | null;
+  mechanicVerified?: number | boolean | null;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;

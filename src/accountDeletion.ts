@@ -104,7 +104,7 @@ export async function anonymizeAccount(user: DeletableUser): Promise<void> {
     {
       sql: `UPDATE mechanics
             SET full_name = 'Mecánico eliminado', phone = 'eliminado-m' || id, status = 'suspended',
-                is_online = 0, is_available = 0, bio = NULL, cover_photo_url = NULL, gallery_json = '[]',
+                is_online = 0, is_available = 0, bio = NULL, cover_photo_url = NULL, profile_photo_url = NULL, gallery_json = '[]',
                 latitude = NULL, longitude = NULL, location_updated_at = NULL,
                 tip_clabe = NULL, tip_holder_name = NULL
             WHERE id = ?`,

@@ -136,6 +136,18 @@ mantener informadas a ambas partes.
   `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
   cada 20 s mientras está pendiente, así el checklist avanza solo cuando
   Didit aprueba.
+- **Foto de perfil obligatoria del mecánico** (`mechanics.profile_photo_url`):
+  es el paso 2 de "Activa tu cuenta" (quedan 4 pasos). Es una selfie con la
+  cámara frontal, sin galería, recortada en cuadro y de máximo 800 px
+  (`takeProfilePhoto` en `mobile/photos.ts`), y se sube con
+  `PUT /api/mechanics/me/profile-photo`. Al reemplazarla se borra la anterior
+  de `uploaded_photos` y no se puede quitar. Sin foto,
+  `applyMechanicConnection` no deja conectarse, y al arrancar el servidor
+  desconecta a quien esté conectado sin foto. El cliente la ve en "Tu
+  mecánico", junto con estrellas, servicios y "Cuenta verificada", y con el
+  aviso de revisar que sea la persona de la foto. También sale en la lista y
+  el perfil de mecánicos. Se cambia en Acciones → Mi perfil. Es distinta de la
+  foto de portada (`cover_photo_url`), que puede ser del taller.
 - **Conectarse deja al mecánico disponible** (`is_available = 1`) salvo que
   tenga un trabajo en curso. Antes se conservaba el valor anterior, y un
   mecánico nuevo (registrado con 0) nunca recibía solicitudes automáticas.

@@ -7,6 +7,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import {
+  Avatar,
   Card,
   ChoiceTile,
   Field,
@@ -22,6 +23,7 @@ import {
   ACTIVE_REQUEST_STATUSES,
   ContactRow,
   EmergencyButton,
+  mechanicTrustLine,
   RequestChat,
   SearchingStatus,
   ServiceProgress,
@@ -67,6 +69,7 @@ export type MechanicProfile = {
   laborRate: number | null;
   bio: string | null;
   coverPhotoUrl: string | null;
+  profilePhotoUrl: string | null;
   gallery: string[];
   city: string;
   zone: string;
@@ -77,6 +80,7 @@ type HomeScreenProps = {
   mechanicProfile: MechanicProfile | null;
   onStartIdentityVerification: () => void;
   onSaveLaborRate: (rate: string) => void;
+  onTakeProfilePhoto: () => void;
   requestForm: RequestFormShape;
   setRequestForm: Dispatch<SetStateAction<RequestFormShape>>;
   onToggleMechanicConnection: (next: 'online' | 'offline') => void;
@@ -418,7 +422,17 @@ function CustomerHome(props: HomeScreenProps) {
       )}
       {hasMechanic && (
         <Card title="Tu mecánico">
-          <ContactRow label="Mecánico asignado" name={detail.mechanicName as string} phone={detail.mechanicPhone} />
+          <ContactRow
+            label="Mecánico asignado"
+            name={detail.mechanicName as string}
+            phone={detail.mechanicPhone}
+            photoUrl={detail.mechanicPhotoUrl}
+            detail={mechanicTrustLine(detail)}
+          />
+          <Text style={styles.smallText}>
+            Cuando llegue, revisa que sea la persona de la foto. Si no es, no le entregues el auto; si te sientes en
+            riesgo, usa el botón de emergencia.
+          </Text>
         </Card>
       )}
       <EmergencyButton onPress={props.onEmergencyCall} />
@@ -491,10 +505,12 @@ function MechanicOnboarding({
   profile,
   onStartIdentityVerification,
   onSaveLaborRate,
+  onTakeProfilePhoto,
 }: {
   profile: MechanicProfile;
   onStartIdentityVerification: () => void;
   onSaveLaborRate: (rate: string) => void;
+  onTakeProfilePhoto: () => void;
 }) {
   const { busy, identityState, identityBusy, mechanicConnection } = useAppContext();
   const [rateDraft, setRateDraft] = useState(profile.laborRate ? String(profile.laborRate) : '');
@@ -504,17 +520,19 @@ function MechanicOnboarding({
   }
 
   const identityDone = profile.status === 'active';
+  const photoDone = Boolean(profile.profilePhotoUrl);
   const rateDone = profile.laborRate != null && profile.laborRate > 0;
-  if (identityDone && rateDone) {
+  if (identityDone && photoDone && rateDone) {
     return null;
   }
 
   const canRetryIdentity = !identityState.status || identityState.status === 'draft' || identityState.status === 'rejected';
-  const doneCount = Number(identityDone) + Number(rateDone);
+  const doneCount = Number(identityDone) + Number(photoDone) + Number(rateDone);
+  const readyToConnect = identityDone && photoDone;
 
   return (
     <Animated.View entering={FadeInDown.duration(300)}>
-      <Card title="Activa tu cuenta" subtitle={`${doneCount} de 3 pasos listos`}>
+      <Card title="Activa tu cuenta" subtitle={`${doneCount} de 4 pasos listos`}>
         <View style={styles.stack}>
           <ChecklistStep
             number={1}
@@ -532,6 +550,23 @@ function MechanicOnboarding({
           </ChecklistStep>
           <ChecklistStep
             number={2}
+            done={photoDone}
+            title="Tómate tu foto de perfil"
+            description="Una selfie donde se vea bien tu cara, sin lentes oscuros ni gorra. El cliente la ve al aceptar su solicitud, para saber quién va a llegar. Sin foto no puedes conectarte."
+          >
+            <View style={styles.profilePhotoPreview}>
+              <Avatar uri={profile.profilePhotoUrl} size={64} />
+              <View style={styles.flex}>
+                <PrimaryButton
+                  title={photoDone ? 'Cambiar foto' : 'Tomar foto'}
+                  busy={busy}
+                  onPress={onTakeProfilePhoto}
+                />
+              </View>
+            </View>
+          </ChecklistStep>
+          <ChecklistStep
+            number={3}
             done={rateDone}
             title="Pon el precio de tu visita y diagnóstico"
             description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico. Mecanifique cobra 10 % de la visita y la mano de obra; tus primeros 30 días, nada."
@@ -547,11 +582,15 @@ function MechanicOnboarding({
             <PrimaryButton title="Guardar precio" busy={busy} onPress={() => onSaveLaborRate(rateDraft)} />
           </ChecklistStep>
           <ChecklistStep
-            number={3}
-            done={identityDone && mechanicConnection === 'online'}
+            number={4}
+            done={readyToConnect && mechanicConnection === 'online'}
             title="Conéctate para recibir solicitudes"
             description={
-              identityDone ? 'Toca «Conectarme» aquí abajo.' : 'Se habilita en cuanto aprobemos tu identidad.'
+              readyToConnect
+                ? 'Toca «Conectarme» aquí abajo.'
+                : !identityDone
+                  ? 'Se habilita en cuanto aprobemos tu identidad.'
+                  : 'Se habilita en cuanto subas tu foto de perfil.'
             }
           />
         </View>
@@ -644,6 +683,7 @@ function MechanicHome(props: HomeScreenProps) {
           profile={props.mechanicProfile}
           onStartIdentityVerification={props.onStartIdentityVerification}
           onSaveLaborRate={props.onSaveLaborRate}
+          onTakeProfilePhoto={props.onTakeProfilePhoto}
         />
       )}
       {/* El corte de comisiones por pagar (o vencido: no puede conectarse). */}

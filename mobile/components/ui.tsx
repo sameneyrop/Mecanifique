@@ -160,6 +160,35 @@ export function ChoiceTile({
 }
 
 /** Un dato con su ícono azul al frente, en vez de "Etiqueta: valor". */
+/** Foto de perfil en círculo; sin foto, las iniciales del nombre. */
+export function Avatar({ uri, name, size = 48 }: { uri?: string | null; name?: string | null; size?: number }) {
+  const circle = { width: size, height: size, borderRadius: size / 2 };
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={[styles.avatarImage, circle]}
+        accessibilityLabel={name ? `Foto de ${name}` : 'Foto de perfil'}
+      />
+    );
+  }
+  const initials = (name ?? '')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+  return (
+    <View style={[styles.avatarCircle, circle]}>
+      {initials ? (
+        <Text style={[styles.avatarInitials, { fontSize: Math.round(size * 0.38) }]}>{initials}</Text>
+      ) : (
+        <Ionicons name="person-outline" size={Math.round(size * 0.5)} color={colors.primary} />
+      )}
+    </View>
+  );
+}
+
 export function InfoRow({ icon, text, lines }: { icon: IconName; text: string; lines?: number }) {
   return (
     <View style={styles.infoRow}>

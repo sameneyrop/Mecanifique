@@ -46,6 +46,7 @@ import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
+import { takeProfilePhoto } from './photos';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -167,6 +168,7 @@ type Mechanic = {
   distanceKm?: number;
   bio?: string | null;
   coverPhotoUrl?: string | null;
+  profilePhotoUrl?: string | null;
   gallery?: string[];
   reviewCount?: number;
   laborRate?: number | null;
@@ -263,6 +265,11 @@ type ServiceRequest = {
   mechanicId: number | null;
   mechanicName?: string | null;
   mechanicPhone?: string | null;
+  mechanicPhotoUrl?: string | null;
+  mechanicRating?: number | null;
+  mechanicReviewCount?: number | null;
+  mechanicJobsCompleted?: number | null;
+  mechanicVerified?: number | boolean | null;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;
@@ -2009,6 +2016,30 @@ export default function App() {
     }
   }
 
+  /** Foto de perfil (selfie, obligatoria para conectarse). Sirve para subirla y para cambiarla. */
+  async function handleTakeProfilePhoto() {
+    try {
+      const imageBase64 = await takeProfilePhoto();
+      if (!imageBase64) {
+        return;
+      }
+      setBusy(true);
+      setMessage('Subiendo tu foto...');
+      await apiRequest<{ url: string }>('/api/mechanics/me/profile-photo', {
+        method: 'PUT',
+        token,
+        body: { imageBase64 },
+      });
+      await loadMechanicProfile();
+      setMessage('Foto de perfil guardada');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /** Al conectarse, el mecánico manda su ubicación para que lo encuentren por distancia. */
   async function sendMechanicLocation() {
     if (!user?.mechanicId) {
@@ -3362,6 +3393,7 @@ export default function App() {
                 mechanicProfile={mechanicProfile}
                 onStartIdentityVerification={handleStartIdentityVerification}
                 onSaveLaborRate={handleSaveLaborRate}
+                onTakeProfilePhoto={() => void handleTakeProfilePhoto()}
                 requestForm={requestForm}
                 setRequestForm={setRequestForm}
                 onToggleMechanicConnection={handleToggleMechanicConnection}
@@ -3538,6 +3570,8 @@ export default function App() {
               onSavePublicProfile={handleSavePublicProfile}
               onAddProfilePhoto={handleAddProfilePhoto}
               onRemoveProfilePhoto={handleRemoveProfilePhoto}
+              profilePhotoUrl={mechanicProfile?.profilePhotoUrl ?? null}
+              onTakeProfilePhoto={() => void handleTakeProfilePhoto()}
               onCreateScheduleSlot={handleCreateScheduleSlot}
               onResolveDispute={handleResolveDispute}
               onClearSession={handleLogout}

@@ -113,6 +113,12 @@ export async function initDb(): Promise<void> {
   await ensureColumn("mechanics", "is_online", "ALTER TABLE mechanics ADD COLUMN is_online INTEGER NOT NULL DEFAULT 0");
   await ensureColumn("mechanics", "bio", "ALTER TABLE mechanics ADD COLUMN bio TEXT");
   await ensureColumn("mechanics", "cover_photo_url", "ALTER TABLE mechanics ADD COLUMN cover_photo_url TEXT");
+  // Foto de la cara del mecánico, obligatoria para conectarse: el cliente
+  // ve quién va a llegar a su casa. Distinta de la portada (puede ser el taller).
+  await ensureColumn("mechanics", "profile_photo_url", "ALTER TABLE mechanics ADD COLUMN profile_photo_url TEXT");
+  // Sin foto no se puede estar conectado: los que ya lo estaban se desconectan
+  // (vuelven a conectarse en cuanto la suben).
+  await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE profile_photo_url IS NULL AND is_online = 1");
   await ensureColumn("mechanics", "gallery_json", "ALTER TABLE mechanics ADD COLUMN gallery_json TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("mechanics", "review_count", "ALTER TABLE mechanics ADD COLUMN review_count INTEGER NOT NULL DEFAULT 0");
   await ensureColumn(

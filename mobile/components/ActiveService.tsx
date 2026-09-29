@@ -5,7 +5,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { ILLUSTRATIONS } from '../illustrations';
-import { Card, CharCounter, Field, Illustration, Input, PrimaryButton } from './ui';
+import { Avatar, Card, CharCounter, Field, Illustration, Input, PrimaryButton } from './ui';
 
 export const ACTIVE_REQUEST_STATUSES = new Set([
   'pending',
@@ -119,13 +119,51 @@ export function SearchingStatus({
 }
 
 /** Persona del otro lado del servicio, con botón para llamarla. */
-export function ContactRow({ label, name, phone }: { label: string; name: string; phone?: string | null }) {
+/** "★ 4.8 (12 reseñas) · 30 servicios · Cuenta verificada", para la tarjeta del mecánico asignado. */
+export function mechanicTrustLine(request: {
+  mechanicRating?: number | null;
+  mechanicReviewCount?: number | null;
+  mechanicJobsCompleted?: number | null;
+  mechanicVerified?: number | boolean | null;
+}): string {
+  const reviews = request.mechanicReviewCount ?? 0;
+  const jobs = request.mechanicJobsCompleted ?? 0;
+  return [
+    reviews > 0 && request.mechanicRating != null
+      ? `★ ${request.mechanicRating.toFixed(1)} (${reviews} reseña${reviews === 1 ? '' : 's'})`
+      : 'Nuevo en Mecanifique',
+    jobs > 0 ? `${jobs} servicio${jobs === 1 ? '' : 's'}` : null,
+    request.mechanicVerified ? 'Cuenta verificada' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export function ContactRow({
+  label,
+  name,
+  phone,
+  photoUrl,
+  detail,
+}: {
+  label: string;
+  name: string;
+  phone?: string | null;
+  /** Con foto (el mecánico, para que el cliente sepa quién llega) se muestra grande. */
+  photoUrl?: string | null;
+  detail?: string;
+}) {
   return (
     <View style={styles.contactRow}>
-      <Ionicons name="person-circle-outline" size={40} color={colors.primary} />
+      {photoUrl ? (
+        <Avatar uri={photoUrl} name={name} size={64} />
+      ) : (
+        <Ionicons name="person-circle-outline" size={40} color={colors.primary} />
+      )}
       <View style={styles.flex}>
         <Text style={styles.smallText}>{label}</Text>
         <Text style={styles.itemTitle}>{name}</Text>
+        {detail ? <Text style={styles.smallText}>{detail}</Text> : null}
       </View>
       {phone ? (
         <Pressable

@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, EmptyState, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Avatar, Card, EmptyState, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
 import { MechanicRadar } from '../components/MechanicRadar';
 import { ILLUSTRATIONS } from '../illustrations';
 import { PromotionItem, type Promotion } from './PromotionsScreen';
@@ -184,9 +184,7 @@ export function MechanicsScreen({
                           accessibilityLabel={`Ver el perfil de ${mechanic.fullName}`}
                         >
                           <View style={styles.itemHeader}>
-                            <View style={styles.itemIcon}>
-                              <Ionicons name="person-outline" size={20} color={colors.primary} />
-                            </View>
+                            <Avatar uri={mechanic.profilePhotoUrl} name={mechanic.fullName} size={44} />
                             <View style={styles.flex}>
                               <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
                               <Text style={styles.smallText}>
@@ -268,9 +266,7 @@ export function MechanicsScreen({
                       accessibilityLabel={`Ver el perfil de ${mechanic.fullName}`}
                     >
                       <View style={styles.itemHeader}>
-                        <View style={styles.itemIcon}>
-                          <Ionicons name="person-outline" size={20} color={colors.primary} />
-                        </View>
+                        <Avatar uri={mechanic.profilePhotoUrl} name={mechanic.fullName} size={44} />
                         <View style={styles.flex}>
                           <Text style={styles.itemTitle}>{mechanic.fullName}</Text>
                           <Text style={styles.smallText}>
@@ -299,6 +295,14 @@ export function MechanicsScreen({
             subtitle={selected.specialties.length > 0 ? selected.specialties.join(', ') : undefined}
           >
             <View style={styles.stack}>
+              {selected.profilePhotoUrl ? (
+                <View style={styles.profilePhotoPreview}>
+                  <Avatar uri={selected.profilePhotoUrl} name={selected.fullName} size={88} />
+                  <Text style={[styles.smallText, styles.flex]}>
+                    Así se ve {selected.fullName.split(' ')[0]}: es quien llega si te acepta la solicitud.
+                  </Text>
+                </View>
+              ) : null}
               {selected.coverPhotoUrl ? <Image source={{ uri: selected.coverPhotoUrl }} style={styles.coverPhoto} /> : null}
               {user.role === 'customer' && (
                 <Pressable

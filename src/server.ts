@@ -124,7 +124,7 @@ import {
   getTipInfoForRequest,
   saveMechanicTipInfo
 } from "./tips";
-import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, findPhoto, savePhoto } from "./uploads";
+import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
 
 const app = express();
 // Render pone un proxy delante: sin esto, req.ip era la IP del proxy para
@@ -675,6 +675,7 @@ type MechanicRow = {
   longitude: number | null;
   bio: string | null;
   coverPhotoUrl: string | null;
+  profilePhotoUrl: string | null;
   galleryJson: string;
   createdAt: string;
 };
@@ -1481,7 +1482,10 @@ export async function applyMechanicConnection(
   isOnline: boolean,
   enforceActive: boolean
 ): Promise<MechanicConnectionResult> {
-  const mechanic = await get<{ status: string }>("SELECT status FROM mechanics WHERE id = ?", [mechanicId]);
+  const mechanic = await get<{ status: string; profilePhotoUrl: string | null }>(
+    "SELECT status, profile_photo_url AS profilePhotoUrl FROM mechanics WHERE id = ?",
+    [mechanicId]
+  );
   if (!mechanic) {
     return { ok: false, status: 404, error: "Mecánico no encontrado" };
   }
@@ -1499,6 +1503,15 @@ export async function applyMechanicConnection(
         mechanic.status === "suspended"
           ? "Tu cuenta está suspendida. Escríbenos a soporte para revisarla."
           : "Tu cuenta todavía no está activa. Verifica tu identidad para empezar a recibir solicitudes."
+    };
+  }
+
+  // El cliente tiene que ver la cara de quien va a llegar a su casa.
+  if (enforceActive && !mechanic.profilePhotoUrl) {
+    return {
+      ok: false,
+      status: 409,
+      error: "Sube tu foto de perfil para conectarte: el cliente necesita ver quién va a llegar."
     };
   }
 
@@ -3403,7 +3416,8 @@ app.get(
     let sql = `
       SELECT id, full_name AS fullName, phone, city, zone, years_experience AS yearsExperience,
              specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
-             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
+             latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, profile_photo_url AS profilePhotoUrl,
+             gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
       FROM mechanics
       WHERE status = 'active'
     `;
@@ -3592,6 +3606,45 @@ app.post(
 
     const fileName = await savePhoto(photo, req.auth?.user.id ?? null);
     res.status(201).json({ url: publicPhotoUrl(req, fileName) });
+  })
+);
+
+// Foto de perfil (la cara) del mecánico: obligatoria para conectarse. La app
+// solo la toma con la cámara frontal, para que sea una foto suya del momento
+// y no una imagen cualquiera. Reemplazarla borra la anterior; quitarla no se
+// puede.
+app.put(
+  "/api/mechanics/me/profile-photo",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const mechanicId = req.auth?.user.mechanicId;
+    if (!mechanicId) {
+      res.status(400).json({ error: "Mecánico autenticado inválido" });
+      return;
+    }
+    if (applyRateLimit("profile-photo", req, res, 10)) {
+      return;
+    }
+    const payload = z.object({ imageBase64: z.string().min(100) }).parse(req.body);
+
+    let photo: ReturnType<typeof decodePhoto>;
+    try {
+      photo = decodePhoto(payload.imageBase64);
+    } catch (error) {
+      if (error instanceof PhotoUploadError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    const userId = req.auth!.user.id;
+    const previous = await get<{ url: string | null }>("SELECT profile_photo_url AS url FROM mechanics WHERE id = ?", [mechanicId]);
+    const url = publicPhotoUrl(req, await savePhoto(photo, userId));
+    await run("UPDATE mechanics SET profile_photo_url = ? WHERE id = ?", [url, mechanicId]);
+    await deletePhotoByUrl(previous?.url, userId);
+    res.json({ url });
   })
 );
 
@@ -3797,13 +3850,15 @@ app.get(
       laborRate: number | null;
       bio: string | null;
       coverPhotoUrl: string | null;
+      profilePhotoUrl: string | null;
       galleryJson: string | null;
       city: string;
       zone: string;
     }>(
       `
       SELECT id, status, is_online AS isOnline, is_available AS isAvailable, labor_rate AS laborRate,
-             bio, cover_photo_url AS coverPhotoUrl, gallery_json AS galleryJson, city, zone
+             bio, cover_photo_url AS coverPhotoUrl, profile_photo_url AS profilePhotoUrl,
+             gallery_json AS galleryJson, city, zone
       FROM mechanics
       WHERE id = ?
       `,
@@ -3821,6 +3876,7 @@ app.get(
       laborRate: mechanic.laborRate,
       bio: mechanic.bio,
       coverPhotoUrl: mechanic.coverPhotoUrl,
+      profilePhotoUrl: mechanic.profilePhotoUrl,
       gallery: JSON.parse(mechanic.galleryJson || "[]"),
       city: mechanic.city,
       zone: mechanic.zone
@@ -4656,6 +4712,9 @@ app.get(
              sr.created_at AS createdAt, sr.updated_at AS updatedAt,
              c.full_name AS customerName, c.phone AS customerPhone,
              m.full_name AS mechanicName, m.phone AS mechanicPhone,
+             m.profile_photo_url AS mechanicPhotoUrl, m.rating AS mechanicRating,
+             m.review_count AS mechanicReviewCount, m.jobs_completed AS mechanicJobsCompleted,
+             m.status = 'active' AS mechanicVerified,
              ${VISIT_FEE_SQL} AS visitFee, sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt,
              sr.payment_method AS paymentMethod, sr.unpaid_reported_at AS unpaidReportedAt,
              EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,

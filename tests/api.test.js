@@ -470,8 +470,8 @@ function uniquePhone() {
 
 async function createOnlineMechanic(city, zone, coords = null) {
   const result = await run(
-    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online, latitude, longitude, last_seen_at)
-     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1, ?, ?, CURRENT_TIMESTAMP)`,
+    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online, latitude, longitude, last_seen_at, profile_photo_url)
+     VALUES (?, ?, ?, ?, 3, '["Motor"]', 'active', 1, 1, ?, ?, CURRENT_TIMESTAMP, 'https://example.test/uploads/cara.jpg')`,
     [`Mecánico ${crypto.randomUUID().slice(0, 6)}`, uniquePhone(), city, zone, coords?.latitude ?? null, coords?.longitude ?? null]
   );
   createdRows.mechanics.push(result.lastID);
@@ -1370,12 +1370,12 @@ test("propina: solo el cliente de un servicio terminado ve la CLABE del mecánic
 
 // --- Conexión del mecánico ---
 
-async function createRegisteredMechanic(status) {
+async function createRegisteredMechanic(status, profilePhotoUrl = "https://example.test/uploads/cara.jpg") {
   // Igual que un registro real: is_available = 0, is_online = 0.
   const result = await run(
-    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online)
-     VALUES ('Mecánico Nuevo', ?, ?, 'Centro', 1, '["Motor"]', ?, 0, 0)`,
-    [uniquePhone(), `Ciudad-${crypto.randomUUID()}`, status]
+    `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, is_online, profile_photo_url)
+     VALUES ('Mecánico Nuevo', ?, ?, 'Centro', 1, '["Motor"]', ?, 0, 0, ?)`,
+    [uniquePhone(), `Ciudad-${crypto.randomUUID()}`, status, profilePhotoUrl]
   );
   createdRows.mechanics.push(result.lastID);
   return result.lastID;
@@ -1848,6 +1848,56 @@ test("mecánico pendiente de verificación: no puede conectarse y recibe una exp
   assert.match(result.error, /verifica tu identidad/i);
   const row = await get("SELECT is_online AS isOnline FROM mechanics WHERE id = ?", [mechanicId]);
   assert.equal(row.isOnline, 0);
+});
+
+test("foto de perfil: sin foto de su cara el mecánico activo no se puede conectar", async () => {
+  const mechanicId = await createRegisteredMechanic("active", null);
+
+  const blocked = await applyMechanicConnection(mechanicId, true, true);
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.error, /foto de perfil/);
+  assert.equal((await get("SELECT is_online AS isOnline FROM mechanics WHERE id = ?", [mechanicId])).isOnline, 0);
+
+  // Desconectarse siempre se puede, y un pendiente ve primero lo de la identidad.
+  assert.equal((await applyMechanicConnection(mechanicId, false, true)).ok, true);
+  const pending = await createRegisteredMechanic("pending_verification", null);
+  assert.match((await applyMechanicConnection(pending, true, true)).error, /verifica tu identidad/i);
+
+  await run("UPDATE mechanics SET profile_photo_url = 'https://example.test/uploads/cara.jpg' WHERE id = ?", [mechanicId]);
+  assert.deepEqual(await applyMechanicConnection(mechanicId, true, true), { ok: true, isAvailable: true });
+
+  const upload = await request("/api/mechanics/me/profile-photo", { method: "PUT", body: JSON.stringify({ imageBase64: "x".repeat(200) }) });
+  assert.equal(upload.response.status, 401);
+});
+
+test("foto reemplazada: se borra la anterior, solo si la subió la misma cuenta", async () => {
+  const { deletePhotoByUrl } = require("../src/uploads.ts");
+  const createUser = async () => {
+    const supabaseUserId = crypto.randomUUID();
+    return (await run(
+      "INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash) VALUES ('customer', ?, ?, 'Foto', 'x', 'x')",
+      [`${supabaseUserId}@example.test`, supabaseUserId]
+    )).lastID;
+  };
+  const owner = await createUser();
+  const other = await createUser();
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const fileName = await savePhoto({ buffer: png, extension: "png" }, owner);
+  const url = `https://mecanifique.onrender.com/uploads/${fileName}`;
+  const id = fileName.split(".")[0];
+
+  try {
+    await deletePhotoByUrl(url, other);
+    assert.ok(await get("SELECT id FROM uploaded_photos WHERE id = ?", [id]), "otra cuenta no la borra");
+    await deletePhotoByUrl("https://example.test/uploads/no-es-un-nombre.png", owner);
+    await deletePhotoByUrl(null, owner);
+    await deletePhotoByUrl(url, owner);
+    assert.equal(await get("SELECT id FROM uploaded_photos WHERE id = ?", [id]), undefined);
+  } finally {
+    await run("DELETE FROM uploaded_photos WHERE id = ?", [id]);
+    await run("DELETE FROM users WHERE id IN (?, ?)", [owner, other]);
+  }
 });
 
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {

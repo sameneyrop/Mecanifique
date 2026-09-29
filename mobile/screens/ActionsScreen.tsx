@@ -18,6 +18,7 @@ import {
   IdentityVerificationCard,
   RequestCard,
   Illustration,
+  Avatar,
 } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
 import { formatCalendarDate, openExternalNavigation, openPrivacyNotice, openTerms } from '../utils';
@@ -177,6 +178,8 @@ export function ActionsScreen({
   onSavePublicProfile,
   onAddProfilePhoto,
   onRemoveProfilePhoto,
+  profilePhotoUrl,
+  onTakeProfilePhoto,
   onCreateScheduleSlot,
   onResolveDispute,
   onClearSession,
@@ -218,6 +221,8 @@ export function ActionsScreen({
   onSavePublicProfile: () => void;
   onAddProfilePhoto: (kind: 'cover' | 'gallery') => void;
   onRemoveProfilePhoto: (kind: 'cover' | 'gallery', url: string) => void;
+  profilePhotoUrl: string | null;
+  onTakeProfilePhoto: () => void;
   onCreateScheduleSlot: () => void;
   onResolveDispute: (disputeId: number, status: 'under_review' | 'resolved') => void;
   onClearSession: () => Promise<void>;
@@ -306,7 +311,23 @@ export function ActionsScreen({
               <Card title="Tu perfil público" subtitle="Esto es lo que ven los clientes cuando te buscan.">
                 <View style={styles.stack}>
                   <Illustration source={ILLUSTRATIONS.mechanicDashboard} compact />
-                  <Text style={styles.label}>Foto principal</Text>
+                  <Text style={styles.label}>Tu foto de perfil</Text>
+                  <View style={styles.profilePhotoPreview}>
+                    <Avatar uri={profilePhotoUrl} name={user.fullName} size={72} />
+                    <View style={[styles.flex, styles.stack]}>
+                      <Text style={styles.smallText}>
+                        Una selfie con tu cara bien visible. El cliente la ve al aceptar su solicitud. Es obligatoria para
+                        conectarte.
+                      </Text>
+                      <SecondaryButton
+                        title={profilePhotoUrl ? 'Cambiar foto' : 'Tomar foto'}
+                        compact
+                        busy={busy}
+                        onPress={onTakeProfilePhoto}
+                      />
+                    </View>
+                  </View>
+                  <Text style={styles.label}>Foto de portada (tu taller o tu trabajo)</Text>
                   {coverPhotoUrl ? (
                     <View style={styles.stack}>
                       <Image source={{ uri: coverPhotoUrl }} style={styles.coverPhoto} />

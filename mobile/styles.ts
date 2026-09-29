@@ -755,6 +755,18 @@ export const styles = StyleSheet.create({
   avatarIcon: {
     fontSize: 28,
   },
+  avatarImage: {
+    backgroundColor: colors.primaryLight,
+  },
+  avatarInitials: {
+    color: colors.primaryDark,
+    fontFamily: fonts.bold,
+  },
+  profilePhotoPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
   profileBody: {
     flex: 1,
     gap: 2,

@@ -53,6 +53,18 @@ export async function savePhoto(
   return `${id}.${photo.extension}`;
 }
 
+/**
+ * Borra una foto a partir de su dirección pública (".../uploads/<uuid>.jpg"),
+ * solo si la subió esa misma cuenta. Para no acumular fotos reemplazadas.
+ */
+export async function deletePhotoByUrl(url: string | null | undefined, uploadedByUserId: number): Promise<void> {
+  const match = url ? FILE_NAME_PATTERN.exec(url.split("/").pop() ?? "") : null;
+  if (!match) {
+    return;
+  }
+  await run("DELETE FROM uploaded_photos WHERE id = ? AND uploaded_by_user_id = ?", [match[1], uploadedByUserId]);
+}
+
 /** La foto por su nombre público, o null si no existe o el nombre no es válido. */
 export async function findPhoto(fileName: string): Promise<{ contentType: string; data: Buffer } | null> {
   const match = FILE_NAME_PATTERN.exec(fileName);

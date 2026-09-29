@@ -8,19 +8,36 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
  * un ticket) y se devuelve en base64 para subirla. null si se canceló.
  */
 export async function takeEvidencePhoto(): Promise<string | null> {
+  return takeCameraPhoto({ allowsEditing: false, quality: 1 }, 1600);
+}
+
+/**
+ * Foto de perfil del mecánico: una selfie con la cámara frontal (no de la
+ * galería, para que sea su cara y no cualquier imagen), recortada en cuadro.
+ * Máx. 800 px: se ve en círculo y pesa poco. La cámara frontal es una
+ * sugerencia: algunos Android abren la trasera y la persona la cambia.
+ */
+export async function takeProfilePhoto(): Promise<string | null> {
+  return takeCameraPhoto(
+    { allowsEditing: true, aspect: [1, 1], quality: 1, cameraType: ImagePicker.CameraType.front },
+    800,
+  );
+}
+
+async function takeCameraPhoto(options: ImagePicker.ImagePickerOptions, maxSide: number): Promise<string | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
     throw new Error('Necesitamos permiso para usar la cámara. Puedes darlo en los ajustes del teléfono.');
   }
-  const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
+  const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], ...options });
   const asset = picked.canceled ? null : picked.assets[0];
   if (!asset) {
     return null;
   }
   const context = ImageManipulator.manipulate(asset.uri);
   const longest = Math.max(asset.width, asset.height);
-  if (longest > 1600) {
-    context.resize(asset.width >= asset.height ? { width: 1600 } : { height: 1600 });
+  if (longest > maxSide) {
+    context.resize(asset.width >= asset.height ? { width: maxSide } : { height: maxSide });
   }
   const rendered = await context.renderAsync();
   const saved = await rendered.saveAsync({ base64: true, compress: 0.7, format: SaveFormat.JPEG });
