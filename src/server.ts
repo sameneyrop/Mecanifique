@@ -127,6 +127,7 @@ import {
 } from "./tips";
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
 import { CustomerReviewError, customerRating, hasCustomerReview, reviewCustomer } from "./customerReviews";
+import { profileChecklist } from "./profileChecklist";
 import {
   customerCompletedServices,
   linkedUnpaidService,
@@ -2289,6 +2290,11 @@ app.get("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
   // Su propio promedio como cliente (lo que ven los mecánicos antes de aceptar).
   const rating = authUser.customerId ? await customerRating(authUser.customerId) : null;
   res.json({ fullName: authUser.fullName, email: authUser.login, phone, customerRating: rating });
+}));
+
+// "Completa tu perfil" en Inicio (src/profileChecklist.ts).
+app.get("/api/account/profile-checklist", requireAuth, handleAsync(async (req, res) => {
+  res.json({ items: await profileChecklist(req.auth!.user) });
 }));
 
 app.patch("/api/account/profile", requireAuth, handleAsync(async (req, res) => {

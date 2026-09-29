@@ -2003,6 +2003,44 @@ test("calificación del cliente: solo el mecánico del servicio, al terminar y u
   assert.deepEqual(await customerRating(customer.lastID), { average: 3.5, count: 2 });
 });
 
+test("completa tu perfil: marca lo que ya tiene el cliente y el mecánico", async () => {
+  const { profileChecklist } = require("../src/profileChecklist.ts");
+  const done = (items) => Object.fromEntries(items.map((item) => [item.key, item.done]));
+
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [`sin-telefono-${crypto.randomUUID()}`]);
+  createdRows.customers.push(customer.lastID);
+  const viewer = { id: 987654, role: "customer", fullName: "correo@example.test", customerId: customer.lastID, mechanicId: null };
+  assert.deepEqual(done(await profileChecklist(viewer)), { name: false, phone: false, vehicle: false, favorite: false });
+  await run("UPDATE customers SET phone = ? WHERE id = ?", [uniquePhone(), customer.lastID]);
+  const vehicle = await run(
+    "INSERT INTO vehicle_profiles (customer_id, make, model, year, photo_urls_json, metadata_json) VALUES (?, 'Nissan', 'Versa', 2018, '[]', '{}')",
+    [customer.lastID]
+  );
+  try {
+    assert.deepEqual(done(await profileChecklist({ ...viewer, fullName: "Ana Ruiz" })), {
+      name: true,
+      phone: true,
+      vehicle: true,
+      favorite: false
+    });
+  } finally {
+    await run("DELETE FROM vehicle_profiles WHERE id = ?", [vehicle.lastID]);
+  }
+
+  const mechanicId = await createRegisteredMechanic("active");
+  const mechanicViewer = { id: 987655, role: "mechanic", fullName: "Mecánico", customerId: null, mechanicId };
+  assert.ok((await profileChecklist(mechanicViewer)).every((item) => !item.done));
+  await run(
+    "UPDATE mechanics SET bio = 'Quince años reparando motores y frenos', gallery_json = '[\"https://example.test/a.jpg\"]' WHERE id = ?",
+    [mechanicId]
+  );
+  const items = done(await profileChecklist(mechanicViewer));
+  assert.equal(items.bio, true);
+  assert.equal(items.gallery, true);
+  assert.equal(items.cover, false);
+  assert.equal(items.schedule, false);
+});
+
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {
   const mechanicId = await createRegisteredMechanic("active");
   const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);

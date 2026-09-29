@@ -18,6 +18,7 @@ import {
   IdentityVerificationCard,
 } from '../components/ui';
 import { BiometricSetting } from '../components/BiometricSetting';
+import { takeAccountSection } from '../navigationRequests';
 import { PASSWORD_RULE_TEXT, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
@@ -271,7 +272,7 @@ export function AccountScreen({
   }) => Promise<void>;
 }) {
   const { user, identityState, identityBusy, busy, setMessage, setCurrentScreen, vehicles } = useAppContext();
-  const [expanded, setExpanded] = useState<Section | null>(null);
+  const [expanded, setExpanded] = useState<Section | null>(() => takeAccountSection());
   const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
   // Su calificación como cliente: la que ven los mecánicos antes de aceptar.
   const [rating, setRating] = useState<{ average: number | null; count: number } | null>(null);

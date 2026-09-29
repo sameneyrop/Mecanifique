@@ -758,6 +758,17 @@ export const styles = StyleSheet.create({
   avatarImage: {
     backgroundColor: colors.primaryLight,
   },
+  // "Completa tu perfil" (components/ProfileChecklist.tsx).
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 6,
+  },
+  checklistDone: {
+    color: colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
   // Recorrido de la app (components/AppTour.tsx).
   tourLayer: {
     position: 'absolute',

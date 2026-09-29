@@ -136,6 +136,15 @@ mantener informadas a ambas partes.
   `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
   cada 20 s mientras está pendiente, así el checklist avanza solo cuando
   Didit aprueba.
+- **"Completa tu perfil"** (`GET /api/account/profile-checklist`,
+  `src/profileChecklist.ts`; tarjeta `mobile/components/ProfileChecklist.tsx`
+  en Inicio): recomendaciones de qué hacer después, y cada una lleva a donde
+  se hace (`mobile/navigationRequests.ts` abre la pestaña o sección
+  exacta). Cliente: nombre, teléfono, su auto y un mecánico favorito; se
+  muestra sin servicio en curso. Mecánico: portada, descripción, fotos de su
+  trabajo, horarios en la agenda, CLABE para propinas y una promoción; se
+  muestra ya activo (foto y precio listos) y sin trabajo en curso. Se esconde
+  cuando todo está listo, o 7 días con "Ocultar por ahora".
 - **Entrar con huella** (APK 1.0.1, `mobile/biometric.ts`). Al cerrar sesión
   se pregunta una vez "¿Entrar con tu huella la próxima vez?". Si se acepta,
   el refresh token se sella con `SecureStore` y `requireAuthentication` en vez

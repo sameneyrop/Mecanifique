@@ -36,6 +36,7 @@ import { CustomerAbsentAction, WithdrawButton } from '../components/Cancellation
 import { CommissionHomeCard } from '../components/Commissions';
 import { TourTarget } from '../components/AppTour';
 import { CustomerReviewCard } from '../components/CustomerReview';
+import { ProfileChecklist } from '../components/ProfileChecklist';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -379,6 +380,8 @@ function CustomerHome(props: HomeScreenProps) {
           setRequestForm={props.setRequestForm}
           onUseMyLocation={props.onUseMyLocation}
         />
+        {/* Sin servicio en curso: qué le falta a su perfil. */}
+        <ProfileChecklist api={props.api} />
       </View>
     );
   }
@@ -692,6 +695,11 @@ function MechanicHome(props: HomeScreenProps) {
       )}
       {/* El corte de comisiones por pagar (o vencido: no puede conectarse). */}
       {props.mechanicProfile?.status === 'active' && <CommissionHomeCard api={props.api} />}
+      {/* Ya activa y sin trabajo en curso: qué más le falta a su perfil público. */}
+      {props.mechanicProfile?.status === 'active' &&
+        props.mechanicProfile.profilePhotoUrl &&
+        props.mechanicProfile.laborRate != null &&
+        activeId === null && <ProfileChecklist api={props.api} />}
       {activeId !== null && !detail && <LoadingServiceCard />}
       {detail && (
         <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>

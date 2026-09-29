@@ -27,6 +27,7 @@ import { TipInfoCard } from '../components/TipInfoCard';
 import { AdminCommissionsCard, CommissionsPanel } from '../components/Commissions';
 import { AdminWaitlistCard } from '../components/Waitlist';
 import { BiometricSetting } from '../components/BiometricSetting';
+import { takeMechanicTab, type MechanicTab } from '../navigationRequests';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -234,7 +235,7 @@ export function ActionsScreen({
   const { user, busy, identityState, identityBusy, setMessage } = useAppContext();
   // El avance de un trabajo se maneja desde Inicio (botón de siguiente paso);
   // aquí el mecánico solo administra lo que ven los clientes: perfil y agenda.
-  const [mechanicView, setMechanicView] = useState<'profile' | 'schedule' | 'promotions' | 'commissions'>('profile');
+  const [mechanicView, setMechanicView] = useState<MechanicTab>(() => takeMechanicTab() ?? 'profile');
 
   if (!user || (user.role !== 'admin' && user.role !== 'mechanic')) {
     return null;
@@ -305,7 +306,7 @@ export function ActionsScreen({
                 { key: 'promotions', label: 'Promociones', icon: 'pricetag-outline' },
                 { key: 'commissions', label: 'Comisiones', icon: 'receipt-outline' },
               ]}
-              onChange={(value) => setMechanicView(value as 'profile' | 'schedule' | 'promotions' | 'commissions')}
+              onChange={(value) => setMechanicView(value as MechanicTab)}
             />
           </Animated.View>
 
