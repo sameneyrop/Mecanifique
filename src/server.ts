@@ -2623,6 +2623,54 @@ app.post("/lista-de-espera", express.urlencoded({ extended: false, limit: "10kb"
   backToSite("ok");
 }));
 
+// Admin (Acciones → Lista de espera): quién se registró en el sitio, para
+// escribirles; marcar a quién ya se le escribió y quitar a quien lo pida.
+app.get("/api/admin/waitlist", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
+  const signups = await all<{
+    id: number;
+    role: "customer" | "mechanic";
+    name: string | null;
+    contact: string;
+    contactKey: string;
+    city: string | null;
+    createdAt: string;
+    contactedAt: string | null;
+  }>(
+    `SELECT id, role, name, contact, contact_key AS contactKey, city,
+            created_at AS createdAt, contacted_at AS contactedAt
+     FROM waitlist_signups
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1000`
+  );
+  res.json({ signups });
+}));
+
+app.post("/api/admin/waitlist/:id/contacted", requireAuth, requireRole("admin"), handleAsync(async (req, res) => {
+  const signupId = parseRequestIdParam(req, res);
+  if (signupId === null) return;
+  const { contacted } = z.object({ contacted: z.boolean() }).parse(req.body);
+  const result = await run(
+    "UPDATE waitlist_signups SET contacted_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id = ?",
+    [contacted ? 1 : 0, signupId]
+  );
+  if (result.changes === 0) {
+    res.status(404).json({ error: "Registro no encontrado" });
+    return;
+  }
+  res.json({ ok: true });
+}));
+
+app.delete("/api/admin/waitlist/:id", requireAuth, requireRole("admin"), handleAsync(async (req, res) => {
+  const signupId = parseRequestIdParam(req, res);
+  if (signupId === null) return;
+  const result = await run("DELETE FROM waitlist_signups WHERE id = ?", [signupId]);
+  if (result.changes === 0) {
+    res.status(404).json({ error: "Registro no encontrado" });
+    return;
+  }
+  res.json({ ok: true });
+}));
+
 // ============================================================================
 // CUOTA DE SERVICIO (Stripe Checkout, ver src/serviceFees.ts)
 // ============================================================================

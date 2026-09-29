@@ -24,6 +24,7 @@ import { formatCalendarDate, openExternalNavigation, openPrivacyNotice, openTerm
 import { MechanicPromotions } from '../components/MechanicPromotions';
 import { TipInfoCard } from '../components/TipInfoCard';
 import { AdminCommissionsCard, CommissionsPanel } from '../components/Commissions';
+import { AdminWaitlistCard } from '../components/Waitlist';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -508,6 +509,10 @@ export function ActionsScreen({
 
           <Animated.View entering={FadeInDown.delay(80).duration(300)} needsOffscreenAlphaCompositing>
             <AdminCommissionsCard api={api} />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(85).duration(300)} needsOffscreenAlphaCompositing>
+            <AdminWaitlistCard api={api} />
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>

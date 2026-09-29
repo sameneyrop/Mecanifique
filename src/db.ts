@@ -750,6 +750,8 @@ export async function initDb(): Promise<void> {
       UNIQUE(contact_key, role)
     )
   `);
+  // Cuándo el admin marcó que ya le escribió (Acciones → Lista de espera).
+  await ensureColumn("waitlist_signups", "contacted_at", "ALTER TABLE waitlist_signups ADD COLUMN contacted_at TEXT");
 
   // Fotos subidas desde la app (ver src/uploads.ts): en la base y no en
   // disco, porque el disco de Render gratis no persiste.

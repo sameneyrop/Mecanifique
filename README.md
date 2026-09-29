@@ -87,6 +87,13 @@ mantener informadas a ambas partes.
   `?registro=ok|error#lista`. La dirección de regreso es fija
   (`WAITLIST_REDIRECT_URL`, por defecto el sitio de Vercel) para no permitir
   redirecciones abiertas. No necesita CORS porque no es un fetch.
+  El admin la ve en **Acciones → Lista de espera** (`GET /api/admin/waitlist`),
+  con los que faltan de contactar primero y filtro Clientes/Mecánicos. Cada
+  registro tiene botones para abrir WhatsApp (o el correo) con un saludo que
+  se puede editar, copiar el contacto, "Ya le escribí" (`contacted_at`, vía
+  `POST /api/admin/waitlist/:id/contacted`) y "Quitar de la lista"
+  (`DELETE /api/admin/waitlist/:id`), solo si la persona pidió que se borren
+  sus datos.
 - **Eliminar cuenta** (requisito de Google Play): Cuenta → Seguridad →
   "Eliminar mi cuenta" (mecánico: Acciones → Sesión), con explicación y doble
   confirmación; bloqueado si hay un servicio en curso o una solicitud

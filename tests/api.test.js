@@ -682,6 +682,18 @@ test("Facebook: solo se regresa a la app, nunca a otro sitio", async () => {
   }
 });
 
+test("lista de espera (admin): sin sesión no se ve, no se marca ni se borra", async () => {
+  const list = await request("/api/admin/waitlist");
+  assert.equal(list.response.status, 401);
+  const contacted = await request("/api/admin/waitlist/1/contacted", { method: "POST", body: JSON.stringify({ contacted: true }) });
+  assert.equal(contacted.response.status, 401);
+  const removed = await request("/api/admin/waitlist/1", { method: "DELETE" });
+  assert.equal(removed.response.status, 401);
+
+  const columns = await all("PRAGMA table_info(waitlist_signups)");
+  assert.ok(columns.some((column) => column.name === "contacted_at"));
+});
+
 test("notificaciones: marcar todas como leídas exige sesión", async () => {
   const { response } = await request("/api/notifications/read-all", { method: "POST" });
   assert.equal(response.status, 401);
