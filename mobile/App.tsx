@@ -271,6 +271,9 @@ type ServiceRequest = {
   mechanicReviewCount?: number | null;
   mechanicJobsCompleted?: number | null;
   mechanicVerified?: number | boolean | null;
+  // Solo en la solicitud entrante del mecánico.
+  customerCompletedServices?: number;
+  unpaidNearby?: boolean;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;
@@ -395,9 +398,16 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || (__DEV__ ? defaultA
 const AUTH_TOKEN_KEY = 'mecanifique.auth.token';
 const AUTH_USER_KEY = 'mecanifique.auth.user';
 const AUTH_REFRESH_KEY = 'mecanifique.auth.refresh';
-// Identificador de este teléfono para la verificación por SMS (lo crea el
-// servidor al confirmar el primer código). No se borra al cerrar sesión.
+// Identificador de este teléfono, en el encabezado X-Device-Id: para la
+// verificación por SMS y para reconocer una cuenta nueva abierta para no pagar
+// un servicio (src/unpaidFingerprints.ts). Se crea la primera vez que se abre
+// la app y no se borra al cerrar sesión (sí al desinstalarla).
 const DEVICE_ID_KEY = 'mecanifique.device.id';
+
+function newDeviceId(): string {
+  const random = () => Math.random().toString(36).slice(2, 10);
+  return `${Date.now().toString(36)}-${random()}-${random()}`;
+}
 const SESSION_EXPIRED_MESSAGE = 'Tu sesión expiró. Vuelve a iniciar sesión.';
 const ONBOARDING_KEY = 'mecanifique.onboarding.seen';
 // El servidor (Render gratis) se duerme tras 15 min sin uso y tarda de 30 a
@@ -739,6 +749,10 @@ export default function App() {
     async function restoreSession() {
       let hadSession = false;
       deviceIdRef.current = await SecureStore.getItemAsync(DEVICE_ID_KEY).catch(() => null);
+      if (!deviceIdRef.current) {
+        deviceIdRef.current = newDeviceId();
+        await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceIdRef.current).catch(() => undefined);
+      }
       try {
         let [storedToken, storedUser, storedRefreshToken] = await Promise.all([
           SecureStore.getItemAsync(AUTH_TOKEN_KEY),

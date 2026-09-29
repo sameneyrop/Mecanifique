@@ -138,6 +138,9 @@ type ServiceRequest = {
   mechanicReviewCount?: number | null;
   mechanicJobsCompleted?: number | null;
   mechanicVerified?: number | boolean | null;
+  // Solo en la solicitud entrante del mecánico.
+  customerCompletedServices?: number;
+  unpaidNearby?: boolean;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;

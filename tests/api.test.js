@@ -110,6 +110,7 @@ async function cleanupCreatedRows() {
     await run("DELETE FROM disputes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM parts_receipts WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM mechanic_withdrawals WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM unpaid_fingerprints WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM commission_charges WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
@@ -1897,6 +1898,73 @@ test("foto reemplazada: se borra la anterior, solo si la subió la misma cuenta"
   } finally {
     await run("DELETE FROM uploaded_photos WHERE id = ?", [id]);
     await run("DELETE FROM users WHERE id IN (?, ?)", [owner, other]);
+  }
+});
+
+test("cuenta nueva para no pagar: la huella (teléfono, correo, celular, ubicación) sobrevive a eliminar la cuenta", async () => {
+  const {
+    customerCompletedServices,
+    linkedUnpaidService,
+    recordUnpaidFingerprints,
+    rememberDevice,
+    unpaidServiceNearby
+  } = require("../src/unpaidFingerprints.ts");
+  const tag = crypto.randomUUID().slice(0, 8);
+  const users = [];
+  async function createAccount(phone, email) {
+    const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [phone]);
+    createdRows.customers.push(customer.lastID);
+    const user = await run(
+      "INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, customer_id) VALUES ('customer', ?, ?, 'Cliente', 'x', 'x', ?)",
+      [email, crypto.randomUUID(), customer.lastID]
+    );
+    users.push(user.lastID);
+    return { customerId: customer.lastID, userId: user.lastID };
+  }
+
+  const phone = uniquePhone();
+  const debtor = await createAccount(phone, `deudor-${tag}@example.test`);
+  await rememberDevice(debtor.userId, `celular-${tag}`);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const request = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id,
+        latitude, longitude, unpaid_reported_at)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', 'X', 'Centro', 'completed', ?, -42.5, -160.5, CURRENT_TIMESTAMP)`,
+    [debtor.customerId, mechanicId]
+  );
+  createdRows.requests.push(request.lastID);
+  await recordUnpaidFingerprints(request.lastID);
+
+  try {
+    // Elimina su cuenta: su teléfono y su correo quedan libres…
+    await anonymizeAccount({ id: debtor.userId, customerId: debtor.customerId, mechanicId: null });
+    // …y abre otra con el mismo teléfono, o con el mismo correo.
+    const samePhone = await createAccount(phone, `nuevo-${tag}@example.test`);
+    assert.deepEqual(await linkedUnpaidService(samePhone.customerId), { requestId: request.lastID });
+    const sameEmail = await createAccount(uniquePhone(), `deudor-${tag}@example.test`);
+    assert.ok(await linkedUnpaidService(sameEmail.customerId));
+
+    // Otra persona: nada, salvo que use el mismo celular.
+    const other = await createAccount(uniquePhone(), `otra-${tag}@example.test`);
+    assert.equal(await linkedUnpaidService(other.customerId), null);
+    assert.ok(await linkedUnpaidService(other.customerId, `celular-${tag}`));
+
+    // Ubicación: a ~30 m avisa, a ~1 km no.
+    assert.equal(await unpaidServiceNearby(-42.5003, -160.5, other.customerId), true);
+    assert.equal(await unpaidServiceNearby(-42.51, -160.5, other.customerId), false);
+    assert.equal(await unpaidServiceNearby(null, null, other.customerId), false);
+
+    // Pagado: todo deja de contar solo.
+    await run("UPDATE service_requests SET paid_at = CURRENT_TIMESTAMP WHERE id = ?", [request.lastID]);
+    assert.equal(await linkedUnpaidService(samePhone.customerId), null);
+    assert.equal(await linkedUnpaidService(other.customerId, `celular-${tag}`), null);
+    assert.equal(await unpaidServiceNearby(-42.5003, -160.5, other.customerId), false);
+    assert.equal(await customerCompletedServices(debtor.customerId), 1);
+    assert.equal(await customerCompletedServices(other.customerId), 0);
+  } finally {
+    await run(`DELETE FROM user_devices WHERE user_id IN (${users.map(() => "?").join(", ")})`, users);
+    await run(`DELETE FROM users WHERE id IN (${users.map(() => "?").join(", ")})`, users);
   }
 });
 

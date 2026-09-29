@@ -491,6 +491,22 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   una disputa `unpaid` y el cliente **no puede pedir otro servicio**
   (`UNPAID_SERVICE`) hasta que el mecánico confirme el pago o el cliente diga,
   dejando constancia, que ya pagó.
+- **Cuentas nuevas para no pagar** (`src/unpaidFingerprints.ts`): al reportar
+  "No me ha pagado" se guarda la huella de la cuenta en `unpaid_fingerprints`.
+  Son HMAC del teléfono, el correo y los celulares, más la ubicación del
+  servicio. También se guarda justo antes de eliminar una cuenta con deuda, y
+  se completa si el deudor vuelve a intentar pedir. Los celulares salen de
+  `user_devices`: la huella del `X-Device-Id`, que la app crea desde que se
+  abre y guarda en `/auth/v2/me` y al pedir servicio. Si otra cuenta con la
+  misma huella intenta pedir, recibe `UNPAID_LINKED_ACCOUNT` con un mensaje
+  genérico, sin revelar de quién es la deuda. A la solicitud entrante del
+  mecánico se le agregan `unpaidNearby` (otra cuenta dejó un servicio sin
+  pagar a menos de 100 m; es un aviso, no un bloqueo) y
+  `customerCompletedServices` (la app muestra "Cliente nuevo" o "N servicios
+  terminados"). Las huellas no se borran: dejan de contar en cuanto el
+  servicio se paga (`UNPAID_DEBT_SQL`). Con la verificación por SMS apagada,
+  quien use otro número, otro correo y reinstale la app no queda cubierto;
+  con Twilio encendido, cada cuenta necesita un número real distinto.
 - Si el cliente dice que pagó y el mecánico que no, se abre una disputa
   `payment_disagreement` (se avisa a los dos y a los admins) **sin bloquear al
   cliente**: un mecánico no puede bloquear a quien sí le pagó con solo decir

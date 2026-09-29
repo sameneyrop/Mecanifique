@@ -6,6 +6,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, EmptyState, InfoRow, PrimaryButton, SecondaryButton } from '../components/ui';
+import { UnpaidNearbyWarning, customerHistoryText } from '../components/IncomingRequestOverlay';
 import { ILLUSTRATIONS } from '../illustrations';
 import { openExternalNavigation, parseServerTimestamp } from '../utils';
 
@@ -57,8 +58,12 @@ export function MapScreen({
                   </Text>
                 </View>
               </View>
-              <InfoRow icon="person-outline" text={incomingRequest.customerName || 'Cliente'} />
+              <InfoRow
+                icon="person-outline"
+                text={`${incomingRequest.customerName || 'Cliente'}${customerHistoryText(incomingRequest.customerCompletedServices)}`}
+              />
               <InfoRow icon="construct-outline" text={incomingRequest.issueDescription} lines={2} />
+              <UnpaidNearbyWarning show={incomingRequest.unpaidNearby} />
               {incomingRequest.latitude != null && incomingRequest.longitude != null && (
                 <SecondaryButton
                   title="Cómo llegar"

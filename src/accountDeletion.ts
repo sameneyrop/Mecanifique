@@ -1,4 +1,5 @@
 import { get, transaction } from "./db";
+import { recordFingerprintsBeforeDeletion } from "./unpaidFingerprints";
 
 /**
  * Eliminación de cuenta (requisito de Google Play).
@@ -15,7 +16,9 @@ import { get, transaction } from "./db";
  * pierden el comentario.
  *
  * Se CONSERVAN, ya sin datos que identifiquen, las alertas de emergencia,
- * disputas y pagos, por motivos de seguridad y legales.
+ * disputas y pagos, por motivos de seguridad y legales. Si debe un servicio,
+ * antes se guarda la huella cifrada de la cuenta (src/unpaidFingerprints.ts)
+ * para que no abra otra cuenta y pida sin pagarlo; deja de contar al pagarse.
  */
 
 type DeletableUser = {
@@ -54,10 +57,14 @@ export async function anonymizeAccount(user: DeletableUser): Promise<void> {
   const customerId = user.customerId ?? -1;
   const mechanicId = user.mechanicId ?? -1;
 
+  // Antes de borrar teléfono, correo y celulares: la huella de lo que debe.
+  await recordFingerprintsBeforeDeletion(user.customerId);
+
   await transaction([
     // Solo de la persona: se borra.
     { sql: "DELETE FROM push_tokens WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM trusted_devices WHERE user_id = ?", params: [userId] },
+    { sql: "DELETE FROM user_devices WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM notifications WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM sessions WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM favorite_mechanics WHERE user_id = ? OR mechanic_id = ?", params: [userId, mechanicId] },

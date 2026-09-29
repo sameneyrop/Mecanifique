@@ -125,6 +125,13 @@ import {
   saveMechanicTipInfo
 } from "./tips";
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
+import {
+  customerCompletedServices,
+  linkedUnpaidService,
+  recordUnpaidFingerprints,
+  rememberDevice,
+  unpaidServiceNearby
+} from "./unpaidFingerprints";
 
 const app = express();
 // Render pone un proxy delante: sin esto, req.ip era la IP del proxy para
@@ -2123,6 +2130,12 @@ app.get(
     // Devolvemos el usuario local (id numérico, igual que en el login): la
     // app compara ese id contra senderUserId del chat. El de Supabase trae
     // un UUID como id y rompía el "Tú" al reabrir la app.
+    if (req.auth?.user) {
+      // Desde qué celular se usa la cuenta (ver src/unpaidFingerprints.ts).
+      await rememberDevice(req.auth.user.id, deviceIdFrom(req)).catch((error) =>
+        console.error("No se pudo guardar el celular de la cuenta", error)
+      );
+    }
     res.json({ user: req.auth?.user ?? req.supabaseAuth?.user });
   })
 );
@@ -2991,12 +3004,26 @@ app.post(
         });
         return;
       }
+      const deviceId = deviceIdFrom(req);
+      await rememberDevice(req.auth.user.id, deviceId);
       const unpaid = await unpaidServiceForCustomer(customerId);
       if (unpaid) {
+        // Si cambió de teléfono o de celular desde el reporte, la huella se completa.
+        await recordUnpaidFingerprints(unpaid.requestId);
         res.status(409).json({
           error: `${unpaid.mechanicName} reporta que no le has pagado ${formatMxn(unpaid.amount)} del servicio #${unpaid.requestId}. Págale o, si ya le pagaste, confírmalo en ese servicio para poder pedir otro.`,
           code: "UNPAID_SERVICE",
           requestId: unpaid.requestId
+        });
+        return;
+      }
+      // Otra cuenta con el mismo teléfono, correo o celular debe un servicio.
+      // No se dice de quién ni cuánto: puede ser un celular compartido.
+      if (await linkedUnpaidService(customerId, deviceId)) {
+        res.status(409).json({
+          error:
+            "Hay un servicio sin pagar ligado a este teléfono, correo o celular. Cuando se pague podrás pedir servicio. Si crees que es un error, escríbenos desde Cuenta → Obtener ayuda.",
+          code: "UNPAID_LINKED_ACCOUNT"
         });
         return;
       }
@@ -4245,7 +4272,16 @@ app.get(
       return;
     }
 
-    res.status(200).json({ request: incoming });
+    // Para decidir antes de aceptar: si el cliente ya tiene historial y si en
+    // esa ubicación otra cuenta dejó un servicio sin pagar.
+    const { customerId, latitude, longitude } = incoming as { customerId: number; latitude: number | null; longitude: number | null };
+    res.status(200).json({
+      request: {
+        ...incoming,
+        customerCompletedServices: await customerCompletedServices(customerId),
+        unpaidNearby: await unpaidServiceNearby(latitude, longitude, customerId)
+      }
+    });
   })
 );
 
@@ -5310,6 +5346,8 @@ app.post(
     try {
       const change = await mechanicReportsUnpaid(requestId, req.auth?.user.mechanicId);
       if (!change.unchanged) {
+        // Huella de la cuenta, para que no pida con otra cuenta sin pagar esta.
+        await recordUnpaidFingerprints(requestId);
         await logPaymentUpdate(requestId, `${change.mechanicName} reportó que no ha recibido el pago de ${formatMxn(change.amount)}.`);
         if (change.disagreement) {
           await notifyPaymentDisagreement(requestId, change);

@@ -11,6 +11,28 @@ import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
 
 const HOLD_TOTAL_SECONDS_FALLBACK = 120;
 
+/** " · Cliente nuevo" o " · 5 servicios terminados", junto al nombre del cliente. */
+export function customerHistoryText(completed: number | undefined): string {
+  if (completed === undefined) return '';
+  return completed > 0 ? ` · ${completed} servicio${completed === 1 ? '' : 's'} terminado${completed === 1 ? '' : 's'}` : ' · Cliente nuevo';
+}
+
+/**
+ * En esa ubicación (a menos de 100 m) otra cuenta dejó un servicio sin pagar
+ * (servidor: src/unpaidFingerprints.ts). No se bloquea: puede ser un vecino.
+ */
+export function UnpaidNearbyWarning({ show }: { show?: boolean }) {
+  if (!show) return null;
+  return (
+    <View style={[styles.guideCard, styles.guideCardWarning]}>
+      <Ionicons name="warning-outline" size={20} color={colors.textDark} />
+      <Text style={[styles.itemText, styles.flex]}>
+        Aviso: en esta ubicación quedó un servicio sin pagar de otra cuenta. Tú decides si la aceptas.
+      </Text>
+    </View>
+  );
+}
+
 function formatCountdown(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
@@ -125,9 +147,13 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
               {incomingRequest.customerName ? (
                 <View style={styles.incomingInfoRow}>
                   <Ionicons name="person-outline" size={20} color={colors.primary} />
-                  <Text style={[styles.itemText, styles.flex]}>{incomingRequest.customerName}</Text>
+                  <Text style={[styles.itemText, styles.flex]}>
+                    {incomingRequest.customerName}
+                    {customerHistoryText(incomingRequest.customerCompletedServices)}
+                  </Text>
                 </View>
               ) : null}
+              <UnpaidNearbyWarning show={incomingRequest.unpaidNearby} />
               {/* Lo que cobra antes de decidir: el precio queda fijo al aceptar. */}
               {incomingRequest.visitFee ? (
                 <View style={styles.incomingInfoRow}>

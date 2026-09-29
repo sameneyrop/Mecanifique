@@ -759,6 +759,34 @@ export async function initDb(): Promise<void> {
   // Cuándo el admin marcó que ya le escribió (Acciones → Lista de espera).
   await ensureColumn("waitlist_signups", "contacted_at", "ALTER TABLE waitlist_signups ADD COLUMN contacted_at TEXT");
 
+  // Celulares desde los que se usó cada cuenta (huella del X-Device-Id, no
+  // el valor), para reconocer una cuenta nueva abierta para no pagar (ver
+  // src/unpaidFingerprints.ts).
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_devices (
+      user_id INTEGER NOT NULL,
+      device_hash TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, device_hash)
+    )
+  `);
+  // Huellas de la cuenta que dejó un servicio sin pagar: sobreviven a que la
+  // cuenta se elimine y dejan de contar solas cuando el servicio se paga.
+  await run(`
+    CREATE TABLE IF NOT EXISTS unpaid_fingerprints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      customer_id INTEGER,
+      kind TEXT NOT NULL CHECK(kind IN ('phone', 'email', 'device', 'location')),
+      value_hash TEXT NOT NULL,
+      latitude REAL,
+      longitude REAL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(service_request_id, kind, value_hash)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_unpaid_fingerprints_value ON unpaid_fingerprints(kind, value_hash)");
+
   // Fotos subidas desde la app (ver src/uploads.ts): en la base y no en
   // disco, porque el disco de Render gratis no persiste.
   await run(`

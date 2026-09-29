@@ -113,6 +113,10 @@ export async function freezeVisitFee(requestId: number): Promise<void> {
 // Se cobra al terminar, o al cancelar con cargo (cancelación tardía o cliente ausente).
 const PAYABLE_SQL = "(sr.status = 'completed' OR (sr.status = 'cancelled' AND COALESCE(sr.cancellation_fee, 0) > 0))";
 
+/** Deuda vigente (alias sr): el mecánico dice que no le pagaron y el cliente no ha dicho que sí. */
+export const UNPAID_DEBT_SQL = `${PAYABLE_SQL}
+  AND sr.unpaid_reported_at IS NOT NULL AND sr.paid_at IS NULL AND sr.customer_paid_at IS NULL`;
+
 type PaymentRow = {
   customerId: number;
   mechanicId: number | null;
@@ -295,8 +299,7 @@ export async function unpaidServiceForCustomer(
     `SELECT sr.id, m.full_name AS mechanicName
      FROM service_requests sr
      LEFT JOIN mechanics m ON m.id = sr.mechanic_id
-     WHERE sr.customer_id = ? AND ${PAYABLE_SQL}
-       AND sr.unpaid_reported_at IS NOT NULL AND sr.paid_at IS NULL AND sr.customer_paid_at IS NULL
+     WHERE sr.customer_id = ? AND ${UNPAID_DEBT_SQL}
      ORDER BY sr.id DESC
      LIMIT 1`,
     [customerId]
