@@ -34,6 +34,7 @@ import { MechanicPartsPanel, ReceiptsCard } from '../components/PartsReceipts';
 import { ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/ReturnVisit';
 import { CustomerAbsentAction, WithdrawButton } from '../components/CancellationActions';
 import { CommissionHomeCard } from '../components/Commissions';
+import { TourTarget } from '../components/AppTour';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -295,25 +296,27 @@ function CustomerSearch({
               </Field>
             </View>
             <SecondaryButton title="Usar mi ubicación actual" compact busy={busy} onPress={onUseMyLocation} />
-            <View style={styles.row}>
-              <ChoiceTile
-                icon="flash-outline"
-                title="Ahora mismo"
-                description="Un mecánico cerca de ti, listo para ayudarte."
-                active={when === 'now'}
-                onPress={() => setWhen('now')}
-                style={styles.flex}
-              />
-              <ChoiceTile
-                icon="calendar-outline"
-                title="Agendar fecha"
-                description="Elige un mecánico y uno de sus turnos."
-                active={when === 'schedule'}
-                onPress={() => setWhen('schedule')}
-                style={styles.flex}
-              />
-            </View>
-            <PrimaryButton title="Buscar" onPress={handleSearch} />
+            <TourTarget id="home-search" style={styles.stack}>
+              <View style={styles.row}>
+                <ChoiceTile
+                  icon="flash-outline"
+                  title="Ahora mismo"
+                  description="Un mecánico cerca de ti, listo para ayudarte."
+                  active={when === 'now'}
+                  onPress={() => setWhen('now')}
+                  style={styles.flex}
+                />
+                <ChoiceTile
+                  icon="calendar-outline"
+                  title="Agendar fecha"
+                  description="Elige un mecánico y uno de sus turnos."
+                  active={when === 'schedule'}
+                  onPress={() => setWhen('schedule')}
+                  style={styles.flex}
+                />
+              </View>
+              <PrimaryButton title="Buscar" onPress={handleSearch} />
+            </TourTarget>
           </View>
         </Card>
       </Animated.View>
@@ -805,6 +808,7 @@ function MechanicHome(props: HomeScreenProps) {
       )}
 
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
+        <TourTarget id="mechanic-status">
         <Card
           title="Tu estado"
           subtitle={
@@ -834,6 +838,7 @@ function MechanicHome(props: HomeScreenProps) {
             )}
           </View>
         </Card>
+        </TourTarget>
       </Animated.View>
     </View>
   );

@@ -136,6 +136,16 @@ mantener informadas a ambas partes.
   `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
   cada 20 s mientras está pendiente, así el checklist avanza solo cuando
   Didit aprueba.
+- **Recorrido de la app** (`mobile/components/AppTour.tsx`): la primera vez
+  que se entra con cada rol en ese teléfono, con sesión y sin la verificación
+  de teléfono pendiente. Cliente y mecánico tienen 9 pasos cada uno y quien
+  cambia de modo ve el del otro rol. Cambia de pantalla solo, oscurece todo
+  menos el elemento que explica (envuelto en `<TourTarget id>`: barra de
+  abajo, campana, "Ahora mismo / Agendar" y "Tu estado") y lo marca. Si el
+  elemento no se ve, desplaza la pantalla para mostrarlo; si no existe, el
+  paso sale centrado. Se puede saltar, y lo visto se guarda en AsyncStorage
+  (`mecanifique.tour.<rol>.<userId>`). Se vuelve a ver en Cuenta (cliente) o
+  en Acciones → Sesión (mecánico).
 - **Foto de perfil obligatoria del mecánico** (`mechanics.profile_photo_url`):
   es el paso 2 de "Activa tu cuenta" (quedan 4 pasos). Es una selfie con la
   cámara frontal, sin galería, recortada en cuadro y de máximo 800 px

@@ -238,9 +238,11 @@ export function AccountScreen({
   onStartIdentityVerification,
   onClearSession,
   onSwitchRole,
+  onStartTour,
 }: {
   onDeleteAccount: () => Promise<void>;
   onOpenCommunity: () => void;
+  onStartTour: () => void;
   favoriteMechanics: FavoriteMechanic[];
   onOpenMechanic: (mechanicId: number) => void;
   onLoadAccountProfile: () => Promise<{ fullName: string; email: string; phone: string }>;
@@ -355,6 +357,7 @@ export function AccountScreen({
             {expanded === 'favorites' && <FavoritesPanel favorites={favoriteMechanics} onOpenMechanic={onOpenMechanic} />}
             <MenuRow icon="chatbubble-ellipses-outline" label="Comunidad" onPress={onOpenCommunity} />
             <MenuRow icon="pricetag-outline" label="Promociones" onPress={() => setCurrentScreen('promotions')} />
+            <MenuRow icon="map-outline" label="Ver el recorrido de la app" onPress={onStartTour} />
             <MenuRow icon="information-circle-outline" label="Acerca de la aplicación" onPress={() => toggle('about')} />
             {expanded === 'about' && (
               <View style={[styles.publicProfileBox, styles.menuPanel]}>

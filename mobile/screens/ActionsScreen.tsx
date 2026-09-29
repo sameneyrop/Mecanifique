@@ -145,6 +145,7 @@ export function ActionsScreen({
   onDeleteAccount,
   api,
   onOpenCommunity,
+  onStartTour,
   mechanicAccountActive,
   selectedActionRequest,
   actionsView,
@@ -188,6 +189,7 @@ export function ActionsScreen({
   onDeleteAccount: () => Promise<void>;
   api: ApiCall;
   onOpenCommunity: () => void;
+  onStartTour: () => void;
   mechanicAccountActive: boolean;
   selectedActionRequest: any;
   actionsView: ActionsViewKey;
@@ -684,6 +686,9 @@ export function ActionsScreen({
                 setMessage('Sesión cerrada');
               }}
             />
+            {user.role === 'mechanic' && (
+              <SecondaryButton title="Ver el recorrido de la app" compact onPress={onStartTour} />
+            )}
             <SecondaryButton title="Términos y condiciones" compact onPress={() => void openTerms()} />
             <SecondaryButton title="Aviso de privacidad" compact onPress={() => void openPrivacyNotice()} />
             {user.role === 'mechanic' && <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />}

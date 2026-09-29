@@ -758,6 +758,82 @@ export const styles = StyleSheet.create({
   avatarImage: {
     backgroundColor: colors.primaryLight,
   },
+  // Recorrido de la app (components/AppTour.tsx).
+  tourOverlay: {
+    flex: 1,
+  },
+  tourDim: {
+    position: 'absolute',
+    backgroundColor: 'rgba(11,31,51,0.74)',
+  },
+  tourRing: {
+    position: 'absolute',
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: colors.accent,
+  },
+  tourCard: {
+    position: 'absolute',
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 18,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  tourIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryLighter,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tourCounter: {
+    color: colors.primaryDark,
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  tourTitle: {
+    color: colors.textDark,
+    fontFamily: fonts.bold,
+    fontSize: 20,
+  },
+  tourText: {
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  tourActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  tourButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  tourNext: {
+    minWidth: 140,
+  },
+  tourSkip: {
+    color: colors.textSecondary,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+  },
+  tourBack: {
+    color: colors.primaryDark,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+  },
   avatarInitials: {
     color: colors.primaryDark,
     fontFamily: fonts.bold,
@@ -1425,6 +1501,10 @@ export const styles = StyleSheet.create({
   },
   bottomNavItemActive: {
     color: colors.primary,
+  },
+  // Contenedor de un botón de la barra que el recorrido señala (TourTarget).
+  bottomNavSlot: {
+    flex: 1,
   },
   bottomNavButton: {
     flex: 1,

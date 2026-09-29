@@ -13,6 +13,7 @@ import { ActionsScreen } from './screens/ActionsScreen';
 import { OnboardingScreen } from './screens/OnboardingScreen';
 import { VehiclesScreen } from './screens/VehiclesScreen';
 import { IncomingRequestOverlay } from './components/IncomingRequestOverlay';
+import { AppTour, TourTarget, type TourScreen } from './components/AppTour';
 import { LoginScreen } from './screens/LoginScreen';
 import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
 import { PromotionsScreen } from './screens/PromotionsScreen';
@@ -614,6 +615,10 @@ export default function App() {
   // no se puede y se usa el de primer plano).
   const [backgroundTracking, setBackgroundTracking] = useState(false);
   const mainScrollRef = useRef<ScrollView>(null);
+  const mainScrollYRef = useRef(0);
+  // Recorrido de la app (components/AppTour.tsx): la primera vez con cada rol.
+  const [tourVisible, setTourVisible] = useState(false);
+  const tourCheckedRef = useRef<string | null>(null);
   // Notificaciones se abre desde cualquier pantalla (campana de arriba);
   // "atrás" regresa a donde estaba.
   const notificationsReturnScreen = useRef<AppScreen>('home');
@@ -1097,6 +1102,39 @@ export default function App() {
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [mechanicsView]);
+
+  // El recorrido sale la primera vez que se entra con cada rol (en este
+  // teléfono), ya con sesión y sin la verificación de teléfono pendiente.
+  const tourRole = user?.role === 'customer' || user?.role === 'mechanic' ? user.role : null;
+  const tourKey = user && tourRole ? `mecanifique.tour.${tourRole}.${user.id}` : null;
+  useEffect(() => {
+    if (!tourKey || !token || !onboardingSeen || phoneVerification?.required || tourCheckedRef.current === tourKey) {
+      return;
+    }
+    tourCheckedRef.current = tourKey;
+    AsyncStorage.getItem(tourKey)
+      .then((seen) => {
+        if (!seen) setTourVisible(true);
+      })
+      .catch(() => undefined);
+  }, [tourKey, token, onboardingSeen, phoneVerification?.required]);
+
+  function finishTour() {
+    setTourVisible(false);
+    if (tourKey) AsyncStorage.setItem(tourKey, '1').catch(() => undefined);
+    setCurrentScreen('home');
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  function navigateForTour(screen: TourScreen) {
+    setCurrentScreen(screen);
+    if (screen === 'requests') setRequestsView('list');
+    mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  function scrollForTour(dy: number) {
+    mainScrollRef.current?.scrollTo({ y: Math.max(0, mainScrollYRef.current + dy), animated: true });
+  }
 
   useEffect(() => {
     if (mechanics.length === 0) {
@@ -3319,6 +3357,7 @@ export default function App() {
                 </>
               ) : null}
             </Text>
+            <TourTarget id="bell">
             <Pressable
               style={({ pressed }) => [
                 styles.bellButton,
@@ -3343,6 +3382,7 @@ export default function App() {
                 </View>
               )}
             </Pressable>
+            </TourTarget>
           </View>
         </View>
         <ServerWakingBanner visible={serverWaking} />
@@ -3362,6 +3402,10 @@ export default function App() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           alwaysBounceVertical
+          onScroll={(event) => {
+            mainScrollYRef.current = event.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={32}
         >
         <View style={styles.appShell}>
           <View key={currentScreen}>
@@ -3414,6 +3458,7 @@ export default function App() {
               <AccountScreen
                 onDeleteAccount={handleDeleteAccount}
                 onOpenCommunity={openCommunity}
+                onStartTour={() => setTourVisible(true)}
                 favoriteMechanics={favoriteMechanics}
                 onOpenMechanic={openMechanicProfile}
                 onLoadAccountProfile={loadAccountProfile}
@@ -3537,6 +3582,7 @@ export default function App() {
               onDeleteAccount={handleDeleteAccount}
               api={api}
               onOpenCommunity={openCommunity}
+              onStartTour={() => setTourVisible(true)}
               mechanicAccountActive={mechanicProfile?.status === 'active'}
               selectedActionRequest={selectedActionRequest}
               actionsView={actionsView}
@@ -3594,43 +3640,60 @@ export default function App() {
             label="Inicio"
             accessibilityLabel="Inicio"
           />
-          <BottomNavButton
-            active={currentScreen === 'requests'}
-            onPress={() => {
-              setCurrentScreen('requests');
-              setRequestsView('list');
-            }}
-            iconName="car-outline"
-            label="Solicitudes"
-            accessibilityLabel="Solicitudes"
-          />
-          {currentUser && currentUser.role !== 'mechanic' && (
+          <TourTarget id="nav-requests" style={styles.bottomNavSlot}>
             <BottomNavButton
-              active={currentScreen === 'mechanics'}
-              onPress={() => setCurrentScreen('mechanics')}
-              iconName="construct-outline"
-              label="Mecánicos"
-              accessibilityLabel="Mecánicos"
+              active={currentScreen === 'requests'}
+              onPress={() => {
+                setCurrentScreen('requests');
+                setRequestsView('list');
+              }}
+              iconName="car-outline"
+              label="Solicitudes"
+              accessibilityLabel="Solicitudes"
             />
+          </TourTarget>
+          {currentUser && currentUser.role !== 'mechanic' && (
+            <TourTarget id="nav-mechanics" style={styles.bottomNavSlot}>
+              <BottomNavButton
+                active={currentScreen === 'mechanics'}
+                onPress={() => setCurrentScreen('mechanics')}
+                iconName="construct-outline"
+                label="Mecánicos"
+                accessibilityLabel="Mecánicos"
+              />
+            </TourTarget>
           )}
           {currentUser?.role === 'mechanic' && (
-            <BottomNavButton
-              active={currentScreen === 'map'}
-              onPress={() => setCurrentScreen('map')}
-              iconName="map-outline"
-              label="Mapa"
-              accessibilityLabel="Mapa"
-            />
+            <TourTarget id="nav-map" style={styles.bottomNavSlot}>
+              <BottomNavButton
+                active={currentScreen === 'map'}
+                onPress={() => setCurrentScreen('map')}
+                iconName="map-outline"
+                label="Mapa"
+                accessibilityLabel="Mapa"
+              />
+            </TourTarget>
           )}
-          <BottomNavButton
-            active={['actions', 'account', 'vehicles', 'community', 'promotions'].includes(currentScreen)}
-            onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
-            iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
-            label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
-            accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
-          />
+          <TourTarget id={currentUser?.role === 'customer' ? 'nav-account' : 'nav-actions'} style={styles.bottomNavSlot}>
+            <BottomNavButton
+              active={['actions', 'account', 'vehicles', 'community', 'promotions'].includes(currentScreen)}
+              onPress={() => setCurrentScreen(currentUser?.role === 'customer' ? 'account' : 'actions')}
+              iconName={currentUser?.role === 'customer' ? 'person-circle-outline' : 'ellipsis-horizontal'}
+              label={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
+              accessibilityLabel={currentUser?.role === 'customer' ? 'Cuenta' : 'Acciones'}
+            />
+          </TourTarget>
         </View>
       </View>
+      {tourRole && (
+        <AppTour
+          role={tourRole}
+          visible={tourVisible}
+          onNavigate={navigateForTour}
+          onScrollBy={scrollForTour}
+          onFinish={finishTour}
+        />
+      )}
       </SafeAreaView>
     </View>
   );
