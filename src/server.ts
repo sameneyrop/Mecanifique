@@ -20,6 +20,7 @@ import {
   updateSupabaseUser,
   sendSupabasePasswordRecovery,
   resendSupabaseSignupConfirmation,
+  EMAIL_CONFIRMED_URL,
   isSupabaseAdminConfigured,
   deleteSupabaseAuthUser,
   SignupError,
@@ -2399,7 +2400,7 @@ app.post("/auth/v2/resend-confirmation", handleAsync(async (req, res) => {
   }
   const { email } = z.object({ email: z.string().trim().email().max(254) }).parse(req.body);
   try {
-    await resendSupabaseSignupConfirmation(email.toLowerCase(), `${publicBaseUrl(req)}/auth/callback`);
+    await resendSupabaseSignupConfirmation(email.toLowerCase(), EMAIL_CONFIRMED_URL);
   } catch (error) {
     console.error("No se pudo reenviar el correo de confirmación:", error);
   }

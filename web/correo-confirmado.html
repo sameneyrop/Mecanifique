@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Correo confirmado — Mecanifique</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/mecanifique-logo-blue.png">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .confirm { max-width: 560px; margin: 0 auto; text-align: center; display: grid; gap: 16px; justify-items: center; }
+    .confirm-icon { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; font-size: 36px; font-weight: 800; }
+    .confirm-icon.ok { background: #E3F4EA; color: #1a7f4b; }
+    .confirm-icon.bad { background: rgba(242, 184, 75, 0.2); color: #8a5a00; }
+    .confirm p { margin: 0; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="/" aria-label="Mecanifique, inicio">
+        <img src="assets/mecanifique-logo-blue.png" alt="Mecanifique">
+      </a>
+    </div>
+  </header>
+
+  <!-- A dónde regresa el enlace de los correos de Supabase (confirmar cuenta o
+       nuevo correo). La sesión que trae en la dirección no se usa: se borra. -->
+  <main class="section">
+    <div class="container confirm" id="ok">
+      <div class="confirm-icon ok" aria-hidden="true">✓</div>
+      <h1 id="ok-title">¡Listo, confirmaste tu correo!</h1>
+      <p class="lead" id="ok-text">Regresa a la app Mecanifique e inicia sesión con tu correo y tu contraseña.</p>
+      <a class="button primary" id="open-app" href="mecanifique://" hidden>Abrir Mecanifique</a>
+    </div>
+
+    <div class="container confirm" id="expired" hidden>
+      <div class="confirm-icon bad" aria-hidden="true">!</div>
+      <h1>Este enlace ya no sirve</h1>
+      <p class="lead">Vence después de un rato o ya se usó. Si ya habías confirmado tu correo, solo inicia sesión en la app. Si no, en la app toca «Iniciar sesión» y luego «¿No te llegó el correo de confirmación?» para que te mandemos otro.</p>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.hash.slice(1) + '&' + location.search.slice(1));
+      if (params.get('error') || params.get('error_code')) {
+        document.getElementById('ok').hidden = true;
+        document.getElementById('expired').hidden = false;
+      } else if (params.get('type') === 'email_change') {
+        document.getElementById('ok-title').textContent = '¡Listo, confirmaste tu nuevo correo!';
+        document.getElementById('ok-text').textContent = 'Desde ahora entra a Mecanifique con tu nuevo correo.';
+      }
+      // En el celular, un botón para abrir la app (en la computadora no sirve).
+      if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
+        document.getElementById('open-app').hidden = false;
+      }
+      if (location.hash || location.search) history.replaceState(null, '', location.pathname);
+    })();
+  </script>
+</body>
+</html>

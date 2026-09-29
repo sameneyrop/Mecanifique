@@ -25,8 +25,13 @@ declare module "express-serve-static-core" {
 
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
-const emailRedirectTo =
-  process.env.SUPABASE_REDIRECT_URL || "https://mecanifique.onrender.com/auth/callback";
+// A dónde regresa el enlace del correo de confirmación: una página del sitio
+// (Vercel siempre responde rápido; Render tarda si estaba dormido). Debe estar
+// en Supabase → URL Configuration → Redirect URLs; si no, Supabase manda a la
+// página principal y esta la redirige (web/index.html).
+export const EMAIL_CONFIRMED_URL =
+  process.env.SUPABASE_REDIRECT_URL || "https://mecanifique.vercel.app/correo-confirmado";
+const emailRedirectTo = EMAIL_CONFIRMED_URL;
 const supabaseRequestTimeoutMs = 15_000;
 const verifiedTokenCache = new Map<string, { user: SupabaseAuthUser; expiresAt: number }>();
 const tokenCacheTtlMs = 60_000;

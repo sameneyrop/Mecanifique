@@ -7,6 +7,19 @@
   <meta id="meta-description" name="description" content="Pide un mecánico verificado que va hasta donde está tu auto, ahora mismo o con cita. Muy pronto en Aguascalientes.">
   <link rel="canonical" href="https://mecanifique.vercel.app/">
   <link rel="icon" href="assets/mecanifique-logo-blue.png">
+  <script>
+    // Enlaces de los correos de Supabase que caen aquí (cuando su dirección de
+    // regreso no está permitida, Supabase manda a la página principal): se
+    // mandan a su página antes de mostrar nada.
+    (function () {
+      var trail = location.hash + '&' + location.search;
+      if (/type=recovery/.test(trail)) {
+        location.replace('https://mecanifique.onrender.com/restablecer-contrasena' + location.hash);
+      } else if (/type=(signup|email_change|invite)|error_code=/.test(trail)) {
+        location.replace('/correo-confirmado' + location.search + location.hash);
+      }
+    })();
+  </script>
 
   <!-- Vista previa al compartir (WhatsApp, Facebook, X). -->
   <meta property="og:type" content="website">
