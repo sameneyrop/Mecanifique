@@ -104,6 +104,11 @@ export function formatDateOnly(value: string): string {
   return `${date.getDate()} ${SHORT_MONTHS[date.getMonth()]}${year}`;
 }
 
+/** Pesos sin centavos y con comas: $2,200. */
+export function formatPesos(amount: number): string {
+  return `$${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+}
+
 /** Texto del estado de la cuota de servicio de una solicitud (null si no hay nada que mostrar). */
 export function serviceFeeStatusText(fee: { amount: number; status: string } | null | undefined): string | null {
   if (!fee) return null;
@@ -185,12 +190,14 @@ export async function openExternalNavigation(latitude: number, longitude: number
     label ? `&destination_place_id=&query=${encodeURIComponent(label)}` : ''
   }`;
 
-  const candidates = [wazeUrl, googleMapsAppUrl, googleMapsWebUrl].filter(Boolean) as string[];
+  await openFirstNavigationApp([wazeUrl, googleMapsAppUrl], googleMapsWebUrl);
+}
 
-  for (const url of candidates) {
+async function openFirstNavigationApp(appUrls: Array<string | undefined>, webUrl: string) {
+  for (const url of appUrls) {
+    if (!url) continue;
     try {
-      const canOpen = await Linking.canOpenURL(url);
-      if (canOpen) {
+      if (await Linking.canOpenURL(url)) {
         await Linking.openURL(url);
         return;
       }
@@ -198,8 +205,36 @@ export async function openExternalNavigation(latitude: number, longitude: number
       // Intenta la siguiente opción.
     }
   }
+  await Linking.openURL(webUrl);
+}
 
-  await Linking.openURL(googleMapsWebUrl);
+/**
+ * Ruta al lugar del servicio: por coordenadas si el cliente compartió su
+ * ubicación; si no, por la dirección escrita (antes, sin coordenadas no había
+ * botón para llegar).
+ */
+export async function openServiceNavigation(place: {
+  latitude?: number | null;
+  longitude?: number | null;
+  serviceAddress?: string | null;
+  city: string;
+  zone: string;
+}) {
+  const typed = place.serviceAddress?.trim() || `${place.zone}, ${place.city}`;
+  // Sin la ciudad, Maps puede encontrar la misma calle en otra ciudad.
+  const address = typed.toLowerCase().includes(place.city.trim().toLowerCase()) ? typed : `${typed}, ${place.city}`;
+  if (place.latitude != null && place.longitude != null) {
+    await openExternalNavigation(place.latitude, place.longitude, address);
+    return;
+  }
+  const query = encodeURIComponent(address);
+  await openFirstNavigationApp(
+    [
+      `waze://ul?q=${query}&navigate=yes`,
+      Platform.select({ ios: `comgooglemaps://?daddr=${query}&directionsmode=driving`, android: `google.navigation:q=${query}` }),
+    ],
+    `https://www.google.com/maps/dir/?api=1&destination=${query}`,
+  );
 }
 
 export function normalizeSpecialties(value: string): string[] {

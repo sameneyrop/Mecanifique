@@ -29,7 +29,10 @@ import {
   formatCalendarDate,
   validateRequestForm,
   isWithinBookingWindow,
+  formatPesos,
+  openServiceNavigation,
 } from './utils';
+import { serviceAmounts } from './components/ServiceGuide';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
@@ -265,6 +268,14 @@ type ServiceRequest = {
   serviceFee?: { amount: number; status: 'pending' | 'authorized' | 'captured' | 'released' | 'failed' } | null;
   // Cotizaciones del mecánico, la más reciente primero (ver src/quotes.ts).
   quotes?: ServiceQuote[];
+  // Cobro al terminar (src/servicePayment.ts): visita fijada al aceptar y
+  // quién dijo qué del pago.
+  visitFee?: number | null;
+  paidAt?: string | null;
+  customerPaidAt?: string | null;
+  paymentMethod?: 'cash' | 'transfer' | null;
+  unpaidReportedAt?: string | null;
+  reviewed?: boolean;
 };
 
 type RequestSummary = {
@@ -289,6 +300,10 @@ type RequestSummary = {
   scheduleSlotId?: number | null;
   customerName?: string | null;
   customerPhone?: string | null;
+  paidAt?: string | null;
+  customerPaidAt?: string | null;
+  unpaidReportedAt?: string | null;
+  reviewed?: boolean;
 };
 
 type IdentityVerificationStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
@@ -297,7 +312,8 @@ type IdentityVerificationState = {
   status: IdentityVerificationStatus | null;
 };
 
-type DisputeCategory = 'incomplete_work' | 'incorrect_charge' | 'vehicle_damage' | 'other';
+// unpaid y payment_disagreement las abre el cobro (src/servicePayment.ts), no el cliente.
+type DisputeCategory = 'incomplete_work' | 'incorrect_charge' | 'vehicle_damage' | 'other' | 'unpaid' | 'payment_disagreement';
 type DisputeStatus = 'reported' | 'under_review' | 'resolved';
 
 type AdminDispute = {
@@ -310,6 +326,8 @@ type AdminDispute = {
   createdAt: string;
   resolvedAt: string | null;
   customerName: string;
+  mechanicName?: string | null;
+  openedBy?: 'customer' | 'mechanic' | 'system';
 };
 
 type ScheduleSlot = {
@@ -1711,6 +1729,9 @@ export default function App() {
       });
       setReviewForm({ rating: '', comment: '' });
       await loadMechanicReviews(selectedRequest.mechanicId);
+      // Así se quita la tarjeta de calificar (aquí y en Inicio).
+      await loadRequestDetailById(selectedRequest.id);
+      await loadMyRequests();
       setMessage('Reseña enviada');
     } catch (error) {
       setMessage(formatError(error));
@@ -2146,12 +2167,16 @@ export default function App() {
 
   // Tocar un aviso lo marca como leído y lleva a lo que avisa: la solicitud o
   // la pregunta de la Comunidad.
-  async function handleOpenNotification(notification: AppNotification) {
+  function markNotificationRead(notification: AppNotification) {
     if (!notification.readAt) {
       apiRequest(`/api/notifications/${notification.id}/read`, { method: 'POST', token })
         .then(() => loadNotifications())
         .catch(() => undefined);
     }
+  }
+
+  async function handleOpenNotification(notification: AppNotification) {
+    markNotificationRead(notification);
     const target = notificationTarget(notification);
     if (!target) {
       return;
@@ -2658,10 +2683,18 @@ export default function App() {
 
   function handleAdvanceJob(requestId: number, status: string) {
     if (status === 'completed') {
-      Alert.alert('¿Terminar el servicio?', 'Confírmalo solo cuando el trabajo esté listo. El cliente podrá calificarte.', [
-        { text: 'Todavía no', style: 'cancel' },
-        { text: 'Sí, terminar', onPress: () => void advanceJob(requestId, status) },
-      ]);
+      const job = selectedRequest?.id === requestId ? selectedRequest : null;
+      const total = job ? serviceAmounts(job).total : 0;
+      Alert.alert(
+        '¿Terminar el servicio?',
+        total > 0
+          ? `Confírmalo solo cuando el trabajo esté listo. Le cobrarás ${formatPesos(total)} a ${job?.customerName?.split(' ')[0] || 'el cliente'}.`
+          : 'Confírmalo solo cuando el trabajo esté listo. El cliente podrá calificarte.',
+        [
+          { text: 'Todavía no', style: 'cancel' },
+          { text: 'Sí, terminar', onPress: () => void advanceJob(requestId, status) },
+        ],
+      );
       return;
     }
     void advanceJob(requestId, status);
@@ -2675,10 +2708,14 @@ export default function App() {
         token,
         body: { status },
       });
-      await loadRequestDetailById(requestId);
+      const job = await fetchRequestDetail(requestId);
       await loadMyRequests();
-      setMessage(status === 'completed' ? 'Servicio terminado. ¡Buen trabajo!' : `Estado: ${getServiceRequestStatusLabel(status)}`);
+      setMessage(status === 'completed' ? 'Servicio terminado. Ahora cóbrale al cliente.' : `Estado: ${getServiceRequestStatusLabel(status)}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      // Al salir hacia el cliente, la ruta se abre sola.
+      if (status === 'en_route' && job) {
+        openServiceNavigation(job).catch(() => setMessage('No se pudo abrir la navegación. Usa «Cómo llegar».'));
+      }
     } catch (error) {
       setMessage(formatError(error));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
@@ -2746,9 +2783,14 @@ export default function App() {
     );
   }
 
-  async function loadRequestDetailById(requestId: number) {
+  async function fetchRequestDetail(requestId: number) {
     const fullRequest = await apiRequest<ServiceRequest>(`/service-requests/${requestId}`, { token });
     setSelectedRequest(fullRequest);
+    return fullRequest;
+  }
+
+  async function loadRequestDetailById(requestId: number) {
+    await fetchRequestDetail(requestId);
   }
 
   async function handleLoadRequest() {
@@ -3236,6 +3278,7 @@ export default function App() {
             <View style={styles.screenStack}>
               <NotificationsScreen
                 onOpenNotification={handleOpenNotification}
+                onMarkRead={markNotificationRead}
                 onMarkAllRead={handleMarkAllNotificationsRead}
               />
             </View>

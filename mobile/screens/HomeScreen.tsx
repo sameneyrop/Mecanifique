@@ -28,8 +28,15 @@ import {
 } from '../components/ActiveService';
 import { MechanicTracker } from '../components/MechanicTracker';
 import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
+import {
+  CustomerPaymentCard,
+  MechanicCollectCard,
+  NextStepGuide,
+  customerNeedsClosure,
+  mechanicNeedsClosure,
+} from '../components/ServiceGuide';
 import type { ApiCall } from '../App';
-import { openExternalNavigation, serviceFeeStatusText } from '../utils';
+import { openServiceNavigation, serviceFeeStatusText } from '../utils';
 
 type RequestFormShape = {
   vehicleMake: string;
@@ -103,7 +110,9 @@ const NEXT_JOB_STEP: Record<string, { status: string; label: string }> = {
 /**
  * Solicitud en curso del usuario (la más reciente no terminada). Para el
  * mecánico no cuentan las 'pending': esas son ofertas que todavía no aceptó.
- * Carga su detalle como selectedRequest, que App refresca cada 10 s.
+ * Si no hay una en curso, la terminada que falta cerrar (pagar, calificar o
+ * confirmar el cobro). Carga su detalle como selectedRequest, que App
+ * refresca cada 10 s.
  */
 function useActiveRequest(onLoadRequestById: HomeScreenProps['onLoadRequestById'], onRefreshRequests: HomeScreenProps['onRefreshRequests']) {
   const { user, myRequests, selectedRequest } = useAppContext();
@@ -116,14 +125,20 @@ function useActiveRequest(onLoadRequestById: HomeScreenProps['onLoadRequestById'
       : (myRequests.find(
           (request) => ACTIVE_REQUEST_STATUSES.has(request.status) && (user?.role !== 'mechanic' || request.status !== 'pending'),
         )?.id ?? null);
+  const needsClosure = user?.role === 'mechanic' ? mechanicNeedsClosure : customerNeedsClosure;
+  const closureId =
+    activeId !== null || user?.role === 'admin' ? null : (myRequests.find((request) => needsClosure(request))?.id ?? null);
+  const focusId = activeId ?? closureId;
 
   useEffect(() => {
-    if (activeId !== null && selectedRequest?.id !== activeId) {
-      onLoadRequestById(activeId).catch(() => undefined);
+    if (focusId !== null && selectedRequest?.id !== focusId) {
+      onLoadRequestById(focusId).catch(() => undefined);
     }
-  }, [activeId, selectedRequest?.id]);
+  }, [focusId, selectedRequest?.id]);
 
-  const detail = activeId !== null && selectedRequest?.id === activeId ? selectedRequest : null;
+  const focused = focusId !== null && selectedRequest?.id === focusId ? selectedRequest : null;
+  const detail = activeId !== null ? focused : null;
+  const closure = closureId !== null ? focused : null;
 
   // Si el servicio terminó o se canceló (lo detecta el refresco del detalle),
   // se actualiza la lista para que Inicio vuelva a su estado normal.
@@ -133,7 +148,15 @@ function useActiveRequest(onLoadRequestById: HomeScreenProps['onLoadRequestById'
     }
   }, [detail?.status]);
 
-  return { activeId, detail };
+  // Cuando se confirma el pago o llega la reseña, la lista decide si la
+  // tarjeta de cierre ya se puede quitar.
+  useEffect(() => {
+    if (closure) {
+      onRefreshRequests().catch(() => undefined);
+    }
+  }, [closure?.paidAt, closure?.customerPaidAt, closure?.unpaidReportedAt, closure?.reviewed]);
+
+  return { activeId, detail, closure };
 }
 
 function LoadingServiceCard() {
@@ -257,15 +280,30 @@ function CustomerSearch({
 
 function CustomerHome(props: HomeScreenProps) {
   const { busy, setCurrentScreen, setRequestsView } = useAppContext();
-  const { activeId, detail } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
+  const { activeId, detail, closure } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
 
   if (activeId === null) {
     return (
-      <CustomerSearch
-        requestForm={props.requestForm}
-        setRequestForm={props.setRequestForm}
-        onUseMyLocation={props.onUseMyLocation}
-      />
+      <View style={styles.stack}>
+        {closure && (
+          <Animated.View entering={FadeInDown.duration(300)}>
+            <CustomerPaymentCard
+              api={props.api}
+              request={closure}
+              onChanged={() => void props.onLoadRequestById(closure.id).catch(() => undefined)}
+              onRate={() => {
+                setRequestsView('detail');
+                setCurrentScreen('requests');
+              }}
+            />
+          </Animated.View>
+        )}
+        <CustomerSearch
+          requestForm={props.requestForm}
+          setRequestForm={props.setRequestForm}
+          onUseMyLocation={props.onUseMyLocation}
+        />
+      </View>
     );
   }
   if (!detail) {
@@ -282,6 +320,7 @@ function CustomerHome(props: HomeScreenProps) {
         subtitle={`${detail.vehicleMake} ${detail.vehicleModel} ${detail.vehicleYear} · ${detail.issueDescription}`}
       >
         <View style={styles.stack}>
+          <NextStepGuide request={detail} role="customer" />
           <ServiceProgress status={detail.status} />
           {feeText && <InfoRow icon="card-outline" text={feeText} />}
         </View>
@@ -452,7 +491,7 @@ function mechanicBadges(profile: MechanicProfile | null): Array<{ icon: keyof ty
 
 function MechanicHome(props: HomeScreenProps) {
   const { busy, myRequests, mechanicConnection } = useAppContext();
-  const { activeId, detail } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
+  const { activeId, detail, closure } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
 
   const liveLocationRequest = useMemo(
     () => myRequests.find((request) => request.status !== 'completed' && request.status !== 'cancelled'),
@@ -492,16 +531,12 @@ function MechanicHome(props: HomeScreenProps) {
             <View style={styles.stack}>
               <ContactRow label="Cliente" name={detail.customerName || 'Cliente'} phone={detail.customerPhone} />
               <Text style={styles.itemText}>{address}</Text>
-              {detail.latitude != null && detail.longitude != null && (
-                <SecondaryButton
-                  title="Cómo llegar"
-                  onPress={() => openExternalNavigation(detail.latitude as number, detail.longitude as number, address)}
-                />
-              )}
+              <SecondaryButton title="Cómo llegar" onPress={() => void openServiceNavigation(detail)} />
             </View>
           </Card>
           <Card title="Avance">
             <View style={styles.stack}>
+              <NextStepGuide request={detail} role="mechanic" />
               <ServiceProgress status={detail.status} />
               {showQuotePanel && (
                 <MechanicQuotePanel
@@ -541,6 +576,16 @@ function MechanicHome(props: HomeScreenProps) {
           </Card>
           <EmergencyButton onPress={props.onEmergencyCall} />
           <RequestChat onSendMessage={props.onSendMessage} />
+        </Animated.View>
+      )}
+
+      {closure && (
+        <Animated.View entering={FadeInDown.duration(300)}>
+          <MechanicCollectCard
+            api={props.api}
+            request={closure}
+            onChanged={() => void props.onLoadRequestById(closure.id).catch(() => undefined)}
+          />
         </Animated.View>
       )}
 

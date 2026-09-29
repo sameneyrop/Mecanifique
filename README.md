@@ -220,8 +220,19 @@ mantener informadas a ambas partes.
   el servidor no deja pasar a `repairing` ni a `awaiting_parts`; si el
   cliente no acepta, el mecánico manda otra o termina sin reparar. Ya
   reparando puede cotizar algo adicional. Al terminar, `final_price` es la
-  suma de lo aceptado. Mecanifique no cobra ese monto: es el registro de lo
-  acordado.
+  visita más lo aceptado (ver "Cobro al terminar"). Mecanifique no cobra ese
+  monto: es el registro de lo acordado.
+- **"¿Qué sigue?"** (`mobile/components/ServiceGuide.tsx`): arriba del
+  servicio en curso, cliente y mecánico ven qué les toca hacer en ese paso,
+  con las cantidades reales ("Si no la aceptas, solo pagas la visita: $400").
+  Los avisos push al cliente dicen lo mismo con el nombre del mecánico
+  (`customerStatusNotice` en el servidor). La oferta al mecánico muestra su
+  precio de visita, y al aceptar el cliente recibe cuánto cuesta.
+- **Una solicitud a la vez**: un cliente con una solicitud abierta no puede
+  crear otra (`REQUEST_ALREADY_OPEN`); con dos, podían ir dos mecánicos.
+- **Navegación**: "Voy en camino" abre la ruta sola (Waze o Google Maps) y
+  "Cómo llegar" funciona aunque el cliente no haya compartido su ubicación:
+  navega por la dirección escrita más la ciudad (`openServiceNavigation`).
 - **Reasignación automática**: si el mecánico rechaza o deja vencer el hold,
   la solicitud pasa sola al siguiente mecánico disponible en la zona (sin
   volver a ofrecérsela a quien ya no la tomó). Los holds vencidos se
@@ -395,6 +406,35 @@ se pueden apartar dentro de los próximos 7 días, hoy incluido
 un hueco: el campo libre "¿Para cuándo?" acepta cualquier texto, así que
 alguien podría escribir una fecha lejana; ahí el mecánico acepta en ese
 momento y lo normal es que llegue antes de 7 días.
+
+### Cobro al terminar y disputas de pago (`src/servicePayment.ts`)
+
+Lo que el cliente le paga al mecánico es la **visita y diagnóstico**
+(`service_requests.visit_fee`, fijada con la tarifa del mecánico cuando
+acepta; si luego la cambia, no afecta) **más las cotizaciones aceptadas**. Al
+terminar, Inicio le muestra al cliente "Págale $X a Juan" con el desglose y la
+CLABE del mecánico si la registró, y al mecánico "Cobra $X a María".
+
+Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
+
+- El cliente confirma "Ya le pagué" en efectivo o por transferencia
+  (`customer_paid_at`, `payment_method`) y el mecánico "Ya me pagó"
+  (`paid_at`). Todo queda con fecha y hora.
+- Si el mecánico reporta "No me ha pagado" (`unpaid_reported_at`), se abre
+  una disputa `unpaid` y el cliente **no puede pedir otro servicio**
+  (`UNPAID_SERVICE`) hasta que el mecánico confirme el pago o el cliente diga,
+  dejando constancia, que ya pagó.
+- Si el cliente dice que pagó y el mecánico que no, se abre una disputa
+  `payment_disagreement` (se avisa a los dos y a los admins) **sin bloquear al
+  cliente**: un mecánico no puede bloquear a quien sí le pagó con solo decir
+  que no.
+- Si el mecánico después confirma el pago, la disputa de pago se cierra sola.
+
+Un admin resuelve el desacuerdo con la evidencia: la cotización aceptada,
+las confirmaciones con fecha, el chat y el comprobante de transferencia. Las
+disputas guardan quién las abrió (`opened_by`: cliente, mecánico o sistema).
+Las tarjetas de cierre se quitan de Inicio a los 3 días, salvo un reporte de
+falta de pago, que se queda hasta resolverse.
 
 ## Modelo de apartado + ajuste (descartado, historial)
 

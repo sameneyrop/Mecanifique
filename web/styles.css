@@ -230,6 +230,7 @@ h3{font-size:20px;letter-spacing:-.02em;margin-bottom:10px}
 .legal-body{max-width:760px}
 .legal-body h1{font-size:clamp(36px,5vw,52px);margin-bottom:10px}
 .legal-body h2{font-size:22px;letter-spacing:-.02em;margin:40px 0 12px}
+.legal-body h3{font-size:17px;letter-spacing:-.01em;margin:24px 0 8px}
 .legal-body p,.legal-body li{font-size:16px;color:#3f5a6c;line-height:1.7}
 .legal-body ul,.legal-body ol{padding-left:20px;margin:0 0 16px}
 .legal-body li{margin-bottom:8px}

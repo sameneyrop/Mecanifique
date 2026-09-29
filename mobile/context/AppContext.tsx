@@ -62,6 +62,10 @@ type RequestSummary = {
   scheduleSlotId?: number | null;
   customerName?: string | null;
   customerPhone?: string | null;
+  paidAt?: string | null;
+  customerPaidAt?: string | null;
+  unpaidReportedAt?: string | null;
+  reviewed?: boolean;
 };
 
 export type ServiceQuote = {
@@ -105,6 +109,14 @@ type ServiceRequest = {
   serviceFee?: { amount: number; status: 'pending' | 'authorized' | 'captured' | 'released' | 'failed' } | null;
   // Cotizaciones del mecánico, la más reciente primero (ver src/quotes.ts).
   quotes?: ServiceQuote[];
+  // Cobro al terminar (src/servicePayment.ts): visita fijada al aceptar y
+  // quién dijo qué del pago.
+  visitFee?: number | null;
+  paidAt?: string | null;
+  customerPaidAt?: string | null;
+  paymentMethod?: 'cash' | 'transfer' | null;
+  unpaidReportedAt?: string | null;
+  reviewed?: boolean;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

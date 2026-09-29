@@ -43,6 +43,8 @@ type AdminDispute = {
   status: string;
   resolutionNote: string | null;
   customerName: string;
+  mechanicName?: string | null;
+  openedBy?: 'customer' | 'mechanic' | 'system';
 };
 
 type ActionsViewKey = 'assign' | 'status' | 'requestStatus' | 'availability' | 'update' | 'schedule';
@@ -70,6 +72,15 @@ const DISPUTE_CATEGORY_LABELS: Record<string, string> = {
   incorrect_charge: 'Cobro incorrecto',
   vehicle_damage: 'Daño al vehículo',
   other: 'Otro',
+  // Se abren solas desde el cobro (src/servicePayment.ts).
+  unpaid: 'El mecánico reporta que no le pagaron',
+  payment_disagreement: 'Desacuerdo de pago',
+};
+
+const DISPUTE_OPENED_BY_LABELS: Record<string, string> = {
+  customer: 'La abrió el cliente',
+  mechanic: 'La abrió el mecánico',
+  system: 'Se abrió sola: cliente y mecánico no coinciden',
 };
 
 const ROLE_LABELS = { customer: 'Cliente', mechanic: 'Mecánico', admin: 'Administrador' } as const;
@@ -434,11 +445,15 @@ export function ActionsScreen({
                     <Text style={styles.itemTitle}>
                       Disputa #{dispute.id} · {DISPUTE_STATUS_LABELS[dispute.status] ?? dispute.status}
                     </Text>
-                    <InfoRow icon="person-outline" text={dispute.customerName} />
+                    <InfoRow icon="person-outline" text={`Cliente: ${dispute.customerName}`} />
+                    {dispute.mechanicName ? <InfoRow icon="construct-outline" text={`Mecánico: ${dispute.mechanicName}`} /> : null}
                     <InfoRow
                       icon="document-text-outline"
                       text={`Solicitud #${dispute.serviceRequestId} · ${DISPUTE_CATEGORY_LABELS[dispute.category] ?? dispute.category}`}
                     />
+                    {dispute.openedBy ? (
+                      <Text style={styles.smallText}>{DISPUTE_OPENED_BY_LABELS[dispute.openedBy] ?? dispute.openedBy}</Text>
+                    ) : null}
                     <Text style={styles.itemText}>{dispute.description}</Text>
                     {dispute.status !== 'resolved' && (
                       <>

@@ -11,7 +11,7 @@ import { MechanicRadar } from '../components/MechanicRadar';
 import { ILLUSTRATIONS } from '../illustrations';
 import { PromotionItem, type Promotion } from './PromotionsScreen';
 import type { ApiCall } from '../App';
-import { formatError, getMechanicPublicStatus, formatCalendarDate } from '../utils';
+import { formatError, formatPesos, getMechanicPublicStatus, formatCalendarDate } from '../utils';
 
 type ScheduleSlot = {
   id: number;
@@ -49,9 +49,6 @@ type RequestFormShape = {
   longitude: string;
 };
 
-function formatPesos(amount: number): string {
-  return `$${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
-}
 
 // Cuántos resultados se muestran antes de "Ver más".
 const PAGE_SIZE = 8;

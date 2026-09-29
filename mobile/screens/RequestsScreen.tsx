@@ -30,6 +30,7 @@ import {
 import { MechanicTracker } from '../components/MechanicTracker';
 import { TipCard } from '../components/TipCard';
 import { CustomerQuoteCard } from '../components/Quote';
+import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide } from '../components/ServiceGuide';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
 
@@ -540,9 +541,26 @@ export function RequestsScreen({
                 <View style={styles.stack}>
                   <RequestCard request={selectedRequest} viewerRole={user.role} />
                   {detailFeeText && user.role !== 'mechanic' && <InfoRow icon="card-outline" text={detailFeeText} />}
+                  {detailIsActive && user.role !== 'admin' && (
+                    <NextStepGuide request={selectedRequest} role={user.role === 'mechanic' ? 'mechanic' : 'customer'} />
+                  )}
                   {detailIsActive && <ServiceProgress status={selectedRequest.status} />}
                 </View>
               </Card>
+              {selectedRequest.status === 'completed' && selectedRequest.mechanicId != null && user.role === 'customer' && (
+                <CustomerPaymentCard
+                  api={api}
+                  request={selectedRequest}
+                  onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
+                />
+              )}
+              {selectedRequest.status === 'completed' && user.role === 'mechanic' && (
+                <MechanicCollectCard
+                  api={api}
+                  request={selectedRequest}
+                  onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
+                />
+              )}
               {user.role === 'customer' && (
                 <>
                   <MechanicTracker
@@ -572,7 +590,7 @@ export function RequestsScreen({
               {user.role === 'mechanic' && detailIsActive && selectedRequest.status !== 'pending' && (
                 <PrimaryButton title="Ir a mi trabajo en curso" onPress={() => setCurrentScreen('home')} />
               )}
-              {selectedRequest.status === 'completed' && user.role === 'customer' && selectedRequest.mechanicId && (
+              {selectedRequest.status === 'completed' && user.role === 'customer' && selectedRequest.mechanicId && !selectedRequest.reviewed && (
                 <Card title="Califica el servicio" subtitle="Tu opinión ayuda a otros clientes a elegir.">
                   <View style={styles.stack}>
                     <Illustration source={ILLUSTRATIONS.completed} compact />

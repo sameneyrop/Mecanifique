@@ -4,15 +4,13 @@ import { Text, View } from 'react-native';
 import { styles } from '../styles';
 import { useAppContext, type ServiceQuote } from '../context/AppContext';
 import { Card, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from './ui';
-import { formatError } from '../utils';
+import { formatError, formatPesos } from '../utils';
 import type { ApiCall } from '../App';
 
 // Cotización obligatoria antes de reparar (servidor: src/quotes.ts). El
 // mecánico la manda después del diagnóstico; el cliente la acepta o no.
 
-function pesos(amount: number): string {
-  return `$${Math.round(amount).toLocaleString('es-MX')}`;
-}
+const pesos = formatPesos;
 
 function QuoteBreakdown({ quote }: { quote: ServiceQuote }) {
   return (

@@ -247,6 +247,17 @@ export async function initDb(): Promise<void> {
      // 'direct': el cliente eligió a ese mecánico (o su turno); no se
      // reasigna a otro sin que el cliente lo pida. NULL (solicitudes viejas)
      // se trata como 'auto'.
+  // Cobro al terminar (src/servicePayment.ts): el precio de la visita y
+  // diagnóstico se fija cuando el mecánico acepta (si luego cambia su tarifa,
+  // no afecta a servicios ya aceptados) y paid_at es cuándo el mecánico
+  // confirmó que el cliente ya le pagó.
+  await ensureColumn("service_requests", "visit_fee", "ALTER TABLE service_requests ADD COLUMN visit_fee REAL");
+  await ensureColumn("service_requests", "paid_at", "ALTER TABLE service_requests ADD COLUMN paid_at TEXT");
+  // Lo que dice el cliente ('cash' o 'transfer') y cuándo, y cuándo el
+  // mecánico reportó que no le pagaron. Nadie decide solo si se pagó.
+  await ensureColumn("service_requests", "customer_paid_at", "ALTER TABLE service_requests ADD COLUMN customer_paid_at TEXT");
+  await ensureColumn("service_requests", "payment_method", "ALTER TABLE service_requests ADD COLUMN payment_method TEXT");
+  await ensureColumn("service_requests", "unpaid_reported_at", "ALTER TABLE service_requests ADD COLUMN unpaid_reported_at TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS service_request_declines (
@@ -440,29 +451,12 @@ export async function initDb(): Promise<void> {
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_payments_service_request ON payments(service_request_id)");
 
-  // Disputas: el cliente reporta un problema con un servicio ya realizado.
-  // Un admin revisa manualmente y decide la resolución — sin reglas
-  // automáticas por ahora (ver README.md).
-  await run(`
-    CREATE TABLE IF NOT EXISTS disputes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      service_request_id INTEGER NOT NULL,
-      customer_id INTEGER NOT NULL,
-      category TEXT NOT NULL CHECK(category IN ('incomplete_work', 'incorrect_charge', 'vehicle_damage', 'other')),
-      description TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'reported' CHECK(status IN ('reported', 'under_review', 'resolved')),
-      resolution_note TEXT,
-      refund_payment_id INTEGER,
-      resolved_by_user_id INTEGER,
-      resolved_at TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
-      FOREIGN KEY(customer_id) REFERENCES customers(id),
-      FOREIGN KEY(refund_payment_id) REFERENCES payments(id),
-      FOREIGN KEY(resolved_by_user_id) REFERENCES users(id)
-    );
-  `);
+  // Disputas: el cliente reporta un problema con un servicio ya realizado, o
+  // se abren solas cuando el pago no cuadra (src/servicePayment.ts: el
+  // mecánico reporta que no le pagaron, o dice que no y el cliente que sí).
+  // Un admin revisa manualmente y decide la resolución (ver README.md).
+  await run(`CREATE TABLE IF NOT EXISTS disputes (${DISPUTES_COLUMNS})`);
+  await migrateDisputeCategories();
   await run("CREATE INDEX IF NOT EXISTS idx_disputes_service_request ON disputes(service_request_id)");
   await run("CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status, created_at)");
 
@@ -688,6 +682,50 @@ async function ensureColumn(table: string, columnName: string, alterSql: string)
  * inexistente, y con llaves foráneas activas —como en libSQL/Turso— toda
  * escritura en solicitudes fallaba.)
  */
+// opened_by: 'customer' (reporte del cliente), 'mechanic' (el mecánico
+// reporta que no le pagaron) o 'system' (los dos dicen cosas distintas del pago).
+const DISPUTES_COLUMNS = `
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  service_request_id INTEGER NOT NULL,
+  customer_id INTEGER NOT NULL,
+  category TEXT NOT NULL CHECK(category IN ('incomplete_work', 'incorrect_charge', 'vehicle_damage', 'other', 'unpaid', 'payment_disagreement')),
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'reported' CHECK(status IN ('reported', 'under_review', 'resolved')),
+  resolution_note TEXT,
+  refund_payment_id INTEGER,
+  resolved_by_user_id INTEGER,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  opened_by TEXT NOT NULL DEFAULT 'customer' CHECK(opened_by IN ('customer', 'mechanic', 'system')),
+  FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+  FOREIGN KEY(customer_id) REFERENCES customers(id),
+  FOREIGN KEY(refund_payment_id) REFERENCES payments(id),
+  FOREIGN KEY(resolved_by_user_id) REFERENCES users(id)
+`;
+
+/**
+ * SQLite no deja cambiar un CHECK: una tabla de disputas anterior a las
+ * categorías de pago se reconstruye con las mismas filas (igual que
+ * migrateRequestStatusConstraint). Los índices se crean después.
+ */
+async function migrateDisputeCategories(): Promise<void> {
+  const schema = await get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'disputes'");
+  if (!schema?.sql || schema.sql.includes("'payment_disagreement'")) {
+    return;
+  }
+  const oldColumns = (await all<{ name: string }>("PRAGMA table_info(disputes)")).map((column) => column.name);
+  await run("PRAGMA foreign_keys = OFF");
+  await run("DROP TABLE IF EXISTS disputes_rebuilt");
+  await run(`CREATE TABLE disputes_rebuilt (${DISPUTES_COLUMNS})`);
+  const newColumns = (await all<{ name: string }>("PRAGMA table_info(disputes_rebuilt)")).map((column) => column.name);
+  const sharedColumns = oldColumns.filter((column) => newColumns.includes(column)).join(", ");
+  await run(`INSERT INTO disputes_rebuilt (${sharedColumns}) SELECT ${sharedColumns} FROM disputes`);
+  await run("DROP TABLE disputes");
+  await run("ALTER TABLE disputes_rebuilt RENAME TO disputes");
+  await run("PRAGMA foreign_keys = ON");
+}
+
 async function migrateRequestStatusConstraint(): Promise<void> {
   const schema = await get<{ sql: string }>(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'service_requests'"

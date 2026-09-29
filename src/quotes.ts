@@ -10,7 +10,8 @@ import { all, get, run } from "./db";
  * También puede cotizar algo adicional ya reparando (una pieza extra): el
  * cliente la acepta o no, sin detener la reparación ya acordada.
  *
- * Mecanifique no cobra este monto: queda como registro de lo que se acordó.
+ * Mecanifique no cobra este monto: queda como registro de lo que se acordó
+ * y se suma a la visita en lo que el cliente paga (src/servicePayment.ts).
  */
 
 export type QuoteStatus = "pending" | "accepted" | "rejected" | "replaced";
@@ -56,15 +57,6 @@ export async function hasAcceptedQuote(requestId: number): Promise<boolean> {
       requestId
     ])
   );
-}
-
-/** Lo acordado en total: la suma de las cotizaciones aceptadas. */
-export async function acceptedQuotesTotal(requestId: number): Promise<number | null> {
-  const row = await get<{ total: number | null }>(
-    "SELECT SUM(labor_amount + parts_amount) AS total FROM service_quotes WHERE service_request_id = ? AND status = 'accepted'",
-    [requestId]
-  );
-  return row?.total ?? null;
 }
 
 export async function createQuote(input: {

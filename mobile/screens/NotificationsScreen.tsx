@@ -36,19 +36,23 @@ export function notificationTarget(notification: AppNotification): { requestId: 
 
 export function NotificationsScreen({
   onOpenNotification,
+  onMarkRead,
   onMarkAllRead,
 }: {
   onOpenNotification: (notification: AppNotification) => void;
+  onMarkRead: (notification: AppNotification) => void;
   onMarkAllRead: () => void;
 }) {
   const { notifications, unreadNotifications, busy } = useAppContext();
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  // Plegados para que quepan más en pantalla; uno abierto a la vez.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   return (
     <Animated.View entering={FadeInDown.duration(300)} needsOffscreenAlphaCompositing>
       <Card
         title={unreadNotifications > 0 ? `${unreadNotifications} sin leer` : 'Estás al día'}
-        subtitle="Toca un aviso para ver de qué se trata."
+        subtitle="Toca un aviso para ver el detalle."
       >
         {notifications.length === 0 ? (
           <EmptyState
@@ -63,27 +67,47 @@ export function NotificationsScreen({
             )}
             {notifications.slice(0, visibleCount).map((notification) => {
               const unread = !notification.readAt;
-              const opensSomething = notificationTarget(notification) !== null;
+              const target = notificationTarget(notification);
+              const expanded = expandedId === notification.id;
               return (
-                <Pressable
-                  key={notification.id}
-                  style={({ pressed }) => [
-                    styles.notificationItem,
-                    !unread && styles.notificationItemRead,
-                    pressed && styles.buttonPressed,
-                  ]}
-                  onPress={() => onOpenNotification(notification)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${unread ? 'Sin leer. ' : ''}${notification.title}. ${notification.body}`}
-                >
-                  <View style={styles.itemHeader}>
-                    <Ionicons name={unread ? 'notifications' : 'notifications-outline'} size={20} color={colors.primary} />
-                    <Text style={[styles.itemTitle, styles.flex]}>{notification.title}</Text>
-                    {opensSomething && <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />}
-                  </View>
-                  <Text style={styles.itemText}>{notification.body}</Text>
-                  <Text style={styles.smallText}>{formatServerDate(notification.createdAt)}</Text>
-                </Pressable>
+                <View key={notification.id} style={[styles.notificationItem, !unread && styles.notificationItemRead]}>
+                  <Pressable
+                    style={({ pressed }) => [styles.notificationRow, pressed && styles.buttonPressed]}
+                    onPress={() => {
+                      setExpandedId(expanded ? null : notification.id);
+                      onMarkRead(notification);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded }}
+                    accessibilityLabel={`${unread ? 'Sin leer. ' : ''}${notification.title}`}
+                  >
+                    {unread ? (
+                      <View style={styles.notificationDot} />
+                    ) : (
+                      <Ionicons name="notifications-outline" size={16} color={colors.textSecondary} />
+                    )}
+                    <Text
+                      style={[styles.notificationTitle, unread && styles.notificationTitleUnread]}
+                      numberOfLines={expanded ? undefined : 1}
+                    >
+                      {notification.title}
+                    </Text>
+                    <Text style={styles.smallText}>{formatServerDate(notification.createdAt)}</Text>
+                    <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textSecondary} />
+                  </Pressable>
+                  {expanded && (
+                    <View style={styles.stack}>
+                      <Text style={styles.itemText}>{notification.body}</Text>
+                      {target && (
+                        <SecondaryButton
+                          compact
+                          title={'questionId' in target ? 'Ver pregunta' : 'Ver solicitud'}
+                          onPress={() => onOpenNotification(notification)}
+                        />
+                      )}
+                    </View>
+                  )}
+                </View>
               );
             })}
             {notifications.length > visibleCount && (

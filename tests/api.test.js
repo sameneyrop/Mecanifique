@@ -27,12 +27,20 @@ const { TrackingError, getMechanicLocationForRequest, isMechanicBeingTracked } =
 const { TipError, getTipInfoForRequest, isValidClabe, saveMechanicTipInfo } = require("../src/tips.ts");
 const {
   QuoteError,
-  acceptedQuotesTotal,
   createQuote,
   getQuotesForRequest,
   hasAcceptedQuote,
   respondToQuote
 } = require("../src/quotes.ts");
+const {
+  ServicePaymentError,
+  amountDueForRequest,
+  customerConfirmsPayment,
+  lockVisitFee,
+  mechanicConfirmsPayment,
+  mechanicReportsUnpaid,
+  unpaidServiceForCustomer
+} = require("../src/servicePayment.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -69,6 +77,7 @@ const createdRows = { mechanics: [], customers: [], requests: [] };
 async function cleanupCreatedRows() {
   for (const requestId of createdRows.requests) {
     await run("DELETE FROM service_quotes WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM disputes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
@@ -780,7 +789,108 @@ test("cotización: el mecánico cotiza, el cliente acepta o no, y solo con una a
   await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
   const extra = await quote(0, 300);
   await respondToQuote({ requestId, quoteId: extra.id, customerId: customer.lastID, accept: true });
-  assert.equal(await acceptedQuotesTotal(requestId), 1700);
+  assert.equal((await amountDueForRequest(requestId)).repairTotal, 1700);
+});
+
+test("cobro: el precio de la visita queda fijo al aceptar y se suma a lo cotizado", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await run("UPDATE mechanics SET labor_rate = 400 WHERE id = ?", [mechanicId]);
+  const { requestId } = await createCompletedRequest(mechanicId);
+  await run("UPDATE service_requests SET status = 'assigned' WHERE id = ?", [requestId]);
+  await lockVisitFee(requestId, mechanicId);
+
+  // Si el mecánico sube su tarifa después de aceptar, este servicio no cambia.
+  await run("UPDATE mechanics SET labor_rate = 900 WHERE id = ?", [mechanicId]);
+  await run(
+    "INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, description, status) VALUES (?, ?, 600, 1200, 'Cambio de batería', 'accepted')",
+    [requestId, mechanicId]
+  );
+  assert.deepEqual(await amountDueForRequest(requestId), { visitFee: 400, repairTotal: 1800, total: 2200 });
+});
+
+async function createCompletedRequest(mechanicId) {
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Pago", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const created = await run(
+    `INSERT INTO service_requests (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time,
+       city, zone, status, mechanic_id)
+     VALUES (?, 'Nissan', 'Versa', 2018, 'No enciende', '', 'Ciudad-Pago', 'Centro', 'completed', ?)`,
+    [customer.lastID, mechanicId]
+  );
+  createdRows.requests.push(created.lastID);
+  return { requestId: created.lastID, customerId: customer.lastID };
+}
+
+const openPaymentDisputes = (requestId) =>
+  all(
+    "SELECT category, opened_by AS openedBy, status FROM disputes WHERE service_request_id = ? AND category IN ('unpaid', 'payment_disagreement')",
+    [requestId]
+  );
+
+test("cobro: si los dos confirman, queda saldado sin disputa", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createCompletedRequest(mechanicId);
+
+  // Solo los del servicio pueden confirmar.
+  await assert.rejects(customerConfirmsPayment(requestId, customerId + 100000, "cash"), (error) => error.status === 403);
+  await assert.rejects(mechanicConfirmsPayment(requestId, mechanicId + 100000), (error) => error.status === 403);
+
+  const byCustomer = await customerConfirmsPayment(requestId, customerId, "transfer");
+  assert.equal(byCustomer.disagreement, false);
+  assert.equal((await customerConfirmsPayment(requestId, customerId, "cash")).unchanged, true, "confirmar dos veces no hace nada");
+  await mechanicConfirmsPayment(requestId, mechanicId);
+
+  const row = await get("SELECT paid_at, customer_paid_at, payment_method FROM service_requests WHERE id = ?", [requestId]);
+  assert.ok(row.paid_at && row.customer_paid_at);
+  assert.equal(row.payment_method, "transfer");
+  assert.deepEqual(await openPaymentDisputes(requestId), []);
+  await assert.rejects(mechanicReportsUnpaid(requestId, mechanicId), (error) => error instanceof ServicePaymentError && error.status === 409);
+});
+
+test("cobro: si el mecánico reporta que no le pagaron, el cliente no puede pedir otro hasta pagar o decir que ya pagó", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createCompletedRequest(mechanicId);
+
+  await mechanicReportsUnpaid(requestId, mechanicId);
+  assert.equal((await unpaidServiceForCustomer(customerId))?.requestId, requestId);
+  assert.deepEqual(await openPaymentDisputes(requestId), [{ category: "unpaid", openedBy: "mechanic", status: "reported" }]);
+
+  // El cliente dice que sí pagó: ya no se le bloquea (queda su versión) y
+  // pasa a desacuerdo para que lo revise un admin.
+  const change = await customerConfirmsPayment(requestId, customerId, "cash");
+  assert.equal(change.disagreement, true);
+  assert.equal(await unpaidServiceForCustomer(customerId), null);
+  assert.deepEqual(await openPaymentDisputes(requestId), [{ category: "payment_disagreement", openedBy: "system", status: "reported" }]);
+
+  // Si luego el mecánico encuentra el pago, lo confirma y la disputa se cierra.
+  await mechanicConfirmsPayment(requestId, mechanicId);
+  assert.deepEqual(await openPaymentDisputes(requestId), [{ category: "payment_disagreement", openedBy: "system", status: "resolved" }]);
+});
+
+test("cobro: si el cliente dice que pagó y el mecánico que no, se abre un desacuerdo sin bloquear al cliente", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createCompletedRequest(mechanicId);
+
+  await customerConfirmsPayment(requestId, customerId, "transfer");
+  const change = await mechanicReportsUnpaid(requestId, mechanicId);
+  assert.equal(change.disagreement, true);
+  assert.equal(await unpaidServiceForCustomer(customerId), null);
+  assert.deepEqual(await openPaymentDisputes(requestId), [{ category: "payment_disagreement", openedBy: "system", status: "reported" }]);
+});
+
+test("cobro: el pago solo se confirma en un servicio terminado", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createCompletedRequest(mechanicId);
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+  await assert.rejects(customerConfirmsPayment(requestId, customerId, "cash"), (error) => error.status === 409);
+  await assert.rejects(mechanicReportsUnpaid(requestId, mechanicId), (error) => error.status === 409);
+});
+
+test("cobro: las rutas de pago piden sesión", async () => {
+  for (const path of ["customer-confirm", "received", "unpaid"]) {
+    const { response } = await request(`/api/service-requests/1/payment/${path}`, { method: "POST", body: "{}" });
+    assert.equal(response.status, 401, path);
+  }
 });
 
 test("propina: la CLABE se valida con su dígito de control", () => {

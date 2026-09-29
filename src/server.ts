@@ -64,12 +64,24 @@ import {
 import {
   QuoteError,
   STATUSES_REQUIRING_QUOTE,
-  acceptedQuotesTotal,
   createQuote,
   getQuotesForRequest,
   hasAcceptedQuote,
   respondToQuote
 } from "./quotes";
+import {
+  PAYMENT_METHOD_LABELS,
+  type PaymentChange,
+  ServicePaymentError,
+  VISIT_FEE_SQL,
+  amountDueForRequest,
+  customerConfirmsPayment,
+  freezeVisitFee,
+  lockVisitFee,
+  mechanicConfirmsPayment,
+  mechanicReportsUnpaid,
+  unpaidServiceForCustomer
+} from "./servicePayment";
 import {
   TipError,
   clearMechanicTipInfo,
@@ -489,6 +501,42 @@ const requestStatusLabels: Record<string, string> = {
   completed: "servicio terminado",
   cancelled: "cancelada"
 };
+
+/**
+ * Aviso al cliente de cada paso, en palabras de lo que está pasando y de lo
+ * que le toca hacer (antes: "Solicitud #12: en diagnóstico").
+ */
+function customerStatusNotice(input: {
+  status: string;
+  previousStatus: string;
+  mechanicName: string;
+  amountDue: number | null;
+}): { title: string; body: string } | null {
+  const name = input.mechanicName;
+  switch (input.status) {
+    case "en_route":
+      return { title: `${name} va en camino`, body: "Puedes seguirlo en la app. Ten a la mano tu auto y las llaves." };
+    case "on_site":
+      return { title: `${name} llegó`, body: "Recíbelo y cuéntale qué le pasa a tu auto." };
+    case "diagnosing":
+      return { title: `${name} está revisando tu auto`, body: "Te mandará una cotización. No repara nada sin que la aceptes." };
+    case "repairing":
+      return input.previousStatus === "awaiting_parts"
+        ? { title: `${name} regresó con las refacciones`, body: "Ya sigue con la reparación." }
+        : { title: `${name} empezó la reparación`, body: "Te avisamos cuando termine." };
+    case "awaiting_parts":
+      return { title: `${name} fue por refacciones`, body: "Puedes seguirlo en la app mientras regresa." };
+    case "completed":
+      return input.amountDue && input.amountDue > 0
+        ? {
+            title: `Págale ${formatMxn(input.amountDue)} a ${name}`,
+            body: "Tu servicio terminó. El pago es directo a él, en efectivo o transferencia. Después, califícalo."
+          }
+        : { title: "Tu servicio terminó", body: `Cuéntanos cómo te fue calificando a ${name}.` };
+    default:
+      return null;
+  }
+}
 
 const allowedRequestTransitions: Record<string, string[]> = {
   pending: ["assigned", "cancelled"],
@@ -946,6 +994,25 @@ function requestCoords(row: { latitude: number | null; longitude: number | null 
   return row.latitude != null && row.longitude != null ? { latitude: row.latitude, longitude: row.longitude } : null;
 }
 
+/**
+ * Aviso al cliente cuando un mecánico toma su solicitud: quién va y cuánto
+ * cuesta la visita (hasta entonces, si pidió "ahora mismo", no lo sabía).
+ */
+async function notifyCustomerRequestAccepted(requestId: number, customerUserId: number, mechanicId: number): Promise<void> {
+  const { visitFee } = await amountDueForRequest(requestId);
+  const mechanicName =
+    (await get<{ fullName: string }>("SELECT full_name AS fullName FROM mechanics WHERE id = ?", [mechanicId]))?.fullName ??
+    "Tu mecánico";
+  await createNotification(
+    customerUserId,
+    `${mechanicName} aceptó tu solicitud`,
+    visitFee > 0
+      ? `La visita y diagnóstico cuesta ${formatMxn(visitFee)} y se la pagas a él al final. Te avisamos cuando salga hacia ti.`
+      : "Te avisamos cuando salga hacia ti.",
+    { requestId, mechanicId }
+  );
+}
+
 /** Ofrece una solicitud sin mecánico a uno nuevo, con su propio hold. */
 async function offerRequestToMechanic(requestId: number, mechanicId: number): Promise<boolean> {
   const mechanic = await get<{ fullName: string; laborRate: number | null }>(
@@ -1259,6 +1326,8 @@ function startServiceFeeSweep(): void {
 }
 
 const ACTIVE_JOB_STATUSES_SQL = "('assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts')";
+// Para el cliente también cuenta la que todavía busca mecánico.
+const OPEN_REQUEST_STATUSES_SQL = "('pending', 'assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts')";
 
 async function isIdentityApproved(userId: number): Promise<boolean> {
   const verification = await get<{ status: string }>(
@@ -1615,11 +1684,13 @@ app.get("/api/disputes/mine", requireAuth, handleAsync(async (req, res) => {
 
 app.get("/api/admin/disputes", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
   const disputes = await all<any>(
-    `SELECT d.id, d.service_request_id AS serviceRequestId, d.category, d.description, d.status,
+    `SELECT d.id, d.service_request_id AS serviceRequestId, d.category, d.description, d.status, d.opened_by AS openedBy,
             d.resolution_note AS resolutionNote, d.created_at AS createdAt, d.resolved_at AS resolvedAt,
-            c.full_name AS customerName
+            c.full_name AS customerName, m.full_name AS mechanicName
      FROM disputes d
      JOIN customers c ON c.id = d.customer_id
+     LEFT JOIN service_requests sr ON sr.id = d.service_request_id
+     LEFT JOIN mechanics m ON m.id = sr.mechanic_id
      ORDER BY CASE d.status WHEN 'reported' THEN 0 WHEN 'under_review' THEN 1 ELSE 2 END, d.created_at ASC`
   );
   res.json({ disputes });
@@ -2600,6 +2671,32 @@ app.post(
       return;
     }
 
+    // Una a la vez: con dos abiertas podían ir dos mecánicos, y Inicio solo
+    // muestra una. Se revisa antes de cobrar la cuota o avisar a un mecánico.
+    if (req.auth?.user.role === "customer") {
+      const openRequest = await get<{ id: number }>(
+        `SELECT id FROM service_requests WHERE customer_id = ? AND status IN ${OPEN_REQUEST_STATUSES_SQL} LIMIT 1`,
+        [customerId]
+      );
+      if (openRequest) {
+        res.status(409).json({
+          error: `Ya tienes una solicitud en curso (#${openRequest.id}). Termínala o cancélala antes de pedir otra.`,
+          code: "REQUEST_ALREADY_OPEN",
+          requestId: openRequest.id
+        });
+        return;
+      }
+      const unpaid = await unpaidServiceForCustomer(customerId);
+      if (unpaid) {
+        res.status(409).json({
+          error: `${unpaid.mechanicName} reporta que no le has pagado ${formatMxn(unpaid.amount)} del servicio #${unpaid.requestId}. Págale o, si ya le pagaste, confírmalo en ese servicio para poder pedir otro.`,
+          code: "UNPAID_SERVICE",
+          requestId: unpaid.requestId
+        });
+        return;
+      }
+    }
+
     let requestedMechanicId = payload.requestedMechanicId;
     const scheduleSlotId = payload.scheduleSlotId;
     let scheduleSlot: ScheduleSlotRow | undefined;
@@ -2967,16 +3064,12 @@ app.post(
       res.status(409).json({ error: "La solicitud ya fue asignada o cambió de estado" });
       return;
     }
+    await lockVisitFee(requestId, mechanicId);
 
     const customerUserId = await getUserIdByCustomerId(serviceRequest.customerId);
     const mechanicUserId = await getUserIdByMechanicId(mechanicId);
     if (customerUserId) {
-      await createNotification(
-        customerUserId,
-        "Solicitud asignada",
-        `Tu solicitud #${requestId} fue asignada al mecánico ${mechanicId}`,
-        { requestId, mechanicId }
-      );
+      await notifyCustomerRequestAccepted(requestId, customerUserId, mechanicId);
     }
     if (mechanicUserId) {
       await createNotification(
@@ -3710,6 +3803,8 @@ app.get(
              sr.city, sr.zone, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt,
              sr.latitude, sr.longitude,
              m.full_name AS mechanicName, c.full_name AS customerName, c.phone AS customerPhone,
+             sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt, sr.unpaid_reported_at AS unpaidReportedAt,
+             EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
@@ -3738,8 +3833,8 @@ app.get(
 
     sql += " ORDER BY sr.updated_at DESC LIMIT 20";
 
-    const requests = await all(sql, params);
-    res.status(200).json(requests);
+    const requests = await all<{ reviewed: number }>(sql, params);
+    res.status(200).json(requests.map((request) => ({ ...request, reviewed: Boolean(request.reviewed) })));
   })
 );
 
@@ -3776,9 +3871,11 @@ app.get(
              sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId,
               sr.service_address AS serviceAddress,
-             sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName, c.phone AS customerPhone
+             sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName, c.phone AS customerPhone,
+             ${VISIT_FEE_SQL} AS visitFee
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
+      LEFT JOIN mechanics m ON m.id = sr.mechanic_id
       WHERE sr.mechanic_id = ?
         AND sr.status = 'pending'
         AND sr.hold_expires_at IS NOT NULL
@@ -3857,6 +3954,7 @@ app.post(
         res.status(409).json({ error: "El hold ya expiró o la solicitud cambió de estado" });
         return;
       }
+      await lockVisitFee(requestId, mechanicId);
       await run(
         `
         UPDATE mechanics
@@ -3871,12 +3969,7 @@ app.post(
         (await get<{ fullName: string }>("SELECT full_name AS fullName FROM mechanics WHERE id = ?", [mechanicId]))?.fullName ??
         "Tu mecánico";
       if (customerUserId) {
-        await createNotification(
-          customerUserId,
-          "Solicitud aceptada",
-          `${acceptingMechanicName} aceptó tu solicitud #${requestId}`,
-          { requestId, mechanicId }
-        );
+        await notifyCustomerRequestAccepted(requestId, customerUserId, mechanicId);
       }
       if (mechanicUserId) {
         await createNotification(
@@ -4108,6 +4201,7 @@ app.get(
     const request = await get<{
       customerId: number;
       mechanicId: number | null;
+      reviewed: number;
     }>(
       `
       SELECT sr.id, sr.customer_id AS customerId, sr.vehicle_make AS vehicleMake, sr.vehicle_model AS vehicleModel,
@@ -4117,7 +4211,10 @@ app.get(
              sr.assignment_mode AS assignmentMode,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt,
              c.full_name AS customerName, c.phone AS customerPhone,
-             m.full_name AS mechanicName, m.phone AS mechanicPhone
+             m.full_name AS mechanicName, m.phone AS mechanicPhone,
+             ${VISIT_FEE_SQL} AS visitFee, sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt,
+             sr.payment_method AS paymentMethod, sr.unpaid_reported_at AS unpaidReportedAt,
+             EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
       LEFT JOIN mechanics m ON m.id = sr.mechanic_id
@@ -4153,6 +4250,7 @@ app.get(
 
     res.status(200).json({
       ...request,
+      reviewed: Boolean(request.reviewed),
       updates,
       serviceFee: await getServiceFeeForRequest(requestId),
       quotes: await getQuotesForRequest(requestId)
@@ -4414,10 +4512,13 @@ app.patch(
       return;
     }
 
-    // Al terminar, el precio final es lo acordado en las cotizaciones (si el
-    // mecánico no manda otro).
-    const finalPrice =
-      payload.finalPrice ?? (payload.status === "completed" ? await acceptedQuotesTotal(requestId) : null);
+    // Al terminar, el precio final es lo que el cliente le paga al mecánico:
+    // la visita más las cotizaciones aceptadas (si el mecánico no manda otro).
+    let finalPrice = payload.finalPrice ?? null;
+    if (payload.status === "completed") {
+      await freezeVisitFee(requestId);
+      finalPrice = payload.finalPrice ?? (await amountDueForRequest(requestId)).total;
+    }
 
     await run(
       `
@@ -4462,12 +4563,20 @@ app.patch(
     const statusMechanicUserId = existing.mechanic_id ? await getUserIdByMechanicId(existing.mechanic_id) : null;
     const statusLabel = requestStatusLabels[payload.status] ?? payload.status;
     if (statusCustomerUserId) {
+      const statusMechanicName = existing.mechanic_id
+        ? (await get<{ fullName: string }>("SELECT full_name AS fullName FROM mechanics WHERE id = ?", [existing.mechanic_id]))
+            ?.fullName
+        : null;
+      const notice = customerStatusNotice({
+        status: payload.status,
+        previousStatus: existing.status,
+        mechanicName: statusMechanicName ?? "Tu mecánico",
+        amountDue: payload.status === "completed" ? finalPrice : null
+      });
       await createNotification(
         statusCustomerUserId,
-        payload.status === "completed" ? "Servicio terminado" : "Novedades de tu servicio",
-        payload.status === "completed"
-          ? `Tu solicitud #${requestId} terminó. Cuéntanos cómo te fue calificando a tu mecánico.`
-          : `Solicitud #${requestId}: ${statusLabel}.`,
+        notice?.title ?? "Novedades de tu servicio",
+        notice?.body ?? `Solicitud #${requestId}: ${statusLabel}.`,
         { requestId, status: payload.status }
       );
     }
@@ -4483,6 +4592,157 @@ app.patch(
     }
 
     res.status(200).json({ ok: true });
+  })
+);
+
+// --- Pago al mecánico al terminar (src/servicePayment.ts) ---
+
+const customerPaymentSchema = z.object({ method: z.enum(["cash", "transfer"]) });
+
+function parseRequestIdParam(req: Request, res: Response): number | null {
+  const requestId = Number(req.params.id);
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    res.status(400).json({ error: "requestId inválido" });
+    return null;
+  }
+  return requestId;
+}
+
+function sendServicePaymentError(res: Response, error: unknown): boolean {
+  if (error instanceof ServicePaymentError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+async function logPaymentUpdate(requestId: number, message: string): Promise<void> {
+  await run("INSERT INTO service_request_updates (service_request_id, source, message) VALUES (?, 'system', ?)", [
+    requestId,
+    message
+  ]);
+}
+
+/** Avisa a los dos (y a los admins) que el pago quedó en revisión. */
+async function notifyPaymentDisagreement(requestId: number, change: PaymentChange): Promise<void> {
+  const customerUserId = await getUserIdByCustomerId(change.customerId);
+  const mechanicUserId = change.mechanicId ? await getUserIdByMechanicId(change.mechanicId) : null;
+  if (customerUserId) {
+    await createNotification(
+      customerUserId,
+      "Vamos a revisar el pago",
+      `${change.mechanicName} dice que no ha recibido tu pago de ${formatMxn(change.amount)}. Guarda tu comprobante si pagaste por transferencia; te contactaremos.`,
+      { requestId }
+    );
+  }
+  if (mechanicUserId) {
+    await createNotification(
+      mechanicUserId,
+      "Vamos a revisar el pago",
+      `${change.customerName} dice que ya te pagó ${formatMxn(change.amount)}. Revisa tu efectivo o tu cuenta; si lo encuentras, confírmalo en la app. Te contactaremos.`,
+      { requestId }
+    );
+  }
+  for (const adminUserId of await getAdminUserIds()) {
+    await createNotification(adminUserId, "Disputa de pago", `Servicio #${requestId}: el cliente y el mecánico no coinciden en el pago.`, {
+      requestId
+    });
+  }
+}
+
+// El cliente dice que ya le pagó al mecánico (y cómo).
+app.post(
+  "/api/service-requests/:id/payment/customer-confirm",
+  requireAuth,
+  requireRole("customer"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const { method } = customerPaymentSchema.parse(req.body);
+    try {
+      const change = await customerConfirmsPayment(requestId, req.auth?.user.customerId, method);
+      if (!change.unchanged) {
+        await logPaymentUpdate(requestId, `El cliente dice que pagó ${formatMxn(change.amount)} ${PAYMENT_METHOD_LABELS[method]}.`);
+        if (change.disagreement) {
+          await notifyPaymentDisagreement(requestId, change);
+        } else if (change.mechanicId) {
+          const mechanicUserId = await getUserIdByMechanicId(change.mechanicId);
+          if (mechanicUserId) {
+            await createNotification(
+              mechanicUserId,
+              `${change.customerName} dice que ya te pagó`,
+              `${formatMxn(change.amount)} ${PAYMENT_METHOD_LABELS[method]}. Confírmalo en la app cuando lo tengas.`,
+              { requestId }
+            );
+          }
+        }
+      }
+      res.json({ ok: true, disagreement: change.disagreement });
+    } catch (error) {
+      if (!sendServicePaymentError(res, error)) throw error;
+    }
+  })
+);
+
+// El mecánico confirma que ya le pagaron.
+app.post(
+  "/api/service-requests/:id/payment/received",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    try {
+      const change = await mechanicConfirmsPayment(requestId, req.auth?.user.mechanicId);
+      if (!change.unchanged) {
+        await logPaymentUpdate(requestId, `${change.mechanicName} confirmó que recibió el pago de ${formatMxn(change.amount)}.`);
+        const customerUserId = await getUserIdByCustomerId(change.customerId);
+        if (customerUserId) {
+          await createNotification(
+            customerUserId,
+            "Pago confirmado",
+            `${change.mechanicName} confirmó que recibió tu pago de ${formatMxn(change.amount)}. ¿Cómo te fue? Califícalo en la app.`,
+            { requestId }
+          );
+        }
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      if (!sendServicePaymentError(res, error)) throw error;
+    }
+  })
+);
+
+// El mecánico reporta que el cliente no le ha pagado.
+app.post(
+  "/api/service-requests/:id/payment/unpaid",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    try {
+      const change = await mechanicReportsUnpaid(requestId, req.auth?.user.mechanicId);
+      if (!change.unchanged) {
+        await logPaymentUpdate(requestId, `${change.mechanicName} reportó que no ha recibido el pago de ${formatMxn(change.amount)}.`);
+        if (change.disagreement) {
+          await notifyPaymentDisagreement(requestId, change);
+        } else {
+          const customerUserId = await getUserIdByCustomerId(change.customerId);
+          if (customerUserId) {
+            await createNotification(
+              customerUserId,
+              `${change.mechanicName} reporta que no le has pagado`,
+              `Son ${formatMxn(change.amount)} del servicio #${requestId}. Si ya le pagaste, confírmalo en la app; mientras tanto no podrás pedir otro servicio.`,
+              { requestId }
+            );
+          }
+        }
+      }
+      res.json({ ok: true, disagreement: change.disagreement });
+    } catch (error) {
+      if (!sendServicePaymentError(res, error)) throw error;
+    }
   })
 );
 

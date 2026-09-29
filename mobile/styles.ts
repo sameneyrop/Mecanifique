@@ -558,6 +558,55 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primaryLight,
   },
+  // "¿Qué sigue?" (components/ServiceGuide.tsx): lo que le toca a cada quien.
+  guideCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.primaryLighter,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  guideCardWarning: {
+    backgroundColor: colors.warningBg,
+    borderColor: colors.accent,
+  },
+  guideIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  guideIconWarning: {
+    backgroundColor: colors.accent,
+  },
+  guideLabel: {
+    color: colors.primaryDark,
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  // Cobro al terminar: el monto grande y su desglose.
+  amountValue: {
+    color: colors.textDark,
+    fontFamily: fonts.extrabold,
+    fontSize: 34,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  breakdownTotal: {
+    borderTopWidth: 1,
+    borderTopColor: colors.primaryLight,
+    paddingTop: 8,
+  },
   mechanicBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1074,6 +1123,28 @@ export const styles = StyleSheet.create({
   },
   notificationItemRead: {
     opacity: 0.72,
+  },
+  // Aviso plegado: una línea (título y fecha); al tocarlo se despliega.
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 36,
+  },
+  notificationTitle: {
+    flex: 1,
+    color: colors.textDark,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+  },
+  notificationTitleUnread: {
+    fontFamily: fonts.extrabold,
+  },
+  notificationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
   },
   itemTitle: {
     fontFamily: fonts.extrabold,

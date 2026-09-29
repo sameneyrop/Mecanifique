@@ -7,7 +7,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, SecondaryButton } from './ui';
-import { distanceKm, parseServerTimestamp } from '../utils';
+import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
 
 const HOLD_TOTAL_SECONDS_FALLBACK = 120;
 
@@ -126,6 +126,15 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
                 <View style={styles.incomingInfoRow}>
                   <Ionicons name="person-outline" size={20} color={colors.primary} />
                   <Text style={[styles.itemText, styles.flex]}>{incomingRequest.customerName}</Text>
+                </View>
+              ) : null}
+              {/* Lo que cobra antes de decidir: el precio queda fijo al aceptar. */}
+              {incomingRequest.visitFee ? (
+                <View style={styles.incomingInfoRow}>
+                  <Ionicons name="cash-outline" size={20} color={colors.primary} />
+                  <Text style={[styles.itemText, styles.flex]}>
+                    Cobras tu visita y diagnóstico: {formatPesos(incomingRequest.visitFee)}. La reparación la cotizas después.
+                  </Text>
                 </View>
               ) : null}
             </View>
