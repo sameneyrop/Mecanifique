@@ -136,6 +136,20 @@ mantener informadas a ambas partes.
   `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
   cada 20 s mientras está pendiente, así el checklist avanza solo cuando
   Didit aprueba.
+- **Datos del mercado para el mecánico** (`src/marketInsights.ts`,
+  `mobile/components/MarketInsights.tsx`), siempre agregados:
+  - Precio sugerido de visita (`GET /api/mechanics/me/rate-suggestion`):
+    rango intercuartil y precio medio. Primero sale de lo pagado en servicios
+    terminados de su ciudad (últimos 120 días, mínimo 5); si no alcanza, de
+    los precios de los perfiles de su ciudad (mínimo 3); si tampoco, de toda
+    la app, dicho así. Con menos datos no se muestra. Aparece junto al campo
+    de precio en "Activa tu cuenta" y en Acciones → Mi perfil, con "Usar $X".
+  - Tendencias (`GET /api/mechanics/me/trends`, tarjeta en Mapa, se refresca
+    cada minuto): solicitudes de la última hora, pendientes recientes, y por
+    hora del día y por zona en los últimos 30 días. La barra de la hora
+    actual va en `colors.accent` con la etiqueta "Ahora"; tocar una barra
+    muestra su conteo. Con menos de 5 solicitudes solo se ven los números de
+    "ahora". Las ciudades y zonas se comparan sin acentos ni mayúsculas.
 - **"Completa tu perfil"** (`GET /api/account/profile-checklist`,
   `src/profileChecklist.ts`; tarjeta `mobile/components/ProfileChecklist.tsx`
   en Inicio): recomendaciones de qué hacer después, y cada una lleva a donde

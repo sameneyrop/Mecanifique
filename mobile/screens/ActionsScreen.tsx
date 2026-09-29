@@ -28,6 +28,7 @@ import { AdminCommissionsCard, CommissionsPanel } from '../components/Commission
 import { AdminWaitlistCard } from '../components/Waitlist';
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeMechanicTab, type MechanicTab } from '../navigationRequests';
+import { RateSuggestion } from '../components/MarketInsights';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -412,6 +413,10 @@ export function ActionsScreen({
                     />
                     <Text style={styles.smallText}>Los clientes lo ven en tu perfil. Lo que cueste la reparación se lo mandas después, en la cotización.</Text>
                   </Field>
+                  <RateSuggestion
+                    api={api}
+                    onUse={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value })}
+                  />
                   <PrimaryButton title="Guardar cambios" busy={busy} onPress={onSavePublicProfile} />
                 </View>
               </Card>

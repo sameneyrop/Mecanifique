@@ -758,6 +758,93 @@ export const styles = StyleSheet.create({
   avatarImage: {
     backgroundColor: colors.primaryLight,
   },
+  // Tendencias de solicitudes (components/MarketInsights.tsx).
+  trendTiles: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  trendTile: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.primaryLighter,
+    gap: 2,
+  },
+  trendValue: {
+    color: colors.textDark,
+    fontFamily: fonts.bold,
+    fontSize: 26,
+    fontVariant: ['tabular-nums'],
+  },
+  trendLabel: {
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+  },
+  trendChart: {
+    height: 120,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.primaryLight,
+  },
+  trendBarSlot: {
+    flex: 1,
+    height: '100%',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  trendBar: {
+    width: '100%',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    backgroundColor: colors.primary,
+  },
+  trendBarNow: {
+    backgroundColor: colors.accent,
+  },
+  trendBarSelected: {
+    backgroundColor: colors.primaryDark,
+  },
+  trendNowLabel: {
+    position: 'absolute',
+    top: 0,
+    width: 44,
+    textAlign: 'center',
+    color: colors.textDark,
+    fontFamily: fonts.semibold,
+    fontSize: 10,
+  },
+  trendAxis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  trendAxisLabel: {
+    width: '25%',
+    color: colors.textSecondary,
+    fontFamily: fonts.regular,
+    fontSize: 11,
+  },
+  trendZoneRow: {
+    gap: 4,
+  },
+  trendZoneHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  trendZoneTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primaryLighter,
+    overflow: 'hidden',
+  },
+  trendZoneFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: colors.primary,
+  },
   // "Completa tu perfil" (components/ProfileChecklist.tsx).
   checklistRow: {
     flexDirection: 'row',

@@ -3672,7 +3672,7 @@ export default function App() {
 
           {currentScreen === 'map' && currentUser?.role === 'mechanic' && (
             <View style={styles.screenStack}>
-              <MapScreen onRespondToIncoming={handleIncomingResponse} />
+              <MapScreen api={api} onRespondToIncoming={handleIncomingResponse} />
             </View>
           )}
 

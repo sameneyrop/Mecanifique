@@ -7,12 +7,16 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, EmptyState, InfoRow, PrimaryButton, SecondaryButton } from '../components/ui';
 import { UnpaidNearbyWarning, customerHistoryText } from '../components/IncomingRequestOverlay';
+import { TrendsCard } from '../components/MarketInsights';
+import type { ApiCall } from '../App';
 import { ILLUSTRATIONS } from '../illustrations';
 import { openExternalNavigation, parseServerTimestamp } from '../utils';
 
 export function MapScreen({
+  api,
   onRespondToIncoming,
 }: {
+  api: ApiCall;
   onRespondToIncoming: (action: 'accept' | 'reject') => void;
 }) {
   const {
@@ -42,6 +46,7 @@ export function MapScreen({
     : null;
 
   return (
+    <>
     <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
       <Card title="En este momento" subtitle="Solicitudes que te llegan y el trabajo que tienes en curso.">
         <View style={styles.stack}>
@@ -129,5 +134,9 @@ export function MapScreen({
         </View>
       </Card>
     </Animated.View>
+    <Animated.View entering={FadeInDown.delay(80).duration(300)} needsOffscreenAlphaCompositing>
+      <TrendsCard api={api} />
+    </Animated.View>
+    </>
   );
 }

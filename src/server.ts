@@ -128,6 +128,7 @@ import {
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
 import { CustomerReviewError, customerRating, hasCustomerReview, reviewCustomer } from "./customerReviews";
 import { profileChecklist } from "./profileChecklist";
+import { requestTrends, visitRateSuggestion } from "./marketInsights";
 import {
   customerCompletedServices,
   linkedUnpaidService,
@@ -3864,6 +3865,26 @@ app.patch(
     res.status(200).json({ ok: true, isOnline: payload.isOnline, isAvailable: result.isAvailable });
   })
 );
+
+// Datos del mercado para el mecánico (src/marketInsights.ts), agregados:
+// precio de visita que se paga en su ciudad y tendencias de solicitudes.
+app.get("/api/mechanics/me/rate-suggestion", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const mechanicId = req.auth?.user.mechanicId;
+  if (!mechanicId) {
+    res.status(400).json({ error: "Mecánico autenticado inválido" });
+    return;
+  }
+  res.json({ suggestion: await visitRateSuggestion(mechanicId) });
+}));
+
+app.get("/api/mechanics/me/trends", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const mechanicId = req.auth?.user.mechanicId;
+  if (!mechanicId) {
+    res.status(400).json({ error: "Mecánico autenticado inválido" });
+    return;
+  }
+  res.json({ trends: await requestTrends(mechanicId) });
+}));
 
 // Perfil propio del mecánico, en cualquier estado. GET /mechanics solo lista
 // mecánicos activos, así que uno pendiente de verificación no podía ver su

@@ -2041,6 +2041,61 @@ test("completa tu perfil: marca lo que ya tiene el cliente y el mecánico", asyn
   assert.equal(items.schedule, false);
 });
 
+test("mercado: precio sugerido agregado (mínimo de datos) y tendencias por hora y zona", async () => {
+  const { requestTrends, visitRateSuggestion, normalizePlace } = require("../src/marketInsights.ts");
+  const tag = crypto.randomUUID().slice(0, 8);
+  const city = `Ciudad Ñandú ${tag}`;
+  assert.equal(normalizePlace(`  ciudad ñandú ${tag.toUpperCase()} `), normalizePlace(city));
+
+  const me = await createOnlineMechanic(city, "Centro");
+  // Con uno o dos mecánicos en la ciudad no se muestra su precio (se usaría toda la app).
+  const others = [];
+  for (const rate of [300, 400, 500]) {
+    const id = await createOnlineMechanic(city.toUpperCase(), "Centro");
+    await run("UPDATE mechanics SET labor_rate = ? WHERE id = ?", [rate, id]);
+    others.push(id);
+  }
+  const fromProfiles = await visitRateSuggestion(me);
+  assert.equal(fromProfiles.source, "profiles");
+  assert.equal(fromProfiles.city, city);
+  assert.deepEqual([fromProfiles.low, fromProfiles.median, fromProfiles.high], [350, 400, 450]);
+
+  // Con 5 servicios pagados en la ciudad, manda lo que sí se pagó.
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  for (const [index, fee] of [250, 300, 300, 350, 600].entries()) {
+    const request = await run(
+      `INSERT INTO service_requests
+         (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id, visit_fee, created_at)
+       VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', ?, ?, 'completed', ?, ?, datetime('now', ?))`,
+      [customer.lastID, city, index < 3 ? "Canteras" : "Centro", others[0], fee, `-${index} hours`]
+    );
+    createdRows.requests.push(request.lastID);
+  }
+  const fromServices = await visitRateSuggestion(me);
+  assert.equal(fromServices.source, "services");
+  assert.equal(fromServices.count, 5);
+  assert.equal(fromServices.median, 300);
+
+  const pending = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', ?, 'Solitaria', 'pending')`,
+    [customer.lastID, city]
+  );
+  createdRows.requests.push(pending.lastID);
+  const trends = await requestTrends(me);
+  assert.equal(trends.total, 6);
+  assert.equal(trends.waiting, 1);
+  assert.ok(trends.lastHour >= 2);
+  assert.equal(trends.byHour.reduce((sum, count) => sum + count, 0), 6);
+  assert.deepEqual(trends.byZone, [
+    { zone: "Canteras", count: 3 },
+    { zone: "Centro", count: 2 },
+    { zone: "Otras zonas", count: 1 }
+  ]);
+});
+
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {
   const mechanicId = await createRegisteredMechanic("active");
   const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);

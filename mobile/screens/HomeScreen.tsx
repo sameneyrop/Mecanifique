@@ -37,6 +37,7 @@ import { CommissionHomeCard } from '../components/Commissions';
 import { TourTarget } from '../components/AppTour';
 import { CustomerReviewCard } from '../components/CustomerReview';
 import { ProfileChecklist } from '../components/ProfileChecklist';
+import { RateSuggestion } from '../components/MarketInsights';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -509,11 +510,13 @@ function identityStepDescription(status: string | null): string {
  * sin que le llegara nada.
  */
 function MechanicOnboarding({
+  api,
   profile,
   onStartIdentityVerification,
   onSaveLaborRate,
   onTakeProfilePhoto,
 }: {
+  api: ApiCall;
   profile: MechanicProfile;
   onStartIdentityVerification: () => void;
   onSaveLaborRate: (rate: string) => void;
@@ -586,6 +589,7 @@ function MechanicOnboarding({
                 onChangeText={(value) => setRateDraft(value.replace(/[^0-9.]/g, ''))}
               />
             </Field>
+            <RateSuggestion api={api} onUse={setRateDraft} />
             <PrimaryButton title="Guardar precio" busy={busy} onPress={() => onSaveLaborRate(rateDraft)} />
           </ChecklistStep>
           <ChecklistStep
@@ -687,6 +691,7 @@ function MechanicHome(props: HomeScreenProps) {
     <View style={styles.stack}>
       {props.mechanicProfile && (
         <MechanicOnboarding
+          api={props.api}
           profile={props.mechanicProfile}
           onStartIdentityVerification={props.onStartIdentityVerification}
           onSaveLaborRate={props.onSaveLaborRate}
