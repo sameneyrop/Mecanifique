@@ -3685,6 +3685,8 @@ export default function App() {
           </TourTarget>
         </View>
       </View>
+      </SafeAreaView>
+      {/* Encima de todo (barra de abajo incluida), en la misma ventana que lo que señala. */}
       {tourRole && (
         <AppTour
           role={tourRole}
@@ -3694,7 +3696,6 @@ export default function App() {
           onFinish={finishTour}
         />
       )}
-      </SafeAreaView>
     </View>
   );
 }

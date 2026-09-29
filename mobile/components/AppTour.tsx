@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
-import { Modal, Pressable, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { BackHandler, Pressable, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -28,6 +28,8 @@ type TourStep = {
   screen?: TourScreen;
   /** Elemento que se señala (TourTarget). Sin él, el paso sale centrado con un ícono. */
   target?: string;
+  /** El elemento está dentro del contenido (no en la barra de abajo ni arriba): se desplaza para verlo. */
+  inContent?: boolean;
   icon?: IconName;
 };
 
@@ -41,6 +43,7 @@ const CUSTOMER_STEPS: TourStep[] = [
   {
     screen: 'home',
     target: 'home-search',
+    inContent: true,
     title: 'Pide un mecánico',
     text: 'Escribe tu ciudad y zona o usa tu ubicación. «Ahora mismo» le avisa al mecánico más cercano; «Agendar fecha» te deja escoger uno y su horario.',
   },
@@ -95,6 +98,7 @@ const MECHANIC_STEPS: TourStep[] = [
   {
     screen: 'home',
     target: 'mechanic-status',
+    inContent: true,
     title: 'Conéctate para recibir trabajo',
     text: 'Con «Conectarme» te llegan solicitudes de clientes cerca de ti. Desconéctate al terminar tu día. Antes, completa los pasos de «Activa tu cuenta».',
   },
@@ -223,15 +227,16 @@ export function AppTour({
     if (run !== runId.current) return;
     const node = current.target ? targets.get(current.target) : undefined;
     let found = node ? await measure(node) : null;
-    // Lo que está dentro de la pantalla (no la barra de abajo ni la campana)
-    // puede quedar fuera de la vista: se desplaza para mostrarlo.
-    if (node && found && found.y + found.height > windowHeight - BOTTOM_NAV_SPACE) {
+    // Lo que está dentro del contenido puede quedar fuera de la vista o detrás
+    // de la barra de abajo: se desplaza para mostrarlo. (La barra y la campana
+    // siempre se ven; desplazar ahí movía la pantalla sin razón.)
+    if (current.inContent && node && found && found.y + found.height > windowHeight - BOTTOM_NAV_SPACE) {
       scrollByRef.current(found.y - windowHeight * 0.3);
       await wait(400);
       found = await measure(node);
     }
-    // El marco se dibuja dentro del Modal: se corrige por si su origen no
-    // coincide con el de la ventana (barra de estado en Android).
+    // Capa y elemento se miden en la misma ventana; se resta el origen de la
+    // capa por si no empieza en el borde de arriba (barra de estado).
     const origin = overlayRef.current ? await measure(overlayRef.current) : null;
     if (run !== runId.current) return;
     setRect(found && origin ? { ...found, x: found.x - origin.x, y: found.y - origin.y } : found);
@@ -241,6 +246,18 @@ export function AppTour({
   useEffect(() => {
     if (visible && step) void locate(step);
   }, [visible, step, locate]);
+
+  // El botón "atrás" de Android cierra el recorrido (como Saltar).
+  const finishRef = useRef(onFinish);
+  finishRef.current = onFinish;
+  useEffect(() => {
+    if (!visible) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      finishRef.current();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [visible]);
 
   if (!visible || !step) {
     return null;
@@ -268,12 +285,16 @@ export function AppTour({
   }
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onFinish}>
+    <Animated.View entering={FadeIn.duration(200)} style={styles.tourLayer}>
+      {/* Sin Modal: un Modal de Android es otra ventana que empieza en la barra
+          de estado, y el marco quedaba más arriba que el botón. La capa toma
+          todos los toques para que no se pique nada detrás durante el recorrido. */}
       <View
         ref={overlayRef}
         collapsable={false}
         style={styles.tourOverlay}
         onLayout={(event) => setOverlayHeight(event.nativeEvent.layout.height)}
+        onStartShouldSetResponder={() => true}
       >
         {highlight ? (
           <>
@@ -337,6 +358,6 @@ export function AppTour({
           </Animated.View>
         )}
       </View>
-    </Modal>
+    </Animated.View>
   );
 }
