@@ -22,6 +22,8 @@ import { BottomNavButton, ServerWakingBanner, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
 import {
   normalizeSpecialties,
+  parseOAuthCallback,
+  oauthErrorMessage,
   formatError,
   normalizeServerTextError,
   getMechanicPublicStatus,
@@ -2364,6 +2366,84 @@ export default function App() {
 
   }
 
+  // "Continuar con Facebook": Supabase hace el inicio de sesión en el
+  // navegador y regresa a la app con la sesión en el hash. Una cuenta nueva
+  // nace como cliente (si el correo ya tenía cuenta, entra a esa misma); si
+  // venía del registro de mecánico, luego se activa el modo profesional con
+  // los datos de "Tu trabajo" y el teléfono, que Facebook no da.
+  async function handleFacebookLogin(asMechanic: boolean) {
+    setBusy(true);
+    try {
+      const redirectTo = Linking.createURL('auth/callback');
+      const { url } = await apiRequest<{ url: string }>(
+        `/auth/v2/oauth/facebook?redirectTo=${encodeURIComponent(redirectTo)}`,
+      );
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectTo);
+      if (result.type !== 'success') {
+        return;
+      }
+      const params = parseOAuthCallback(result.url);
+      const accessToken = params.access_token;
+      if (!accessToken) {
+        setMessage(oauthErrorMessage(params));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+        return;
+      }
+
+      const me = await apiRequest<{ user: AuthUser }>('/auth/v2/me', { token: accessToken });
+      let nextUser = me.user;
+      let notice = 'Entraste con Facebook';
+
+      if (asMechanic && nextUser.role !== 'mechanic') {
+        const hadMechanicProfile = Boolean(nextUser.mechanicId);
+        try {
+          const switched = await apiRequest<{ user: AuthUser }>('/api/account/switch-role', {
+            method: 'POST',
+            token: accessToken,
+            body: {
+              targetRole: 'mechanic',
+              city: mechanicForm.city.trim(),
+              zone: mechanicForm.zone.trim(),
+              yearsExperience: Number(mechanicForm.yearsExperience),
+              specialties: normalizeSpecialties(mechanicForm.specialties),
+            },
+          });
+          nextUser = switched.user;
+          notice = 'Tu cuenta de mecánico quedó creada';
+        } catch (error) {
+          notice = `Entraste como cliente. ${formatError(error).replace(/\.$/, '')}. Termina de activar el modo mecánico en Cuenta.`;
+        }
+        if (nextUser.role === 'mechanic' && !hadMechanicProfile) {
+          try {
+            await apiRequest('/api/account/profile', {
+              method: 'PATCH',
+              token: accessToken,
+              body: { fullName: nextUser.fullName, phone: mechanicForm.phone.trim() },
+            });
+          } catch (error) {
+            notice = `Tu cuenta de mecánico quedó creada, pero no se guardó tu teléfono: ${formatError(error).replace(/\.$/, '')}. Cámbialo en Cuenta.`;
+          }
+        }
+      }
+
+      setToken(accessToken);
+      setUser(nextUser);
+      setLocationAutoRequested(false);
+      setCurrentScreen('home');
+      setAuthMode('login');
+      setMechanicSignupStep('account');
+      await persistSession(accessToken, nextUser, params.refresh_token ?? null);
+      await loadMyRequests(accessToken);
+      setMessage(notice);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      setMessage(formatError(error));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleStartIdentityVerification() {
     if (!token) {
       setMessage('Debes iniciar sesión primero');
@@ -3143,6 +3223,7 @@ export default function App() {
                 onShowOnboarding={showOnboardingAgain}
                 onForgotPassword={handleForgotPassword}
                 onResendConfirmation={handleResendConfirmation}
+                onFacebookLogin={(asMechanic) => void handleFacebookLogin(asMechanic)}
               />
             </View>
             </ScrollView>

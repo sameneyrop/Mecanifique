@@ -244,6 +244,37 @@ export function normalizeSpecialties(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Lee la dirección con la que Supabase regresa a la app después de entrar
+ * con Facebook: la sesión viene en el hash (#access_token=…) y los errores
+ * pueden venir en el hash o en la consulta (?error=…).
+ */
+export function parseOAuthCallback(url: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  const parts = [url.split('#')[1] ?? '', url.split('#')[0].split('?')[1] ?? ''];
+  for (const part of parts) {
+    for (const pair of part.split('&')) {
+      const [key, value = ''] = pair.split('=');
+      if (key && !(key in params)) {
+        params[key] = decodeURIComponent(value.replace(/\+/g, ' '));
+      }
+    }
+  }
+  return params;
+}
+
+/** Errores de Supabase/Facebook al entrar, en palabras de la app. */
+export function oauthErrorMessage(params: Record<string, string>): string {
+  const detail = `${params.error ?? ''} ${params.error_description ?? ''}`.toLowerCase();
+  if (detail.includes('email')) {
+    return 'Tu cuenta de Facebook no tiene un correo confirmado. Crea tu cuenta con tu correo.';
+  }
+  if (detail.includes('access_denied') || detail.includes('denied')) {
+    return 'No diste permiso en Facebook. Vuelve a intentar o usa tu correo.';
+  }
+  return 'No pudimos entrar con Facebook. Intenta de nuevo o usa tu correo.';
+}
+
 export function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;

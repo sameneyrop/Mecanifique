@@ -1072,6 +1072,21 @@ export const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     textDecorationLine: 'underline',
   },
+  authDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  authDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.primaryLight,
+  },
+  socialButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   menuPanel: {
     marginTop: 4,
     marginBottom: 8,

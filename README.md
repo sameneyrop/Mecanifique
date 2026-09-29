@@ -20,9 +20,16 @@ mantener informadas a ambas partes.
   el usuario note nada. Si la renovación ya no es posible, cierra la sesión
   con el aviso "Tu sesión expiró. Vuelve a iniciar sesión." (antes la app
   quedaba con un token muerto y todo respondía "Autenticación requerida").
-- Inicio de sesión solo con correo y contraseña. "Continuar con Google" se
-  quitó (botón y `GET /auth/v2/google`) hasta configurarlo bien; ver
-  "Configuración de Google OAuth" para volver a activarlo.
+- Inicio de sesión con correo y contraseña, o **con Facebook** ("Entrar con
+  Facebook" / "Crear cuenta con Facebook"; ver "Configuración de Facebook
+  Login"). `GET /auth/v2/oauth/facebook?redirectTo=` devuelve la dirección de
+  Supabase y solo acepta regresar a la app (`mecanifique://`, `exp://`). La
+  sesión llega en el hash de la dirección de regreso. Una cuenta nueva nace
+  como cliente, y si el correo ya tenía cuenta, Supabase la une a esa misma.
+  En el registro de mecánico, "Continuar con Facebook" pasa directo a "Tu
+  trabajo" y pide el teléfono (Facebook no lo da); al volver, la app llama a
+  `switch-role` y guarda el teléfono en el perfil. "Continuar con Google" sigue
+  quitado; ver "Configuración de Google OAuth".
 - Registro de clientes y mecánicos, con roles `customer`, `mechanic` y `admin`.
   El registro solo crea clientes o mecánicos (pendientes de verificación):
   los metadatos de Supabase los escribe el propio usuario, así que el rol
@@ -777,6 +784,26 @@ INSERT INTO identity_verifications (user_id, role, status, consent_at, reviewed_
 VALUES (<id del usuario>, 'customer', 'approved', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'Activación manual de prueba')
 ON CONFLICT(user_id) DO UPDATE SET status = 'approved', updated_at = CURRENT_TIMESTAMP;
 ```
+
+## Configuración de Facebook Login
+
+App de Meta en developers.facebook.com (caso de uso "Autenticar y solicitar
+datos a usuarios con Inicio de sesión con Facebook", permisos `email` y
+`public_profile`). En **Configuración → Básica** van la URL del Aviso de
+privacidad, la de Términos y la de eliminación de datos
+(`https://mecanifique.vercel.app/eliminar-cuenta`).
+
+En Supabase, **Authentication → Sign In / Providers → Facebook**:
+
+- **Facebook client ID:** el "Identificador de la app" de Meta (no es secreto).
+- **Facebook secret:** la "Clave secreta de la app" (solo aquí, nunca en el repo).
+
+La **Callback URL** que muestra Supabase
+(`https://<project-ref>.supabase.co/auth/v1/callback`) va en Meta, en
+"URI de redireccionamiento de OAuth válidos". En Supabase, **URL
+Configuration → Redirect URLs**, debe estar `mecanifique://**` (y `exp://**`
+para Expo Go). Mientras la app de Meta esté "En desarrollo" solo entran las
+cuentas con rol en la app; para que entre cualquiera, pasarla a "Activa".
 
 ## Configuración de Google OAuth (desactivado por ahora)
 

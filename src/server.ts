@@ -2114,6 +2114,33 @@ app.get(
   })
 );
 
+/**
+ * "Continuar con Facebook": la app abre esta dirección de Supabase en el
+ * navegador y Supabase la regresa a redirectTo con la sesión en el hash.
+ * Solo se acepta regresar a la app (mecanifique://, exp://): así nadie usa
+ * esta ruta para mandar tokens a otro sitio.
+ * GET /auth/v2/oauth/facebook?redirectTo=mecanifique://auth/callback
+ */
+app.get(
+  "/auth/v2/oauth/facebook",
+  handleAsync(async (req, res) => {
+    if (!supabaseUrl) {
+      res.status(503).json({ error: "Entrar con Facebook no está disponible por ahora." });
+      return;
+    }
+    const redirectTo = typeof req.query.redirectTo === "string" ? req.query.redirectTo.trim() : "";
+    if (!isAllowedAppReturnUrl(redirectTo)) {
+      res.status(400).json({ error: "Dirección de regreso inválida" });
+      return;
+    }
+    const authorizeUrl = new URL(`${supabaseUrl}/auth/v1/authorize`);
+    authorizeUrl.searchParams.set("provider", "facebook");
+    authorizeUrl.searchParams.set("redirect_to", redirectTo);
+    authorizeUrl.searchParams.set("scopes", "email public_profile");
+    res.json({ url: authorizeUrl.toString() });
+  })
+);
+
 // END OF SUPABASE AUTH ENDPOINTS
 // ============================================================================
 

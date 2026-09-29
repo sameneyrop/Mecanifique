@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -65,6 +65,41 @@ function ConsentCheck({ checked, onToggle }: { checked: boolean; onToggle: () =>
   );
 }
 
+const FACEBOOK_BLUE = '#1877F2';
+const PHONE_PATTERN = /^[0-9+()\-\s]{8,20}$/;
+
+function AuthDivider() {
+  return (
+    <View style={styles.authDivider}>
+      <View style={styles.authDividerLine} />
+      <Text style={styles.smallText}>o</Text>
+      <View style={styles.authDividerLine} />
+    </View>
+  );
+}
+
+function FacebookButton({ title, onPress, busy }: { title: string; onPress: () => void; busy: boolean }) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.secondaryButton, (busy || pressed) && styles.primaryButtonBusy]}
+      onPress={onPress}
+      disabled={busy}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityState={{ busy, disabled: busy }}
+    >
+      {busy ? (
+        <ActivityIndicator />
+      ) : (
+        <View style={styles.socialButtonInner}>
+          <Ionicons name="logo-facebook" size={22} color={FACEBOOK_BLUE} />
+          <Text style={styles.secondaryButtonText}>{title}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
 const HERO_COPY: Record<AuthMode, { title: string; subtitle: string }> = {
   login: {
     title: 'Qué gusto verte',
@@ -96,6 +131,7 @@ export function LoginScreen({
   onShowOnboarding,
   onForgotPassword,
   onResendConfirmation,
+  onFacebookLogin,
 }: {
   authMode: AuthMode;
   setAuthMode: (mode: AuthMode) => void;
@@ -112,9 +148,13 @@ export function LoginScreen({
   onShowOnboarding: () => void;
   onForgotPassword: (email: string) => void;
   onResendConfirmation: (email: string) => void;
+  onFacebookLogin: (asMechanic: boolean) => void;
 }) {
   const { setMessage } = useAppContext();
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Mecánico que eligió Facebook en "Tu cuenta": nombre y correo vienen de
+  // Facebook, y el teléfono se pide en "Tu trabajo".
+  const [mechanicViaFacebook, setMechanicViaFacebook] = useState(false);
   const hero = HERO_COPY[authMode];
 
   function passwordOk(password: string): boolean {
@@ -127,11 +167,37 @@ export function LoginScreen({
 
   function submitSignup(password: string) {
     if (!passwordOk(password)) return;
+    if (!consentOk()) return;
+    onSubmit();
+  }
+
+  function consentOk(): boolean {
     if (!acceptedTerms) {
       setMessage('Para crear tu cuenta, confirma que tienes 18 años o más y aceptas los Términos.');
+      return false;
+    }
+    return true;
+  }
+
+  function submitMechanicFacebook() {
+    if (!PHONE_PATTERN.test(mechanicForm.phone.trim())) {
+      setMessage('Escribe tu teléfono a 10 dígitos: con él te contactan tus clientes.');
       return;
     }
-    onSubmit();
+    const years = Number(mechanicForm.yearsExperience);
+    if (
+      mechanicForm.city.trim().length < 2 ||
+      mechanicForm.zone.trim().length < 2 ||
+      !mechanicForm.yearsExperience.trim() ||
+      !Number.isInteger(years) ||
+      years < 0 ||
+      !mechanicForm.specialties.trim()
+    ) {
+      setMessage('Completa ciudad, zona, años de experiencia y especialidades.');
+      return;
+    }
+    if (!consentOk()) return;
+    onFacebookLogin(true);
   }
   const signingUp = authMode !== 'login';
 
@@ -157,7 +223,7 @@ export function LoginScreen({
 
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         {authMode === 'login' && (
-          <Card title="Inicia sesión" subtitle="Con el correo y la contraseña de tu cuenta.">
+          <Card title="Inicia sesión" subtitle="Con tu correo y contraseña, o con Facebook.">
             <View style={styles.stack}>
               <Field label="Correo electrónico">
                 <Input
@@ -175,6 +241,11 @@ export function LoginScreen({
                 />
               </Field>
               <PrimaryButton title="Entrar" onPress={onSubmit} busy={busy} />
+              <AuthDivider />
+              <FacebookButton title="Entrar con Facebook" onPress={() => onFacebookLogin(false)} busy={busy} />
+              <Text style={styles.consentNote}>
+                Si es tu primera vez, se crea tu cuenta de cliente y aceptas los Términos y el Aviso de privacidad.
+              </Text>
               <Text
                 style={[styles.textLink, styles.forgotPasswordLink]}
                 onPress={() => onForgotPassword(loginForm.email)}
@@ -259,6 +330,14 @@ export function LoginScreen({
                   </Field>
                   <ConsentCheck checked={acceptedTerms} onToggle={() => setAcceptedTerms((value) => !value)} />
                   <PrimaryButton title="Crear cuenta" onPress={() => submitSignup(customerForm.password)} busy={busy} />
+                  <AuthDivider />
+                  <FacebookButton
+                    title="Crear cuenta con Facebook"
+                    onPress={() => {
+                      if (consentOk()) onFacebookLogin(false);
+                    }}
+                    busy={busy}
+                  />
                 </>
               )}
 
@@ -308,12 +387,36 @@ export function LoginScreen({
                       <PrimaryButton
                         title="Continuar"
                         onPress={() => {
-                          if (passwordOk(mechanicForm.password)) setMechanicSignupStep('work');
+                          if (!passwordOk(mechanicForm.password)) return;
+                          setMechanicViaFacebook(false);
+                          setMechanicSignupStep('work');
                         }}
+                      />
+                      <AuthDivider />
+                      <FacebookButton
+                        title="Continuar con Facebook"
+                        onPress={() => {
+                          setMechanicViaFacebook(true);
+                          setMechanicSignupStep('work');
+                        }}
+                        busy={busy}
                       />
                     </>
                   ) : (
                     <>
+                      {mechanicViaFacebook && (
+                        <>
+                          <Text style={styles.smallText}>Tu nombre y tu correo los tomamos de Facebook.</Text>
+                          <Field label="Teléfono">
+                            <Input
+                              value={mechanicForm.phone}
+                              keyboardType="phone-pad"
+                              autoComplete="tel"
+                              onChangeText={(value) => setMechanicForm({ ...mechanicForm, phone: value })}
+                            />
+                          </Field>
+                        </>
+                      )}
                       <View style={styles.row}>
                         <Field label="Ciudad" style={styles.flex}>
                           <Input value={mechanicForm.city} onChangeText={(value) => setMechanicForm({ ...mechanicForm, city: value })} />
@@ -337,9 +440,19 @@ export function LoginScreen({
                         />
                       </Field>
                       <Text style={styles.smallText}>Tu ubicación se toma sola al abrir la app.</Text>
-                      <SecondaryButton title="Volver" onPress={() => setMechanicSignupStep('account')} />
+                      <SecondaryButton
+                        title="Volver"
+                        onPress={() => {
+                          setMechanicViaFacebook(false);
+                          setMechanicSignupStep('account');
+                        }}
+                      />
                       <ConsentCheck checked={acceptedTerms} onToggle={() => setAcceptedTerms((value) => !value)} />
-                      <PrimaryButton title="Crear cuenta" onPress={() => submitSignup(mechanicForm.password)} busy={busy} />
+                      {mechanicViaFacebook ? (
+                        <FacebookButton title="Crear cuenta con Facebook" onPress={submitMechanicFacebook} busy={busy} />
+                      ) : (
+                        <PrimaryButton title="Crear cuenta" onPress={() => submitSignup(mechanicForm.password)} busy={busy} />
+                      )}
                     </>
                   )}
                 </>

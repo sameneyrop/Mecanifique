@@ -665,6 +665,23 @@ test("nueva contraseña: la página abre y los datos inválidos se rechazan sin 
   assert.equal(shortPassword.response.status, 400);
 });
 
+test("Facebook: solo se regresa a la app, nunca a otro sitio", async () => {
+  const evil = await request(`/auth/v2/oauth/facebook?redirectTo=${encodeURIComponent("https://otro-sitio.com/robar")}`);
+  assert.notEqual(evil.response.status, 200);
+  assert.equal(evil.body.url, undefined);
+
+  const ok = await request(`/auth/v2/oauth/facebook?redirectTo=${encodeURIComponent("mecanifique://auth/callback")}`);
+  // Sin SUPABASE_URL en el entorno la ruta responde 503; con él, la dirección de Supabase.
+  if (ok.response.status === 200) {
+    const url = new URL(ok.body.url);
+    assert.match(url.pathname, /\/auth\/v1\/authorize$/);
+    assert.equal(url.searchParams.get("provider"), "facebook");
+    assert.equal(url.searchParams.get("redirect_to"), "mecanifique://auth/callback");
+  } else {
+    assert.equal(ok.response.status, 503);
+  }
+});
+
 test("notificaciones: marcar todas como leídas exige sesión", async () => {
   const { response } = await request("/api/notifications/read-all", { method: "POST" });
   assert.equal(response.status, 401);
