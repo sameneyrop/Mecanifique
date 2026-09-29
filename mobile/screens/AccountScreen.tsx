@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -8,6 +8,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import {
+  Avatar,
   Card,
   Field,
   InfoRow,
@@ -20,8 +21,9 @@ import {
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeAccountSection } from '../navigationRequests';
 import { ThemeSetting } from '../components/ThemeSetting';
-import { PASSWORD_RULE_TEXT, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
-import type { FavoriteMechanic } from '../App';
+import { PASSWORD_RULE_TEXT, formatError, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms, parseServerTimestamp } from '../utils';
+import type { ApiCall, FavoriteMechanic } from '../App';
+import { pickRequestPhoto } from '../photos';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 
 const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
@@ -31,6 +33,16 @@ const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
 const ROLE_LABELS = { customer: 'Cliente', mechanic: 'Mecánico', admin: 'Administrador' } as const;
 
 type Section = 'personal' | 'security' | 'favorites' | 'about' | 'problem' | 'help' | 'switchToPro';
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** "septiembre de 2026", de una fecha del servidor. */
+function monthYear(value: string): string {
+  const ms = parseServerTimestamp(value);
+  if (ms === null) return '';
+  const date = new Date(ms);
+  return `${MONTHS[date.getMonth()]} de ${date.getFullYear()}`;
+}
 
 // Si la cuenta no tiene nombre, el servidor pone el correo en fullName.
 function hasRealName(fullName: string): boolean {
@@ -52,6 +64,9 @@ function PersonalInfoPanel({
     email: string;
     phone: string;
     customerRating?: { average: number | null; count: number } | null;
+    photoUrl?: string | null;
+    customerSince?: string | null;
+    completedServices?: number;
   }>;
   onUpdateProfile: (payload: { fullName: string; phone: string }) => Promise<boolean>;
 }) {
@@ -235,6 +250,7 @@ function SupportPanel({
 }
 
 export function AccountScreen({
+  api,
   onDeleteAccount,
   onOpenCommunity,
   favoriteMechanics,
@@ -248,6 +264,7 @@ export function AccountScreen({
   onSwitchRole,
   onStartTour,
 }: {
+  api: ApiCall;
   onDeleteAccount: () => Promise<void>;
   onOpenCommunity: () => void;
   onStartTour: () => void;
@@ -258,6 +275,9 @@ export function AccountScreen({
     email: string;
     phone: string;
     customerRating?: { average: number | null; count: number } | null;
+    photoUrl?: string | null;
+    customerSince?: string | null;
+    completedServices?: number;
   }>;
   onUpdateProfile: (payload: { fullName: string; phone: string }) => Promise<boolean>;
   onChangePassword: (password: string) => Promise<boolean>;
@@ -275,15 +295,52 @@ export function AccountScreen({
   const { user, identityState, identityBusy, busy, setMessage, setCurrentScreen, vehicles } = useAppContext();
   const [expanded, setExpanded] = useState<Section | null>(() => takeAccountSection());
   const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
-  // Su calificación como cliente: la que ven los mecánicos antes de aceptar.
-  const [rating, setRating] = useState<{ average: number | null; count: number } | null>(null);
+  // Su perfil de cliente: foto, calificación (la que ven los mecánicos antes
+  // de aceptar), desde cuándo es cliente y cuántos servicios terminó.
+  const [profile, setProfile] = useState<{
+    photoUrl: string | null;
+    rating: { average: number | null; count: number } | null;
+    since: string | null;
+    completed: number;
+  } | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'customer') return;
     onLoadAccountProfile()
-      .then((profile) => setRating(profile.customerRating ?? null))
+      .then((loaded) =>
+        setProfile({
+          photoUrl: loaded.photoUrl ?? null,
+          rating: loaded.customerRating ?? null,
+          since: loaded.customerSince ?? null,
+          completed: loaded.completedServices ?? 0,
+        }),
+      )
       .catch(() => undefined);
   }, [user?.role]);
+
+  async function uploadPhoto(source: 'camera' | 'library') {
+    try {
+      const imageBase64 = await pickRequestPhoto(source);
+      if (!imageBase64) return;
+      setPhotoBusy(true);
+      const saved = await api<{ url: string }>('/api/account/photo', { method: 'PUT', body: { imageBase64 } });
+      setProfile((current) => (current ? { ...current, photoUrl: saved.url } : current));
+      setMessage('Foto guardada');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  function choosePhoto() {
+    Alert.alert('Tu foto', 'El mecánico la ve para saber a quién busca cuando llegue.', [
+      { text: 'Tomar foto', onPress: () => void uploadPhoto('camera') },
+      { text: 'Elegir de la galería', onPress: () => void uploadPhoto('library') },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }
 
   if (!user) {
     return null;
@@ -320,18 +377,46 @@ export function AccountScreen({
       <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
         <View style={styles.card}>
           <View style={styles.itemHeader}>
-            <View style={styles.avatarCircle}>
-              <Ionicons name="person-outline" size={30} color={colors.primary} />
-            </View>
+            {user.role === 'customer' ? (
+              <Pressable
+                onPress={choosePhoto}
+                disabled={photoBusy}
+                accessibilityRole="button"
+                accessibilityLabel={profile?.photoUrl ? 'Cambiar tu foto' : 'Agregar tu foto'}
+              >
+                {photoBusy ? (
+                  <View style={styles.avatarCircle}>
+                    <ActivityIndicator color={colors.primary} />
+                  </View>
+                ) : (
+                  <Avatar uri={profile?.photoUrl} name={hasRealName(user.fullName) ? user.fullName : null} size={64} />
+                )}
+                <View style={styles.avatarEditBadge}>
+                  <Ionicons name="camera" size={14} color={colors.white} />
+                </View>
+              </Pressable>
+            ) : (
+              <View style={styles.avatarCircle}>
+                <Ionicons name="person-outline" size={30} color={colors.primary} />
+              </View>
+            )}
             <View style={styles.flex}>
               <Text style={styles.cardTitle}>{hasRealName(user.fullName) ? user.fullName : 'Tu cuenta'}</Text>
               <Text style={styles.smallText}>
                 {roleLabel}
                 {user.login ? ` · ${user.login}` : ''}
               </Text>
-              {rating && rating.count > 0 && rating.average != null ? (
+              {profile?.since ? (
                 <Text style={styles.smallText}>
-                  Tu calificación como cliente: ★ {rating.average.toFixed(1)} ({rating.count})
+                  Cliente desde {monthYear(profile.since)}
+                  {profile.completed > 0
+                    ? ` · ${profile.completed} servicio${profile.completed === 1 ? '' : 's'} terminado${profile.completed === 1 ? '' : 's'}`
+                    : ''}
+                </Text>
+              ) : null}
+              {profile?.rating && profile.rating.count > 0 && profile.rating.average != null ? (
+                <Text style={styles.smallText}>
+                  Tu calificación como cliente: ★ {profile.rating.average.toFixed(1)} ({profile.rating.count})
                 </Text>
               ) : null}
             </View>

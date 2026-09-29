@@ -18,7 +18,7 @@ import type { ApiCall } from '../App';
  */
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
-type Target = { screen: 'vehicles' | 'mechanics' } | { account: AccountSection } | { mechanicTab: MechanicTab };
+type Target = { screen: 'vehicles' | 'mechanics' | 'account' } | { account: AccountSection } | { mechanicTab: MechanicTab };
 type Recommendation = { title: string; why: string; icon: IconName; target: Target };
 
 const RECOMMENDATIONS: Record<string, Recommendation> = {
@@ -28,6 +28,12 @@ const RECOMMENDATIONS: Record<string, Recommendation> = {
     why: 'Así te identifica el mecánico cuando llegue.',
     icon: 'person-outline',
     target: { account: 'personal' },
+  },
+  photo: {
+    title: 'Agrega tu foto',
+    why: 'El mecánico sabe a quién busca cuando llega. En Cuenta, toca el círculo de tu foto.',
+    icon: 'camera-outline',
+    target: { screen: 'account' },
   },
   phone: {
     title: 'Agrega tu teléfono',

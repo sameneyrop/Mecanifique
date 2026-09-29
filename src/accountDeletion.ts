@@ -107,7 +107,7 @@ export async function anonymizeAccount(user: DeletableUser): Promise<void> {
     { sql: "UPDATE service_request_messages SET message = 'Mensaje eliminado' WHERE sender_user_id = ?", params: [userId] },
     { sql: "UPDATE mechanic_reviews SET comment = '' WHERE customer_user_id = ?", params: [userId] },
     {
-      sql: "UPDATE customers SET full_name = 'Cliente eliminado', phone = 'eliminado-c' || id WHERE id = ?",
+      sql: "UPDATE customers SET full_name = 'Cliente eliminado', phone = 'eliminado-c' || id, photo_url = NULL WHERE id = ?",
       params: [customerId]
     },
     {

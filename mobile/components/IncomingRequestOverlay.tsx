@@ -6,7 +6,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, SecondaryButton } from './ui';
+import { Avatar, Card, SecondaryButton } from './ui';
 import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
 import { RequestPhotos } from './RequestPlace';
 
@@ -164,7 +164,11 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
               </View>
               {incomingRequest.customerName ? (
                 <View style={styles.incomingInfoRow}>
-                  <Ionicons name="person-outline" size={20} color={colors.primary} />
+                  {incomingRequest.customerPhotoUrl ? (
+                    <Avatar uri={incomingRequest.customerPhotoUrl} name={incomingRequest.customerName} size={28} />
+                  ) : (
+                    <Ionicons name="person-outline" size={20} color={colors.primary} />
+                  )}
                   <Text style={[styles.itemText, styles.flex]}>
                     {incomingRequest.customerName}
                     {customerHistoryText(incomingRequest)}

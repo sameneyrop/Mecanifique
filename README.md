@@ -552,8 +552,14 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   `PHOTO_UPLOAD_PATH` (ahora también para clientes) y viajan en la solicitud
   (`car_photo_url`, `spot_photo_url` y `location_source`; el servidor solo
   acepta direcciones de sus propias fotos). El mecánico las ve en "Nueva
-  solicitud", en el trabajo en curso y en el detail (`RequestPhotos`), con un
+  solicitud", en el trabajo en curso y en el detalle (`RequestPhotos`), con un
   aviso si la ubicación salió de una dirección escrita.
+- **Foto y perfil del cliente**: la foto es opcional (`customers.photo_url`,
+  `PUT /api/account/photo`, con cámara o galería; al reemplazarla se borra la
+  anterior). El mecánico la ve en "Nueva solicitud" y en el trabajo en curso
+  (`customerPhotoUrl`). El encabezado de Cuenta muestra la foto (tocarla la
+  cambia), "Cliente desde", los servicios terminados y su calificación, y
+  "Agrega tu foto" está en "Completa tu perfil".
 - **Calificación del cliente** (`src/customerReviews.ts`, tabla
   `customer_reviews`): la pone el mecánico del servicio, una vez, al terminar
   o si se canceló con cargo (`POST /api/service-requests/:id/customer-review`,

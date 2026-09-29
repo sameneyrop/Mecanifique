@@ -291,6 +291,7 @@ type ServiceRequest = {
   // Si el mecánico ya calificó al cliente (no llega al cliente).
   customerReviewed?: boolean;
   // Fotos del auto y del lugar al pedir; 'address' = el auto no estaba donde el cliente.
+  customerPhotoUrl?: string | null;
   carPhotoUrl?: string | null;
   spotPhotoUrl?: string | null;
   locationSource?: string | null;
@@ -2285,6 +2286,9 @@ export default function App() {
       email: string;
       phone: string;
       customerRating?: { average: number | null; count: number } | null;
+    photoUrl?: string | null;
+    customerSince?: string | null;
+    completedServices?: number;
     }>('/api/account/profile', { token });
   }
 
@@ -3642,6 +3646,7 @@ export default function App() {
           {currentScreen === 'account' && (
             <View style={styles.screenStack}>
               <AccountScreen
+                api={api}
                 onDeleteAccount={handleDeleteAccount}
                 onOpenCommunity={openCommunity}
                 onStartTour={() => setTourVisible(true)}

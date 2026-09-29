@@ -717,7 +717,12 @@ function MechanicHome(props: HomeScreenProps) {
             subtitle={`${detail.vehicleMake} ${detail.vehicleModel} ${detail.vehicleYear} · ${detail.issueDescription}`}
           >
             <View style={styles.stack}>
-              <ContactRow label="Cliente" name={detail.customerName || 'Cliente'} phone={detail.customerPhone} />
+              <ContactRow
+                label="Cliente"
+                name={detail.customerName || 'Cliente'}
+                phone={detail.customerPhone}
+                photoUrl={detail.customerPhotoUrl}
+              />
               <Text style={styles.itemText}>{address}</Text>
               <RequestPhotos
                 carPhotoUrl={detail.carPhotoUrl}

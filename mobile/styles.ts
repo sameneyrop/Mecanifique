@@ -989,6 +989,20 @@ function buildStyles(colors: Palette) {
     color: colors.primaryDark,
     fontFamily: fonts.bold,
   },
+  // Botoncito de cámara sobre la foto del cliente en Cuenta.
+  avatarEditBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   profilePhotoPreview: {
     flexDirection: 'row',
     alignItems: 'center',

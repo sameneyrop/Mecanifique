@@ -767,6 +767,9 @@ export async function initDb(): Promise<void> {
       UNIQUE(contact_key, role)
     )
   `);
+  // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
+  await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");
+
   // Cuándo el admin marcó que ya le escribió (Acciones → Lista de espera).
   await ensureColumn("waitlist_signups", "contacted_at", "ALTER TABLE waitlist_signups ADD COLUMN contacted_at TEXT");
 

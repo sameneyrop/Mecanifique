@@ -2298,9 +2298,52 @@ app.get("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
       : undefined;
   // Los teléfonos de relleno ("sin-telefono-…", "supabase-…") no se muestran.
   const phone = phoneRow?.phone && /^[0-9+()\-\s]+$/.test(phoneRow.phone) ? phoneRow.phone : "";
-  // Su propio promedio como cliente (lo que ven los mecánicos antes de aceptar).
-  const rating = authUser.customerId ? await customerRating(authUser.customerId) : null;
-  res.json({ fullName: authUser.fullName, email: authUser.login, phone, customerRating: rating });
+  // Su propio promedio como cliente (lo que ven los mecánicos antes de aceptar),
+  // su foto, desde cuándo es cliente y cuántos servicios ha terminado.
+  const customer = authUser.customerId
+    ? await get<{ photoUrl: string | null; createdAt: string }>(
+        "SELECT photo_url AS photoUrl, created_at AS createdAt FROM customers WHERE id = ?",
+        [authUser.customerId]
+      )
+    : undefined;
+  res.json({
+    fullName: authUser.fullName,
+    email: authUser.login,
+    phone,
+    customerRating: authUser.customerId ? await customerRating(authUser.customerId) : null,
+    photoUrl: customer?.photoUrl ?? null,
+    customerSince: customer?.createdAt ?? null,
+    completedServices: authUser.customerId ? await customerCompletedServices(authUser.customerId) : 0
+  });
+}));
+
+// Foto del cliente (opcional; cámara o galería). Reemplazarla borra la anterior.
+app.put("/api/account/photo", requireAuth, requireRole("customer"), handleAsync(async (req, res) => {
+  const customerId = req.auth?.user.customerId;
+  if (!customerId) {
+    res.status(400).json({ error: "Cliente autenticado inválido" });
+    return;
+  }
+  if (applyRateLimit("customer-photo", req, res, 10)) {
+    return;
+  }
+  const payload = z.object({ imageBase64: z.string().min(100) }).parse(req.body);
+  let photo: ReturnType<typeof decodePhoto>;
+  try {
+    photo = decodePhoto(payload.imageBase64);
+  } catch (error) {
+    if (error instanceof PhotoUploadError) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+  const userId = req.auth!.user.id;
+  const previous = await get<{ url: string | null }>("SELECT photo_url AS url FROM customers WHERE id = ?", [customerId]);
+  const url = publicPhotoUrl(req, await savePhoto(photo, userId));
+  await run("UPDATE customers SET photo_url = ? WHERE id = ?", [url, customerId]);
+  await deletePhotoByUrl(previous?.url, userId);
+  res.json({ url });
 }));
 
 // "Completa tu perfil" en Inicio (src/profileChecklist.ts).
@@ -4298,6 +4341,7 @@ app.get(
              sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId,
               sr.service_address AS serviceAddress,
              sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName, c.phone AS customerPhone,
+             c.photo_url AS customerPhotoUrl,
              ${VISIT_FEE_SQL} AS visitFee,
              sr.car_photo_url AS carPhotoUrl, sr.spot_photo_url AS spotPhotoUrl, sr.location_source AS locationSource
       FROM service_requests sr
@@ -4793,7 +4837,7 @@ app.get(
              sr.repair_notes AS repairNotes, sr.estimated_price AS estimatedPrice, sr.final_price AS finalPrice,
              sr.assignment_mode AS assignmentMode,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt,
-             c.full_name AS customerName, c.phone AS customerPhone,
+             c.full_name AS customerName, c.phone AS customerPhone, c.photo_url AS customerPhotoUrl,
              m.full_name AS mechanicName, m.phone AS mechanicPhone,
              m.profile_photo_url AS mechanicPhotoUrl, m.rating AS mechanicRating,
              m.review_count AS mechanicReviewCount, m.jobs_completed AS mechanicJobsCompleted,

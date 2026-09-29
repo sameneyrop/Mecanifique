@@ -2027,7 +2027,7 @@ test("completa tu perfil: marca lo que ya tiene el cliente y el mecánico", asyn
   const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [`sin-telefono-${crypto.randomUUID()}`]);
   createdRows.customers.push(customer.lastID);
   const viewer = { id: 987654, role: "customer", fullName: "correo@example.test", customerId: customer.lastID, mechanicId: null };
-  assert.deepEqual(done(await profileChecklist(viewer)), { name: false, phone: false, vehicle: false, favorite: false });
+  assert.deepEqual(done(await profileChecklist(viewer)), { name: false, photo: false, phone: false, vehicle: false, favorite: false });
   await run("UPDATE customers SET phone = ? WHERE id = ?", [uniquePhone(), customer.lastID]);
   const vehicle = await run(
     "INSERT INTO vehicle_profiles (customer_id, make, model, year, photo_urls_json, metadata_json) VALUES (?, 'Nissan', 'Versa', 2018, '[]', '{}')",
@@ -2036,6 +2036,7 @@ test("completa tu perfil: marca lo que ya tiene el cliente y el mecánico", asyn
   try {
     assert.deepEqual(done(await profileChecklist({ ...viewer, fullName: "Ana Ruiz" })), {
       name: true,
+      photo: false,
       phone: true,
       vehicle: true,
       favorite: false
