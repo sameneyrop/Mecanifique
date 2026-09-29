@@ -26,6 +26,7 @@ import { OnboardingScreen } from './screens/OnboardingScreen';
 import { VehiclesScreen } from './screens/VehiclesScreen';
 import { IncomingRequestOverlay } from './components/IncomingRequestOverlay';
 import { AppTour, TourTarget, type TourScreen } from './components/AppTour';
+import { loadColorScheme, toggleColorScheme, useColorScheme } from './theme';
 import { LoginScreen } from './screens/LoginScreen';
 import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
 import { PromotionsScreen } from './screens/PromotionsScreen';
@@ -520,6 +521,10 @@ function getScreenTitle(screen: AppScreen, role: Role | undefined): string {
 }
 
 export default function App() {
+  // Tema claro u oscuro (theme.ts). Al cambiarlo, las vistas raíz llevan
+  // key={colorScheme}: todo se vuelve a pintar con la otra paleta; el estado
+  // de App (sesión, pantalla) se conserva.
+  const colorScheme = useColorScheme();
   const {
     token, setToken,
     user, setUser,
@@ -772,6 +777,7 @@ export default function App() {
   useEffect(() => {
     async function restoreSession() {
       let hadSession = false;
+      await loadColorScheme();
       deviceIdRef.current = await SecureStore.getItemAsync(DEVICE_ID_KEY).catch(() => null);
       // Uno al azar de antes se cambia por el Android ID en cuanto se puede leer.
       if (!deviceIdRef.current || (!deviceIdRef.current.startsWith('android-') && newDeviceId().startsWith('android-'))) {
@@ -3334,7 +3340,7 @@ export default function App() {
 
   if (loadingSession) {
     return (
-      <View style={styles.safeArea}>
+      <View style={styles.safeArea} key={colorScheme}>
         <SafeAreaView style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.subtitle}>
@@ -3348,9 +3354,9 @@ export default function App() {
   if (!user) {
     if (onboardingSeen === false) {
       return (
-        <View style={styles.safeArea}>
+        <View style={styles.safeArea} key={colorScheme}>
           <SafeAreaView style={styles.safeAreaInner}>
-            <StatusBar style="dark" />
+            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
             <Toast message={message} onDismiss={() => setMessage('')} />
             <View style={styles.content}>
               <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
@@ -3386,9 +3392,9 @@ export default function App() {
     }
 
     return (
-      <View style={styles.safeArea}>
+      <View style={styles.safeArea} key={colorScheme}>
         <SafeAreaView style={styles.safeAreaInner}>
-          <StatusBar style="dark" />
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
           <Toast message={message} onDismiss={() => setMessage('')} />
           <View style={styles.content}>
             <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
@@ -3431,9 +3437,9 @@ export default function App() {
 
   if (phoneVerification?.required) {
     return (
-      <View style={styles.safeArea}>
+      <View style={styles.safeArea} key={colorScheme}>
         <SafeAreaView style={styles.safeAreaInner}>
-          <StatusBar style="dark" />
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
           <Toast message={message} onDismiss={() => setMessage('')} />
           <View style={styles.content}>
             <Image source={APP_LOGO_IMAGE} resizeMode="contain" style={styles.logoWordmark} accessibilityLabel="Mecanifique" />
@@ -3463,9 +3469,9 @@ export default function App() {
   }
 
   return (
-    <View style={styles.safeArea}>
+    <View style={styles.safeArea} key={colorScheme}>
       <SafeAreaView style={styles.safeAreaInner}>
-      <StatusBar style="dark" />
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <Toast message={message} onDismiss={() => setMessage('')} />
       <View style={styles.content}>
         <View style={styles.topBar}>
@@ -3484,6 +3490,15 @@ export default function App() {
                 </>
               ) : null}
             </Text>
+            <Pressable
+              style={({ pressed }) => [styles.bellButton, pressed && styles.buttonPressed]}
+              onPress={toggleColorScheme}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={colorScheme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
+            >
+              <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={20} color={colors.textDark} />
+            </Pressable>
             <TourTarget id="bell">
             <Pressable
               style={({ pressed }) => [

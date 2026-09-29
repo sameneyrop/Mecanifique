@@ -136,6 +136,17 @@ mantener informadas a ambas partes.
   `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
   cada 20 s mientras está pendiente, así el checklist avanza solo cuando
   Didit aprueba.
+- **Tema oscuro** (`mobile/colors.ts`, `mobile/theme.ts`): hay dos paletas,
+  la clara de la marca y una oscura con sus azules marino. `colors` devuelve
+  la del tema activo, y `styles.ts` arma una hoja por tema (`buildStyles`);
+  por eso los colores se leen al pintar, nunca en constantes de módulo. Se
+  cambia con el botón de luna o sol junto a la campana, en Cuenta →
+  Apariencia o en Acciones → Sesión, y se guarda en AsyncStorage. Al
+  cambiarlo, las vistas raíz de App llevan `key={colorScheme}` y todo se
+  vuelve a pintar sin perder la sesión. Colores con papel propio: `surface`
+  (fondos que antes eran `white`), `inverseSurface` (fondo oscuro con texto
+  blanco), `success*` y `dangerBorder`. "Igual que el teléfono" necesitaría
+  `userInterfaceStyle: automatic` en app.json, y eso es un APK nuevo.
 - **Datos del mercado para el mecánico** (`src/marketInsights.ts`,
   `mobile/components/MarketInsights.tsx`), siempre agregados:
   - Precio sugerido de visita (`GET /api/mechanics/me/rate-suggestion`):

@@ -1,8 +1,10 @@
 import { Platform, StyleSheet } from 'react-native';
-import { colors } from './colors';
+import { getActiveScheme, palettes, type Palette } from './colors';
 import { fonts } from './fonts';
 
-export const styles = StyleSheet.create({
+// Una hoja por tema: se arma con la paleta de cada uno (colors.ts).
+function buildStyles(colors: Palette) {
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.bgApp,
@@ -48,7 +50,7 @@ export const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.primaryLight,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
   },
   serverWakingText: {
     flex: 1,
@@ -81,7 +83,7 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
   },
@@ -116,6 +118,8 @@ export const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     width: 130,
     height: 25,
+    // El logo es de un solo color: en el tema oscuro se pinta blanco.
+    ...(colors.isDark ? { tintColor: colors.white } : null),
   },
   // En la barra de arriba: centrado con el saludo y la campana.
   updateBanner: {
@@ -293,7 +297,7 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
   },
@@ -302,11 +306,11 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primaryLight,
   },
   statusPillDone: {
-    backgroundColor: '#d9f3e4',
-    borderColor: '#d9f3e4',
+    backgroundColor: colors.successBg,
+    borderColor: colors.successBg,
   },
   statusPillTextDone: {
-    color: '#15803d',
+    color: colors.successText,
   },
   statusPillMuted: {
     backgroundColor: colors.primaryLighter,
@@ -328,7 +332,7 @@ export const styles = StyleSheet.create({
     gap: 6,
     padding: 10,
     borderRadius: 14,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
   },
@@ -373,7 +377,7 @@ export const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
   },
@@ -396,7 +400,7 @@ export const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 2,
     borderColor: colors.primaryLight,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -405,7 +409,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   progressDotActive: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 5,
   },
   progressLabel: {
@@ -655,7 +659,7 @@ export const styles = StyleSheet.create({
     gap: 12,
     padding: 16,
     borderRadius: 18,
-    backgroundColor: colors.textDark,
+    backgroundColor: colors.inverseSurface,
   },
   mechanicBannerTitle: {
     color: colors.white,
@@ -735,7 +739,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     borderRadius: 18,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
     shadowColor: colors.textDark,
@@ -881,7 +885,7 @@ export const styles = StyleSheet.create({
   },
   tourCard: {
     position: 'absolute',
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 18,
     gap: 8,
@@ -1054,7 +1058,7 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 14,
     gap: 8,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     shadowColor: colors.textDark,
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -1126,7 +1130,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primaryLighter,
   },
   segmentOnBackground: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
   },
   segmentActive: {
     backgroundColor: colors.primaryLight,
@@ -1205,7 +1209,7 @@ export const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.primaryLight,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
   },
   reactionButtonActive: {
     borderColor: colors.primary,
@@ -1221,8 +1225,8 @@ export const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#f5c2c2',
-    backgroundColor: colors.white,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.surface,
   },
   dangerButton: {
     minHeight: 52,
@@ -1353,8 +1357,8 @@ export const styles = StyleSheet.create({
     borderColor: colors.primaryLighter,
   },
   chatBubbleMechanic: {
-    backgroundColor: '#d9f3e4',
-    borderColor: '#92d6ad',
+    backgroundColor: colors.successBg,
+    borderColor: colors.successBorder,
   },
   chatBubbleAdmin: {
     backgroundColor: colors.warningBg,
@@ -1447,7 +1451,7 @@ export const styles = StyleSheet.create({
   reviewCard: {
     padding: 12,
     borderRadius: 14,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
     gap: 4,
@@ -1530,7 +1534,7 @@ export const styles = StyleSheet.create({
   slotCard: {
     padding: 12,
     borderRadius: 14,
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.primaryLight,
     gap: 4,
@@ -1564,7 +1568,7 @@ export const styles = StyleSheet.create({
   toastCard: {
     maxWidth: 480,
     width: '100%',
-    backgroundColor: colors.textDark,
+    backgroundColor: colors.inverseSurface,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1589,7 +1593,7 @@ export const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   bottomNav: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.primaryLighter,
     paddingTop: 8,
@@ -1621,4 +1625,13 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 4,
   },
+});
+}
+
+const lightStyles = buildStyles(palettes.light);
+const darkStyles = buildStyles(palettes.dark);
+
+/** Los estilos del tema activo (se leen al pintar; ver colors.ts). */
+export const styles: typeof lightStyles = new Proxy(lightStyles, {
+  get: (_target, key) => (getActiveScheme() === 'dark' ? darkStyles : lightStyles)[key as keyof typeof lightStyles],
 });

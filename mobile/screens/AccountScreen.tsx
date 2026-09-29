@@ -19,6 +19,7 @@ import {
 } from '../components/ui';
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeAccountSection } from '../navigationRequests';
+import { ThemeSetting } from '../components/ThemeSetting';
 import { PASSWORD_RULE_TEXT, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
@@ -461,6 +462,12 @@ export function AccountScreen({
               </>
             )}
           </View>
+        </Card>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(240).duration(300)} needsOffscreenAlphaCompositing>
+        <Card title="Apariencia">
+          <ThemeSetting />
         </Card>
       </Animated.View>
 

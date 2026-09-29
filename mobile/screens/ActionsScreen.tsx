@@ -29,6 +29,7 @@ import { AdminWaitlistCard } from '../components/Waitlist';
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeMechanicTab, type MechanicTab } from '../navigationRequests';
 import { RateSuggestion } from '../components/MarketInsights';
+import { ThemeSetting } from '../components/ThemeSetting';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -697,6 +698,7 @@ export function ActionsScreen({
               <SecondaryButton title="Ver el recorrido de la app" compact onPress={onStartTour} />
             )}
             {user.role === 'mechanic' && <BiometricSetting />}
+            <ThemeSetting />
             <SecondaryButton title="Términos y condiciones" compact onPress={() => void openTerms()} />
             <SecondaryButton title="Aviso de privacidad" compact onPress={() => void openPrivacyNotice()} />
             {user.role === 'mechanic' && <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />}
