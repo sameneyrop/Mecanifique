@@ -787,6 +787,20 @@ export async function initDb(): Promise<void> {
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_unpaid_fingerprints_value ON unpaid_fingerprints(kind, value_hash)");
 
+  // El mecánico califica al cliente al terminar (ver src/customerReviews.ts).
+  await run(`
+    CREATE TABLE IF NOT EXISTS customer_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL UNIQUE,
+      customer_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+      comment TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_customer_reviews_customer ON customer_reviews(customer_id)");
+
   // Fotos subidas desde la app (ver src/uploads.ts): en la base y no en
   // disco, porque el disco de Render gratis no persiste.
   await run(`

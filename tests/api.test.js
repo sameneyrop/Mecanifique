@@ -111,6 +111,7 @@ async function cleanupCreatedRows() {
     await run("DELETE FROM parts_receipts WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM mechanic_withdrawals WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM unpaid_fingerprints WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM customer_reviews WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM commission_charges WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
@@ -1966,6 +1967,40 @@ test("cuenta nueva para no pagar: la huella (teléfono, correo, celular, ubicaci
     await run(`DELETE FROM user_devices WHERE user_id IN (${users.map(() => "?").join(", ")})`, users);
     await run(`DELETE FROM users WHERE id IN (${users.map(() => "?").join(", ")})`, users);
   }
+});
+
+test("calificación del cliente: solo el mecánico del servicio, al terminar y una vez", async () => {
+  const { CustomerReviewError, customerRating, hasCustomerReview, reviewCustomer } = require("../src/customerReviews.ts");
+  const tag = crypto.randomUUID().slice(0, 8);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const otherMechanic = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  async function requestIn(status, cancellationFee = null) {
+    const request = await run(
+      `INSERT INTO service_requests
+         (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id, cancellation_fee)
+       VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', 'X', 'Centro', ?, ?, ?)`,
+      [customer.lastID, status, mechanicId, cancellationFee]
+    );
+    createdRows.requests.push(request.lastID);
+    return request.lastID;
+  }
+
+  assert.deepEqual(await customerRating(customer.lastID), { average: null, count: 0 });
+  const active = await requestIn("repairing");
+  await assert.rejects(reviewCustomer({ requestId: active, mechanicId, rating: 5 }), (error) => error.status === 409);
+
+  const done = await requestIn("completed");
+  await assert.rejects(reviewCustomer({ requestId: done, mechanicId: otherMechanic, rating: 1 }), (error) => error.status === 403);
+  await reviewCustomer({ requestId: done, mechanicId, rating: 5, comment: "Muy amable" });
+  assert.equal(await hasCustomerReview(done), true);
+  await assert.rejects(reviewCustomer({ requestId: done, mechanicId, rating: 1 }), (error) => error instanceof CustomerReviewError && error.status === 409);
+
+  // No estaba cuando llegó el mecánico: se canceló con cargo y también se califica.
+  const absent = await requestIn("cancelled", 300);
+  await reviewCustomer({ requestId: absent, mechanicId, rating: 2 });
+  assert.deepEqual(await customerRating(customer.lastID), { average: 3.5, count: 2 });
 });
 
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {

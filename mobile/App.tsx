@@ -285,7 +285,10 @@ type ServiceRequest = {
   mechanicVerified?: number | boolean | null;
   // Solo en la solicitud entrante del mecánico.
   customerCompletedServices?: number;
+  customerRating?: { average: number | null; count: number };
   unpaidNearby?: boolean;
+  // Si el mecánico ya calificó al cliente (no llega al cliente).
+  customerReviewed?: boolean;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;
@@ -2261,7 +2264,12 @@ export default function App() {
   }
 
   async function loadAccountProfile() {
-    return apiRequest<{ fullName: string; email: string; phone: string }>('/api/account/profile', { token });
+    return apiRequest<{
+      fullName: string;
+      email: string;
+      phone: string;
+      customerRating?: { average: number | null; count: number } | null;
+    }>('/api/account/profile', { token });
   }
 
   async function handleUpdateProfile(payload: { fullName: string; phone: string }): Promise<boolean> {

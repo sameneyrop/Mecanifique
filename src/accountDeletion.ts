@@ -65,6 +65,8 @@ export async function anonymizeAccount(user: DeletableUser): Promise<void> {
     { sql: "DELETE FROM push_tokens WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM trusted_devices WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM user_devices WHERE user_id = ?", params: [userId] },
+    // Las calificaciones que le pusieron los mecánicos son datos sobre la persona.
+    { sql: "DELETE FROM customer_reviews WHERE customer_id = ?", params: [customerId] },
     { sql: "DELETE FROM notifications WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM sessions WHERE user_id = ?", params: [userId] },
     { sql: "DELETE FROM favorite_mechanics WHERE user_id = ? OR mechanic_id = ?", params: [userId, mechanicId] },

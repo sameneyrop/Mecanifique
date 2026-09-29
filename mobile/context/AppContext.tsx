@@ -140,7 +140,10 @@ type ServiceRequest = {
   mechanicVerified?: number | boolean | null;
   // Solo en la solicitud entrante del mecánico.
   customerCompletedServices?: number;
+  customerRating?: { average: number | null; count: number };
   unpaidNearby?: boolean;
+  // Si el mecánico ya calificó al cliente (no llega al cliente).
+  customerReviewed?: boolean;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;

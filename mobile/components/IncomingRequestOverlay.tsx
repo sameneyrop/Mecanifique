@@ -11,10 +11,27 @@ import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
 
 const HOLD_TOTAL_SECONDS_FALLBACK = 120;
 
-/** " · Cliente nuevo" o " · 5 servicios terminados", junto al nombre del cliente. */
-export function customerHistoryText(completed: number | undefined): string {
-  if (completed === undefined) return '';
-  return completed > 0 ? ` · ${completed} servicio${completed === 1 ? '' : 's'} terminado${completed === 1 ? '' : 's'}` : ' · Cliente nuevo';
+/**
+ * Junto al nombre del cliente, antes de aceptar: " · ★ 4.8 (12) · 5 servicios
+ * terminados", o " · Cliente nuevo".
+ */
+export function customerHistoryText(request: {
+  customerCompletedServices?: number;
+  customerRating?: { average: number | null; count: number };
+}): string {
+  const completed = request.customerCompletedServices;
+  const rating = request.customerRating;
+  const parts: string[] = [];
+  if (rating && rating.count > 0 && rating.average != null) {
+    parts.push(`★ ${rating.average.toFixed(1)} (${rating.count})`);
+  }
+  if (completed !== undefined && completed > 0) {
+    parts.push(`${completed} servicio${completed === 1 ? '' : 's'} terminado${completed === 1 ? '' : 's'}`);
+  }
+  if (parts.length === 0 && completed !== undefined) {
+    parts.push('Cliente nuevo');
+  }
+  return parts.map((part) => ` · ${part}`).join('');
 }
 
 /**
@@ -149,7 +166,7 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
                   <Ionicons name="person-outline" size={20} color={colors.primary} />
                   <Text style={[styles.itemText, styles.flex]}>
                     {incomingRequest.customerName}
-                    {customerHistoryText(incomingRequest.customerCompletedServices)}
+                    {customerHistoryText(incomingRequest)}
                   </Text>
                 </View>
               ) : null}

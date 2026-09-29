@@ -35,6 +35,7 @@ import { ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/
 import { CustomerAbsentAction, WithdrawButton } from '../components/CancellationActions';
 import { CommissionHomeCard } from '../components/Commissions';
 import { TourTarget } from '../components/AppTour';
+import { CustomerReviewCard } from '../components/CustomerReview';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -769,8 +770,9 @@ function MechanicHome(props: HomeScreenProps) {
       )}
 
       {closure && (
-        <Animated.View entering={FadeInDown.duration(300)}>
+        <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>
           <MechanicCollectCard api={props.api} request={closure} onChanged={reloadClosure} />
+          <CustomerReviewCard api={props.api} request={closure} onDone={reloadClosure} />
         </Animated.View>
       )}
 

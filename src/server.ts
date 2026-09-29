@@ -126,6 +126,7 @@ import {
   saveMechanicTipInfo
 } from "./tips";
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
+import { CustomerReviewError, customerRating, hasCustomerReview, reviewCustomer } from "./customerReviews";
 import {
   customerCompletedServices,
   linkedUnpaidService,
@@ -2285,7 +2286,9 @@ app.get("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
       : undefined;
   // Los teléfonos de relleno ("sin-telefono-…", "supabase-…") no se muestran.
   const phone = phoneRow?.phone && /^[0-9+()\-\s]+$/.test(phoneRow.phone) ? phoneRow.phone : "";
-  res.json({ fullName: authUser.fullName, email: authUser.login, phone });
+  // Su propio promedio como cliente (lo que ven los mecánicos antes de aceptar).
+  const rating = authUser.customerId ? await customerRating(authUser.customerId) : null;
+  res.json({ fullName: authUser.fullName, email: authUser.login, phone, customerRating: rating });
 }));
 
 app.patch("/api/account/profile", requireAuth, handleAsync(async (req, res) => {
@@ -4280,6 +4283,7 @@ app.get(
       request: {
         ...incoming,
         customerCompletedServices: await customerCompletedServices(customerId),
+        customerRating: await customerRating(customerId),
         unpaidNearby: await unpaidServiceNearby(latitude, longitude, customerId)
       }
     });
@@ -4817,9 +4821,35 @@ app.get(
       // Visita de regreso programada desde este servicio (src/returnVisits.ts).
       returnVisit,
       commission,
+      // Si el mecánico ya calificó al cliente (el cliente no lo ve).
+      customerReviewed: req.auth?.user.role === "customer" ? undefined : await hasCustomerReview(requestId),
       serviceFee: await getServiceFeeForRequest(requestId),
       quotes: await getQuotesForRequest(requestId)
     });
+  })
+);
+
+// El mecánico califica al cliente al terminar (src/customerReviews.ts).
+app.post(
+  "/api/service-requests/:id/customer-review",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const payload = z
+      .object({ rating: z.number().int().min(1).max(5), comment: z.string().trim().max(500).optional() })
+      .parse(req.body);
+    try {
+      await reviewCustomer({ requestId, mechanicId: req.auth?.user.mechanicId, ...payload });
+      res.status(201).json({ ok: true });
+    } catch (error) {
+      if (error instanceof CustomerReviewError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
   })
 );
 

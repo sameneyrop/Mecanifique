@@ -506,6 +506,14 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   una disputa `unpaid` y el cliente **no puede pedir otro servicio**
   (`UNPAID_SERVICE`) hasta que el mecánico confirme el pago o el cliente diga,
   dejando constancia, que ya pagó.
+- **Calificación del cliente** (`src/customerReviews.ts`, tabla
+  `customer_reviews`): la pone el mecánico del servicio, una vez, al terminar
+  o si se canceló con cargo (`POST /api/service-requests/:id/customer-review`,
+  tarjeta `CustomerReviewCard` en Inicio y en el detalle). La solicitud
+  entrante trae `customerRating` y la app muestra "★ 4.8 (12) · 5 servicios
+  terminados" o "Cliente nuevo". El cliente ve su propio promedio en Cuenta
+  (`customerRating` en `/api/account/profile`). El comentario solo queda para
+  Mecanifique. Se borran al eliminar la cuenta del cliente.
 - **Cuentas nuevas para no pagar** (`src/unpaidFingerprints.ts`): al reportar
   "No me ha pagado" se guarda la huella de la cuenta en `unpaid_fingerprints`.
   Son HMAC del teléfono, el correo y los celulares, más la ubicación del

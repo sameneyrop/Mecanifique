@@ -31,6 +31,7 @@ import { MechanicTracker } from '../components/MechanicTracker';
 import { TipCard } from '../components/TipCard';
 import { CustomerQuoteCard } from '../components/Quote';
 import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide, isPayable } from '../components/ServiceGuide';
+import { CustomerReviewCard } from '../components/CustomerReview';
 import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
@@ -573,6 +574,13 @@ export function RequestsScreen({
                   api={api}
                   request={selectedRequest}
                   onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
+                />
+              )}
+              {user.role === 'mechanic' && (
+                <CustomerReviewCard
+                  api={api}
+                  request={selectedRequest}
+                  onDone={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
                 />
               )}
               {user.role === 'customer' && (

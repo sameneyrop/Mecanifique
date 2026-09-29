@@ -60,7 +60,7 @@ export function MapScreen({
               </View>
               <InfoRow
                 icon="person-outline"
-                text={`${incomingRequest.customerName || 'Cliente'}${customerHistoryText(incomingRequest.customerCompletedServices)}`}
+                text={`${incomingRequest.customerName || 'Cliente'}${customerHistoryText(incomingRequest)}`}
               />
               <InfoRow icon="construct-outline" text={incomingRequest.issueDescription} lines={2} />
               <UnpaidNearbyWarning show={incomingRequest.unpaidNearby} />

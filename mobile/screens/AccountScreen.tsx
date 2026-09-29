@@ -45,7 +45,12 @@ function PersonalInfoPanel({
   fullName: string;
   email: string;
   busy: boolean;
-  onLoadAccountProfile: () => Promise<{ fullName: string; email: string; phone: string }>;
+  onLoadAccountProfile: () => Promise<{
+    fullName: string;
+    email: string;
+    phone: string;
+    customerRating?: { average: number | null; count: number } | null;
+  }>;
   onUpdateProfile: (payload: { fullName: string; phone: string }) => Promise<boolean>;
 }) {
   const [form, setForm] = useState({ fullName: hasRealName(fullName) ? fullName : '', phone: '' });
@@ -246,7 +251,12 @@ export function AccountScreen({
   onStartTour: () => void;
   favoriteMechanics: FavoriteMechanic[];
   onOpenMechanic: (mechanicId: number) => void;
-  onLoadAccountProfile: () => Promise<{ fullName: string; email: string; phone: string }>;
+  onLoadAccountProfile: () => Promise<{
+    fullName: string;
+    email: string;
+    phone: string;
+    customerRating?: { average: number | null; count: number } | null;
+  }>;
   onUpdateProfile: (payload: { fullName: string; phone: string }) => Promise<boolean>;
   onChangePassword: (password: string) => Promise<boolean>;
   onSendSupport: (kind: 'problem' | 'help', message: string) => Promise<boolean>;
@@ -263,6 +273,15 @@ export function AccountScreen({
   const { user, identityState, identityBusy, busy, setMessage, setCurrentScreen, vehicles } = useAppContext();
   const [expanded, setExpanded] = useState<Section | null>(null);
   const [proForm, setProForm] = useState({ city: '', zone: '', yearsExperience: '0', specialties: '' });
+  // Su calificación como cliente: la que ven los mecánicos antes de aceptar.
+  const [rating, setRating] = useState<{ average: number | null; count: number } | null>(null);
+
+  useEffect(() => {
+    if (user?.role !== 'customer') return;
+    onLoadAccountProfile()
+      .then((profile) => setRating(profile.customerRating ?? null))
+      .catch(() => undefined);
+  }, [user?.role]);
 
   if (!user) {
     return null;
@@ -308,6 +327,11 @@ export function AccountScreen({
                 {roleLabel}
                 {user.login ? ` · ${user.login}` : ''}
               </Text>
+              {rating && rating.count > 0 && rating.average != null ? (
+                <Text style={styles.smallText}>
+                  Tu calificación como cliente: ★ {rating.average.toFixed(1)} ({rating.count})
+                </Text>
+              ) : null}
             </View>
           </View>
           {!hasRealName(user.fullName) && (
