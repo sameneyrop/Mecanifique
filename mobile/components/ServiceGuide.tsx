@@ -5,7 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 
 import { colors } from '../colors';
 import { styles } from '../styles';
-import { useAppContext, type ServiceQuote } from '../context/AppContext';
+import { useAppContext, type AmountDue, type PartsReceipt, type ServiceQuote } from '../context/AppContext';
 import { Card, InfoRow, PrimaryButton, SecondaryButton } from './ui';
 import { formatClabe, formatError, formatPesos, parseServerTimestamp } from '../utils';
 import type { ApiCall } from '../App';
@@ -35,6 +35,9 @@ type GuideRequest = {
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
   serviceFee?: { amount: number; status: string } | null;
+  amountDue?: AmountDue;
+  receipts?: PartsReceipt[];
+  partsTripOpen?: boolean;
 };
 
 type RequestListItem = {
@@ -53,14 +56,33 @@ function firstName(name: string | null | undefined, fallback: string): string {
   return name?.trim().split(/\s+/)[0] || fallback;
 }
 
-/** Visita (fijada al aceptar) + cotizaciones aceptadas = lo que se le paga al mecánico. */
-export function serviceAmounts(request: GuideRequest): { visitFee: number; repairTotal: number; total: number } {
+/**
+ * Lo que se le paga al mecánico, calculado por el servidor: visita + mano de
+ * obra + refacciones que ya traía + compradas a precio de ticket. Si el
+ * detalle no lo trae (servidor anterior), visita + cotizaciones aceptadas.
+ */
+export function serviceAmounts(request: GuideRequest): AmountDue {
+  if (request.amountDue) {
+    return request.amountDue;
+  }
   const visitFee = request.visitFee ?? 0;
   const repairTotal = (request.quotes ?? [])
     .filter((quote) => quote.status === 'accepted')
     .reduce((sum, quote) => sum + quote.total, 0);
-  return { visitFee, repairTotal, total: visitFee + repairTotal };
+  return { visitFee, labor: repairTotal, partsOnHand: 0, partsToBuyEstimate: 0, partsBought: 0, repairTotal, total: visitFee + repairTotal };
 }
+
+/** "$1,500", o "$1,500 más las refacciones que compre, a precio de ticket (estimó $900)". */
+function agreedText(amounts: AmountDue, buyer: 'él' | 'tú'): string {
+  if (amounts.partsToBuyEstimate > 0 && amounts.partsBought === 0) {
+    const verb = buyer === 'tú' ? 'compres' : 'compre';
+    const estimated = buyer === 'tú' ? 'estimaste' : 'estimó';
+    return `${formatPesos(amounts.total)} más las refacciones que ${verb}, a precio de ticket (${estimated} ${formatPesos(amounts.partsToBuyEstimate)})`;
+  }
+  return formatPesos(amounts.total);
+}
+
+const hasPendingReceipt = (request: GuideRequest) => (request.receipts ?? []).some((receipt) => receipt.status === 'pending');
 
 function daysSince(timestamp: string | null | undefined): number {
   const time = parseServerTimestamp(timestamp);
@@ -91,7 +113,8 @@ type Guide = { icon: IconName; title: string; text: string };
 
 function customerGuide(request: GuideRequest): Guide | null {
   const name = firstName(request.mechanicName, 'Tu mecánico');
-  const { visitFee, repairTotal, total } = serviceAmounts(request);
+  const amounts = serviceAmounts(request);
+  const { visitFee } = amounts;
   const quotes = request.quotes ?? [];
   const pendingQuote = quotes.some((quote) => quote.status === 'pending');
   const accepted = quotes.some((quote) => quote.status === 'accepted');
@@ -123,23 +146,36 @@ function customerGuide(request: GuideRequest): Guide | null {
         return { icon: 'document-text-outline', title: 'Revisa la cotización', text: `Acéptala solo si estás de acuerdo. Si no, solo pagas ${visitText}.` };
       }
       if (accepted) {
-        return { icon: 'checkmark-circle-outline', title: 'Aceptaste la cotización', text: `${name} ya puede empezar. En total le pagarás ${formatPesos(total)} al terminar.` };
+        return { icon: 'checkmark-circle-outline', title: 'Aceptaste la cotización', text: `${name} ya puede empezar. Le pagarás ${agreedText(amounts, 'él')} al terminar.` };
       }
       if (quotes[0]?.status === 'rejected') {
         return { icon: 'close-circle-outline', title: 'No aceptaste la cotización', text: `${name} puede mandarte otra. Si terminan aquí, solo pagas ${visitText}.` };
       }
       return { icon: 'search-outline', title: `${name} está revisando tu auto`, text: 'Cuando termine te mandará aquí una cotización. No repara nada sin que la aceptes.' };
     case 'repairing':
+    case 'awaiting_parts':
+      if (hasPendingReceipt(request)) {
+        return {
+          icon: 'receipt-outline',
+          title: 'Revisa el ticket de las refacciones',
+          text: 'Míralo abajo y apruébalo si estás de acuerdo. Si no, se cobra solo hasta lo que estimó.',
+        };
+      }
       if (pendingQuote) {
         return { icon: 'document-text-outline', title: 'Revisa lo adicional', text: 'Te cotizó algo extra. Acéptalo solo si estás de acuerdo; lo ya acordado sigue igual.' };
+      }
+      if (request.status === 'awaiting_parts') {
+        return {
+          icon: 'cube-outline',
+          title: `${name} fue por refacciones`,
+          text: 'Puedes seguirlo en el mapa. Cuando pague, verás aquí la foto del ticket: las refacciones se cobran a precio de ticket.',
+        };
       }
       return {
         icon: 'construct-outline',
         title: `${name} está reparando tu auto`,
-        text: `Lo acordado: ${formatPesos(total)}${visitFee > 0 && repairTotal > 0 ? ` (visita ${formatPesos(visitFee)} + reparación ${formatPesos(repairTotal)})` : ''}. Se lo pagas a él al terminar.`,
+        text: `Lo acordado: ${agreedText(amounts, 'él')}. Se lo pagas a él al terminar.`,
       };
-    case 'awaiting_parts':
-      return { icon: 'cube-outline', title: `${name} fue por refacciones`, text: 'Puedes seguirlo en el mapa mientras regresa a terminar.' };
     default:
       return null;
   }
@@ -147,7 +183,8 @@ function customerGuide(request: GuideRequest): Guide | null {
 
 function mechanicGuide(request: GuideRequest): Guide | null {
   const client = firstName(request.customerName, 'el cliente');
-  const { visitFee, total } = serviceAmounts(request);
+  const amounts = serviceAmounts(request);
+  const { visitFee } = amounts;
   const quotes = request.quotes ?? [];
   const latest = quotes[0];
   const accepted = quotes.some((quote) => quote.status === 'accepted');
@@ -173,7 +210,7 @@ function mechanicGuide(request: GuideRequest): Guide | null {
       };
     case 'diagnosing':
       if (accepted) {
-        return { icon: 'checkmark-circle-outline', title: `${client} aceptó`, text: `Toca «Empezar reparación». Al terminar cobrarás ${formatPesos(total)}.` };
+        return { icon: 'checkmark-circle-outline', title: `${client} aceptó`, text: `Toca «Empezar reparación». Al terminar cobrarás ${agreedText(amounts, 'tú')}.` };
       }
       if (latest?.status === 'pending') {
         return { icon: 'time-outline', title: `Esperando a ${client}`, text: 'Te avisamos cuando conteste la cotización. No empieces a reparar antes.' };
@@ -187,9 +224,28 @@ function mechanicGuide(request: GuideRequest): Guide | null {
         text: `Cuando sepas qué tiene, dile aquí cuánto cuesta repararlo. Si no se repara, cobras ${visitText}.`,
       };
     case 'repairing':
-      return { icon: 'construct-outline', title: 'Repara lo acordado', text: `Si hace falta algo más, cotízalo antes de hacerlo. Al terminar cobrarás ${formatPesos(total)}.` };
     case 'awaiting_parts':
-      return { icon: 'cube-outline', title: 'Ve por las refacciones', text: `${client} puede ver tu ubicación. Al volver, toca «Retomar reparación».` };
+      if (hasPendingReceipt(request)) {
+        return {
+          icon: 'time-outline',
+          title: `Esperando a que ${client} apruebe el ticket`,
+          text: 'Te avisamos cuando conteste. Mientras tanto no puedes terminar el servicio.',
+        };
+      }
+      if (request.status === 'awaiting_parts') {
+        return request.partsTripOpen
+          ? {
+              icon: 'receipt-outline',
+              title: 'Ve por las refacciones',
+              text: `Al pagar, sube aquí la foto del ticket: sin ticket no se cobran y no puedes retomar la reparación. ${client} puede ver tu ubicación.`,
+            }
+          : { icon: 'checkmark-circle-outline', title: 'Ticket subido', text: 'Toca «Retomar reparación» para seguir.' };
+      }
+      return {
+        icon: 'construct-outline',
+        title: 'Repara lo acordado',
+        text: `Si hace falta algo más, cotízalo antes de hacerlo. Al terminar cobrarás ${agreedText(amounts, 'tú')}.`,
+      };
     default:
       return null;
   }
@@ -217,22 +273,24 @@ export function NextStepGuide({ request, role }: { request: GuideRequest; role: 
 }
 
 function AmountBreakdown({ request }: { request: GuideRequest }) {
-  const { visitFee, repairTotal, total } = serviceAmounts(request);
+  const amounts = serviceAmounts(request);
+  const rows: Array<[string, number]> = [
+    ['Visita y diagnóstico', amounts.visitFee],
+    ['Mano de obra', amounts.labor],
+    ['Refacciones que traía', amounts.partsOnHand],
+    ['Refacciones compradas (ticket)', amounts.partsBought],
+  ];
   return (
     <View style={styles.stack}>
-      <Text style={styles.amountValue}>{formatPesos(total)}</Text>
-      {visitFee > 0 && (
-        <View style={styles.breakdownRow}>
-          <Text style={styles.smallText}>Visita y diagnóstico</Text>
-          <Text style={styles.smallText}>{formatPesos(visitFee)}</Text>
-        </View>
-      )}
-      {repairTotal > 0 && (
-        <View style={styles.breakdownRow}>
-          <Text style={styles.smallText}>Reparación acordada</Text>
-          <Text style={styles.smallText}>{formatPesos(repairTotal)}</Text>
-        </View>
-      )}
+      <Text style={styles.amountValue}>{formatPesos(amounts.total)}</Text>
+      {rows
+        .filter(([, value]) => value > 0)
+        .map(([label, value]) => (
+          <View key={label} style={styles.breakdownRow}>
+            <Text style={styles.smallText}>{label}</Text>
+            <Text style={styles.smallText}>{formatPesos(value)}</Text>
+          </View>
+        ))}
     </View>
   );
 }

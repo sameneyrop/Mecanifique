@@ -1,4 +1,5 @@
 import { all, get, run } from "./db";
+import { getReceiptsForRequest } from "./partsReceipts";
 
 /**
  * Lo que el cliente le paga al mecánico al terminar, directo a él (efectivo o
@@ -18,7 +19,18 @@ import { all, get, run } from "./db";
  * puede bloquear a un cliente que sí le pagó.
  */
 
-export type AmountDue = { visitFee: number; repairTotal: number; total: number };
+export type AmountDue = {
+  visitFee: number;
+  labor: number;
+  /** Refacciones que ya traía (precio de la cotización). */
+  partsOnHand: number;
+  /** Lo estimado de las refacciones a comprar: el tope sin aprobación. */
+  partsToBuyEstimate: number;
+  /** Refacciones compradas, a precio de ticket (src/partsReceipts.ts). */
+  partsBought: number;
+  repairTotal: number;
+  total: number;
+};
 export type PaymentMethod = "cash" | "transfer";
 
 export class ServicePaymentError extends Error {
@@ -36,19 +48,37 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   transfer: "por transferencia"
 };
 
+/**
+ * Visita + mano de obra + refacciones que ya traía + refacciones compradas a
+ * precio de ticket. En las cotizaciones anteriores a los tickets
+ * (parts_on_hand_amount NULL), parts_amount se cobra fijo, como antes.
+ */
 export async function amountDueForRequest(requestId: number): Promise<AmountDue> {
-  const row = await get<{ visitFee: number | null; repairTotal: number | null }>(
+  const row = await get<{ visitFee: number | null; labor: number | null; partsOnHand: number | null }>(
     `SELECT ${VISIT_FEE_SQL} AS visitFee,
-            (SELECT SUM(q.labor_amount + q.parts_amount) FROM service_quotes q
-             WHERE q.service_request_id = sr.id AND q.status = 'accepted') AS repairTotal
+            (SELECT SUM(q.labor_amount) FROM service_quotes q
+             WHERE q.service_request_id = sr.id AND q.status = 'accepted') AS labor,
+            (SELECT SUM(COALESCE(q.parts_on_hand_amount, q.parts_amount)) FROM service_quotes q
+             WHERE q.service_request_id = sr.id AND q.status = 'accepted') AS partsOnHand
      FROM service_requests sr
      LEFT JOIN mechanics m ON m.id = sr.mechanic_id
      WHERE sr.id = ?`,
     [requestId]
   );
+  const { estimate, chargedTotal } = await getReceiptsForRequest(requestId);
   const visitFee = row?.visitFee ?? 0;
-  const repairTotal = row?.repairTotal ?? 0;
-  return { visitFee, repairTotal, total: visitFee + repairTotal };
+  const labor = row?.labor ?? 0;
+  const partsOnHand = row?.partsOnHand ?? 0;
+  const repairTotal = labor + partsOnHand + chargedTotal;
+  return {
+    visitFee,
+    labor,
+    partsOnHand,
+    partsToBuyEstimate: estimate,
+    partsBought: chargedTotal,
+    repairTotal,
+    total: visitFee + repairTotal
+  };
 }
 
 /** Fija el precio de la visita con la tarifa que tiene el mecánico al aceptar. */

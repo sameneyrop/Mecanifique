@@ -12,6 +12,10 @@ import { all, get, run } from "./db";
  *
  * Mecanifique no cobra este monto: queda como registro de lo que se acordó
  * y se suma a la visita en lo que el cliente paga (src/servicePayment.ts).
+ *
+ * Las refacciones van en dos partes: las que el mecánico ya trae (precio
+ * fijo) y las que va a comprar (estimado; se cobran a precio de ticket, ver
+ * src/partsReceipts.ts).
  */
 
 export type QuoteStatus = "pending" | "accepted" | "rejected" | "replaced";
@@ -20,7 +24,12 @@ export type ServiceQuote = {
   id: number;
   serviceRequestId: number;
   laborAmount: number;
+  /** Refacciones a comprar (estimado). En cotizaciones viejas, precio fijo. */
   partsAmount: number;
+  /** Refacciones que ya trae el mecánico, a precio fijo. */
+  partsOnHandAmount: number;
+  /** false en cotizaciones anteriores a los tickets: partsAmount era fijo. */
+  partsAreEstimate: boolean;
   total: number;
   description: string;
   status: QuoteStatus;
@@ -41,14 +50,28 @@ export const STATUSES_REQUIRING_QUOTE = new Set(["repairing", "awaiting_parts"])
 
 const QUOTE_COLUMNS = `
   id, service_request_id AS serviceRequestId, labor_amount AS laborAmount, parts_amount AS partsAmount,
-  labor_amount + parts_amount AS total, description, status, created_at AS createdAt, responded_at AS respondedAt
+  COALESCE(parts_on_hand_amount, 0) AS partsOnHandAmount, parts_on_hand_amount IS NOT NULL AS partsAreEstimate,
+  labor_amount + parts_amount + COALESCE(parts_on_hand_amount, 0) AS total,
+  description, status, created_at AS createdAt, responded_at AS respondedAt
 `;
 
+type QuoteRow = Omit<ServiceQuote, "partsAreEstimate"> & { partsAreEstimate: number };
+
+function toQuote(row: QuoteRow): ServiceQuote {
+  return { ...row, partsAreEstimate: Boolean(row.partsAreEstimate) };
+}
+
+async function getQuote(quoteId: number): Promise<ServiceQuote> {
+  const row = await get<QuoteRow>(`SELECT ${QUOTE_COLUMNS} FROM service_quotes WHERE id = ?`, [quoteId]);
+  return toQuote(row!);
+}
+
 export async function getQuotesForRequest(requestId: number): Promise<ServiceQuote[]> {
-  return all<ServiceQuote>(
+  const rows = await all<QuoteRow>(
     `SELECT ${QUOTE_COLUMNS} FROM service_quotes WHERE service_request_id = ? ORDER BY id DESC`,
     [requestId]
   );
+  return rows.map(toQuote);
 }
 
 export async function hasAcceptedQuote(requestId: number): Promise<boolean> {
@@ -63,7 +86,10 @@ export async function createQuote(input: {
   requestId: number;
   mechanicId: number;
   laborAmount: number;
+  /** Refacciones a comprar (estimado; se cobran a precio de ticket). */
   partsAmount: number;
+  /** Refacciones que ya trae (precio fijo). */
+  partsOnHandAmount?: number;
   description: string;
 }): Promise<ServiceQuote> {
   const request = await get<{ mechanicId: number | null; status: string }>(
@@ -84,12 +110,11 @@ export async function createQuote(input: {
     input.requestId
   ]);
   const result = await run(
-    `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, description)
-     VALUES (?, ?, ?, ?, ?)`,
-    [input.requestId, input.mechanicId, input.laborAmount, input.partsAmount, input.description]
+    `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [input.requestId, input.mechanicId, input.laborAmount, input.partsAmount, input.partsOnHandAmount ?? 0, input.description]
   );
-  const quote = await get<ServiceQuote>(`SELECT ${QUOTE_COLUMNS} FROM service_quotes WHERE id = ?`, [result.lastID]);
-  return quote!;
+  return getQuote(result.lastID);
 }
 
 export async function respondToQuote(input: {
@@ -117,6 +142,5 @@ export async function respondToQuote(input: {
     input.accept ? "accepted" : "rejected",
     input.quoteId
   ]);
-  const quote = await get<ServiceQuote>(`SELECT ${QUOTE_COLUMNS} FROM service_quotes WHERE id = ?`, [input.quoteId]);
-  return quote!;
+  return getQuote(input.quoteId);
 }

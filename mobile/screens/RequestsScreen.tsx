@@ -31,6 +31,7 @@ import { MechanicTracker } from '../components/MechanicTracker';
 import { TipCard } from '../components/TipCard';
 import { CustomerQuoteCard } from '../components/Quote';
 import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide } from '../components/ServiceGuide';
+import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
 
@@ -547,6 +548,13 @@ export function RequestsScreen({
                   {detailIsActive && <ServiceProgress status={selectedRequest.status} />}
                 </View>
               </Card>
+              {/* Tickets de refacciones: el cliente los aprueba; mecánico y admin los ven como registro. */}
+              <ReceiptsCard
+                api={api}
+                request={selectedRequest}
+                canRespond={user.role === 'customer'}
+                onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
+              />
               {selectedRequest.status === 'completed' && selectedRequest.mechanicId != null && user.role === 'customer' && (
                 <CustomerPaymentCard
                   api={api}

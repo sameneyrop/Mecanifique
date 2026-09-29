@@ -68,11 +68,39 @@ type RequestSummary = {
   reviewed?: boolean;
 };
 
+/** Lo que el cliente le paga al mecánico (servidor: src/servicePayment.ts). */
+export type AmountDue = {
+  visitFee: number;
+  labor: number;
+  partsOnHand: number;
+  partsToBuyEstimate: number;
+  partsBought: number;
+  repairTotal: number;
+  total: number;
+};
+
+/** Ticket de refacciones compradas (servidor: src/partsReceipts.ts). */
+export type PartsReceipt = {
+  id: number;
+  amount: number;
+  chargedAmount: number;
+  hasTicket: boolean;
+  photoUrl: string;
+  storeNote: string | null;
+  status: 'accepted' | 'pending' | 'rejected';
+  createdAt: string;
+};
+
 export type ServiceQuote = {
   id: number;
   serviceRequestId: number;
   laborAmount: number;
+  // Refacciones a comprar (estimado; se cobran a precio de ticket). En
+  // cotizaciones viejas (partsAreEstimate false) era un precio fijo.
   partsAmount: number;
+  // Refacciones que ya trae el mecánico, a precio fijo.
+  partsOnHandAmount?: number;
+  partsAreEstimate?: boolean;
   total: number;
   description: string;
   status: 'pending' | 'accepted' | 'rejected' | 'replaced';
@@ -117,6 +145,12 @@ type ServiceRequest = {
   paymentMethod?: 'cash' | 'transfer' | null;
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
+  // Lo que se cobra, calculado por el servidor (src/servicePayment.ts).
+  amountDue?: AmountDue;
+  // Tickets de refacciones (src/partsReceipts.ts).
+  receipts?: PartsReceipt[];
+  // Salió por refacciones y todavía no sube el ticket.
+  partsTripOpen?: boolean;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

@@ -28,6 +28,7 @@ import {
 } from '../components/ActiveService';
 import { MechanicTracker } from '../components/MechanicTracker';
 import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
+import { MechanicPartsPanel, ReceiptsCard } from '../components/PartsReceipts';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -107,14 +108,56 @@ const NEXT_JOB_STEP: Record<string, { status: string; label: string }> = {
   repairing: { status: 'completed', label: 'Terminar servicio' },
 };
 
+type RequestDetail = NonNullable<ReturnType<typeof useAppContext>['selectedRequest']>;
+
+/**
+ * Servicio terminado que falta cerrar (pagar, calificar o confirmar el
+ * cobro). Carga su propio detalle, aparte de selectedRequest, para poder
+ * mostrarse junto a un servicio en curso: un mecánico puede aceptar otro
+ * trabajo antes de confirmar que le pagaron el anterior.
+ */
+function useClosureDetail(api: ApiCall, closureId: number | null) {
+  const [detail, setDetail] = useState<RequestDetail | null>(null);
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    if (closureId === null) {
+      setDetail(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () =>
+      api<RequestDetail>(`/service-requests/${closureId}`)
+        .then((loaded) => {
+          if (!cancelled) setDetail(loaded);
+        })
+        .catch(() => undefined);
+    void load();
+    // Así ve sin recargar cuando el otro confirma el pago.
+    const intervalId = setInterval(() => void load(), 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [closureId, version]);
+
+  return {
+    closure: detail && detail.id === closureId ? detail : null,
+    reloadClosure: () => setVersion((current) => current + 1),
+  };
+}
+
 /**
  * Solicitud en curso del usuario (la más reciente no terminada). Para el
  * mecánico no cuentan las 'pending': esas son ofertas que todavía no aceptó.
- * Si no hay una en curso, la terminada que falta cerrar (pagar, calificar o
- * confirmar el cobro). Carga su detalle como selectedRequest, que App
- * refresca cada 10 s.
+ * Carga su detalle como selectedRequest, que App refresca cada 10 s. Aparte,
+ * la terminada que falta cerrar (useClosureDetail).
  */
-function useActiveRequest(onLoadRequestById: HomeScreenProps['onLoadRequestById'], onRefreshRequests: HomeScreenProps['onRefreshRequests']) {
+function useActiveRequest(
+  api: ApiCall,
+  onLoadRequestById: HomeScreenProps['onLoadRequestById'],
+  onRefreshRequests: HomeScreenProps['onRefreshRequests'],
+) {
   const { user, myRequests, selectedRequest } = useAppContext();
 
   // Para admin, /mine devuelve TODAS las solicitudes del sistema: no hay un
@@ -126,19 +169,16 @@ function useActiveRequest(onLoadRequestById: HomeScreenProps['onLoadRequestById'
           (request) => ACTIVE_REQUEST_STATUSES.has(request.status) && (user?.role !== 'mechanic' || request.status !== 'pending'),
         )?.id ?? null);
   const needsClosure = user?.role === 'mechanic' ? mechanicNeedsClosure : customerNeedsClosure;
-  const closureId =
-    activeId !== null || user?.role === 'admin' ? null : (myRequests.find((request) => needsClosure(request))?.id ?? null);
-  const focusId = activeId ?? closureId;
+  const closureId = user?.role === 'admin' ? null : (myRequests.find((request) => needsClosure(request))?.id ?? null);
+  const { closure, reloadClosure } = useClosureDetail(api, closureId);
 
   useEffect(() => {
-    if (focusId !== null && selectedRequest?.id !== focusId) {
-      onLoadRequestById(focusId).catch(() => undefined);
+    if (activeId !== null && selectedRequest?.id !== activeId) {
+      onLoadRequestById(activeId).catch(() => undefined);
     }
-  }, [focusId, selectedRequest?.id]);
+  }, [activeId, selectedRequest?.id]);
 
-  const focused = focusId !== null && selectedRequest?.id === focusId ? selectedRequest : null;
-  const detail = activeId !== null ? focused : null;
-  const closure = closureId !== null ? focused : null;
+  const detail = activeId !== null && selectedRequest?.id === activeId ? selectedRequest : null;
 
   // Si el servicio terminó o se canceló (lo detecta el refresco del detalle),
   // se actualiza la lista para que Inicio vuelva a su estado normal.
@@ -156,7 +196,7 @@ function useActiveRequest(onLoadRequestById: HomeScreenProps['onLoadRequestById'
     }
   }, [closure?.paidAt, closure?.customerPaidAt, closure?.unpaidReportedAt, closure?.reviewed]);
 
-  return { activeId, detail, closure };
+  return { activeId, detail, closure, reloadClosure };
 }
 
 function LoadingServiceCard() {
@@ -280,24 +320,36 @@ function CustomerSearch({
 
 function CustomerHome(props: HomeScreenProps) {
   const { busy, setCurrentScreen, setRequestsView } = useAppContext();
-  const { activeId, detail, closure } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
+  const { activeId, detail, closure, reloadClosure } = useActiveRequest(
+    props.api,
+    props.onLoadRequestById,
+    props.onRefreshRequests,
+  );
+
+  // Calificar vive en el detalle de la solicitud (pestaña Solicitudes).
+  const closureCard = closure && (
+    <Animated.View entering={FadeInDown.duration(300)}>
+      <CustomerPaymentCard
+        api={props.api}
+        request={closure}
+        onChanged={reloadClosure}
+        onRate={() => {
+          props
+            .onLoadRequestById(closure.id)
+            .then(() => {
+              setRequestsView('detail');
+              setCurrentScreen('requests');
+            })
+            .catch(() => undefined);
+        }}
+      />
+    </Animated.View>
+  );
 
   if (activeId === null) {
     return (
       <View style={styles.stack}>
-        {closure && (
-          <Animated.View entering={FadeInDown.duration(300)}>
-            <CustomerPaymentCard
-              api={props.api}
-              request={closure}
-              onChanged={() => void props.onLoadRequestById(closure.id).catch(() => undefined)}
-              onRate={() => {
-                setRequestsView('detail');
-                setCurrentScreen('requests');
-              }}
-            />
-          </Animated.View>
-        )}
+        {closureCard}
         <CustomerSearch
           requestForm={props.requestForm}
           setRequestForm={props.setRequestForm}
@@ -333,6 +385,12 @@ function CustomerHome(props: HomeScreenProps) {
         mechanicName={detail.mechanicName}
         onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
       />
+      <ReceiptsCard
+        api={props.api}
+        request={detail}
+        canRespond
+        onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
+      />
       {detail.status === 'pending' && (
         <SearchingStatus request={detail} busy={busy} onSearchAgain={props.onSearchAgain} />
       )}
@@ -351,6 +409,7 @@ function CustomerHome(props: HomeScreenProps) {
         }}
       />
       <SecondaryButton title="Cancelar solicitud" busy={busy} onPress={() => props.onCancelRequest(detail.id)} />
+      {closureCard}
     </Animated.View>
   );
 }
@@ -491,7 +550,11 @@ function mechanicBadges(profile: MechanicProfile | null): Array<{ icon: keyof ty
 
 function MechanicHome(props: HomeScreenProps) {
   const { busy, myRequests, mechanicConnection } = useAppContext();
-  const { activeId, detail, closure } = useActiveRequest(props.onLoadRequestById, props.onRefreshRequests);
+  const { activeId, detail, closure, reloadClosure } = useActiveRequest(
+    props.api,
+    props.onLoadRequestById,
+    props.onRefreshRequests,
+  );
 
   const liveLocationRequest = useMemo(
     () => myRequests.find((request) => request.status !== 'completed' && request.status !== 'cancelled'),
@@ -506,6 +569,11 @@ function MechanicHome(props: HomeScreenProps) {
   const needsQuote = (status: string) => (status === 'repairing' || status === 'awaiting_parts') && !quoteAccepted;
   const showQuotePanel = detail?.status === 'diagnosing' || detail?.status === 'repairing' || detail?.status === 'awaiting_parts';
   const canWaitForParts = (detail?.status === 'diagnosing' || detail?.status === 'repairing') && quoteAccepted;
+  // Sin ticket no regresa de refacciones, y no termina con uno esperando al
+  // cliente (src/partsReceipts.ts; el servidor lo revisa igual).
+  const receiptPending = (detail?.receipts ?? []).some((receipt) => receipt.status === 'pending');
+  const blockedByReceipt = (status: string) =>
+    (detail?.status === 'awaiting_parts' && Boolean(detail.partsTripOpen)) || (status === 'completed' && receiptPending);
   const address = detail ? detail.serviceAddress || `${detail.city}, ${detail.zone}` : '';
   // Una cuenta pendiente o suspendida no puede conectarse (el servidor lo
   // rechaza igual); desconectarse siempre se permite.
@@ -534,6 +602,11 @@ function MechanicHome(props: HomeScreenProps) {
               <SecondaryButton title="Cómo llegar" onPress={() => void openServiceNavigation(detail)} />
             </View>
           </Card>
+          <MechanicPartsPanel
+            api={props.api}
+            request={detail}
+            onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
+          />
           <Card title="Avance">
             <View style={styles.stack}>
               <NextStepGuide request={detail} role="mechanic" />
@@ -547,7 +620,7 @@ function MechanicHome(props: HomeScreenProps) {
                   onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
                 />
               )}
-              {nextStep && !needsQuote(nextStep.status) && (
+              {nextStep && !needsQuote(nextStep.status) && !blockedByReceipt(nextStep.status) && (
                 <Pressable
                   style={({ pressed }) => [styles.nextStepButton, (pressed || busy) && styles.buttonPressed]}
                   onPress={() => props.onAdvanceJob(detail.id, nextStep.status)}
@@ -560,7 +633,7 @@ function MechanicHome(props: HomeScreenProps) {
               )}
               {canWaitForParts && (
                 <SecondaryButton
-                  title="Esperando refacciones"
+                  title="Voy por refacciones"
                   busy={busy}
                   onPress={() => props.onAdvanceJob(detail.id, 'awaiting_parts')}
                 />
@@ -581,11 +654,7 @@ function MechanicHome(props: HomeScreenProps) {
 
       {closure && (
         <Animated.View entering={FadeInDown.duration(300)}>
-          <MechanicCollectCard
-            api={props.api}
-            request={closure}
-            onChanged={() => void props.onLoadRequestById(closure.id).catch(() => undefined)}
-          />
+          <MechanicCollectCard api={props.api} request={closure} onChanged={reloadClosure} />
         </Animated.View>
       )}
 

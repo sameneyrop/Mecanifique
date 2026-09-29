@@ -430,6 +430,33 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   que no.
 - Si el mecánico después confirma el pago, la disputa de pago se cierra sola.
 
+### Ticket de refacciones (`src/partsReceipts.ts`)
+
+Para que el mecánico no infle el precio de las piezas, la cotización separa
+las **refacciones que ya trae** (`parts_on_hand_amount`, precio fijo) de las
+**que va a comprar** (`parts_amount`, un estimado). Las compradas se cobran
+**a precio de ticket** (tabla `parts_receipts`):
+
+- Al tocar "Voy por refacciones" (`awaiting_parts`) empieza la salida
+  (`parts_trip_started_at`). No puede retomar la reparación ni terminar hasta
+  subir la foto del ticket o decir "No compré nada"
+  (`PARTS_RECEIPT_REQUIRED`). Sin ticket no se cobra nada comprado.
+- La foto se toma **solo con la cámara** de la app (`mobile/photos.ts`), no
+  desde la galería; se guarda junto con lo que costó y, opcional, la tienda.
+  El cliente la recibe al instante (push y en el servicio).
+- Con ticket y dentro de lo estimado se acepta sola. Si pasa de lo estimado,
+  o la tienda no dio ticket (foto de la nota o de las piezas), el cliente la
+  aprueba; si no la aprueba, se cobra hasta lo estimado (`chargeReceipts`).
+- No se puede terminar con un ticket esperando al cliente
+  (`PARTS_RECEIPT_PENDING`).
+- El recorrido GPS del viaje por refacciones ya queda registrado (seguimiento
+  en vivo), como evidencia si hay disputa.
+
+Las cotizaciones anteriores a los tickets (`parts_on_hand_amount` NULL)
+cobran `parts_amount` fijo, como antes. El detalle de la solicitud trae
+`amountDue` calculado en el servidor para que la app muestre exactamente lo
+que se cobra.
+
 Un admin resuelve el desacuerdo con la evidencia: la cotización aceptada,
 las confirmaciones con fecha, el chat y el comprobante de transferencia. Las
 disputas guardan quién las abrió (`opened_by`: cliente, mecánico o sistema).

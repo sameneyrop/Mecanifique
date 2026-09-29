@@ -3,7 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Updates from 'expo-updates';
 import { colors } from './colors';
 import { styles } from './styles';
-import { useAppContext } from './context/AppContext';
+import { useAppContext, type AmountDue, type PartsReceipt } from './context/AppContext';
 import { HomeScreen, type MechanicProfile } from './screens/HomeScreen';
 import { MechanicsScreen } from './screens/MechanicsScreen';
 import { MapScreen } from './screens/MapScreen';
@@ -230,7 +230,12 @@ export type ServiceQuote = {
   id: number;
   serviceRequestId: number;
   laborAmount: number;
+  // Refacciones a comprar (estimado; se cobran a precio de ticket). En
+  // cotizaciones viejas (partsAreEstimate false) era un precio fijo.
   partsAmount: number;
+  // Refacciones que ya trae el mecánico, a precio fijo.
+  partsOnHandAmount?: number;
+  partsAreEstimate?: boolean;
   total: number;
   description: string;
   status: 'pending' | 'accepted' | 'rejected' | 'replaced';
@@ -276,6 +281,12 @@ type ServiceRequest = {
   paymentMethod?: 'cash' | 'transfer' | null;
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
+  // Lo que se cobra, calculado por el servidor (src/servicePayment.ts).
+  amountDue?: AmountDue;
+  // Tickets de refacciones (src/partsReceipts.ts).
+  receipts?: PartsReceipt[];
+  // Salió por refacciones y todavía no sube el ticket.
+  partsTripOpen?: boolean;
 };
 
 type RequestSummary = {
@@ -579,6 +590,8 @@ export default function App() {
   // Notificaciones se abre desde cualquier pantalla (campana de arriba);
   // "atrás" regresa a donde estaba.
   const notificationsReturnScreen = useRef<AppScreen>('home');
+  // Push que el usuario tocó; se abre en cuanto haya sesión.
+  const [pushTarget, setPushTarget] = useState<AppNotification | null>(null);
   // Verificación por teléfono pendiente (ver PhoneVerificationScreen).
   const deviceIdRef = useRef<string | null>(null);
   const [phoneVerification, setPhoneVerification] = useState<PhoneVerificationStatus | null>(null);
@@ -1255,6 +1268,46 @@ export default function App() {
 
     return () => clearInterval(intervalId);
   }, [currentLocation, selectedRequest?.id, user?.role, mechanicConnection, user, token]);
+
+  // Tocar un push en el teléfono abre lo que avisa (antes solo abría la app
+  // donde se había quedado, y había que buscar la solicitud a mano). Sirve
+  // también si el push abrió la app estando cerrada.
+  useEffect(() => {
+    const toNotification = (response: Notifications.NotificationResponse): AppNotification => {
+      const content = response.notification.request.content;
+      const data = (content.data ?? {}) as Record<string, unknown>;
+      return {
+        id: Number(data.notificationId) || 0,
+        title: content.title ?? '',
+        body: content.body ?? '',
+        dataJson: JSON.stringify(data),
+        readAt: null,
+        createdAt: '',
+      };
+    };
+    const receive = (response: Notifications.NotificationResponse) => {
+      setPushTarget(toNotification(response));
+      try {
+        Notifications.clearLastNotificationResponse();
+      } catch {
+        // Solo evita repetirla la próxima vez que se abra la app.
+      }
+    };
+    try {
+      const last = Notifications.getLastNotificationResponse();
+      if (last) receive(last);
+    } catch {
+      // Sin push en este teléfono (emulador sin Google Play, etc.).
+    }
+    const subscription = Notifications.addNotificationResponseReceivedListener(receive);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!pushTarget || !user || !token) return;
+    setPushTarget(null);
+    void handleOpenNotification(pushTarget);
+  }, [pushTarget, user, token]);
 
   // nextRefreshToken: string para guardar uno nuevo, null para borrarlo,
   // undefined para dejar el que ya estaba (ej. al cambiar de modo).
@@ -2168,7 +2221,8 @@ export default function App() {
   // Tocar un aviso lo marca como leído y lleva a lo que avisa: la solicitud o
   // la pregunta de la Comunidad.
   function markNotificationRead(notification: AppNotification) {
-    if (!notification.readAt) {
+    // id 0: push viejo que no traía su id; no hay qué marcar.
+    if (!notification.readAt && notification.id > 0) {
       apiRequest(`/api/notifications/${notification.id}/read`, { method: 'POST', token })
         .then(() => loadNotifications())
         .catch(() => undefined);
@@ -2682,6 +2736,18 @@ export default function App() {
   }
 
   function handleAdvanceJob(requestId: number, status: string) {
+    // La regla del ticket, justo antes de salir a comprar (src/partsReceipts.ts).
+    if (status === 'awaiting_parts') {
+      Alert.alert(
+        '¿Vas por refacciones?',
+        'Al pagar, tómale foto al ticket en la app. Las refacciones se cobran a precio de ticket: sin ticket no se cobran y no podrás retomar la reparación.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Sí, voy', onPress: () => void advanceJob(requestId, status) },
+        ],
+      );
+      return;
+    }
     if (status === 'completed') {
       const job = selectedRequest?.id === requestId ? selectedRequest : null;
       const total = job ? serviceAmounts(job).total : 0;

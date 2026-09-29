@@ -591,6 +591,48 @@ export const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
+  // Tickets de refacciones (components/PartsReceipts.tsx).
+  receiptRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  receiptThumb: {
+    width: 64,
+    height: 84,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+  },
+  receiptPendingText: {
+    color: colors.primaryDark,
+    fontFamily: fonts.bold,
+  },
+  photoViewer: {
+    flex: 1,
+    backgroundColor: 'rgba(11, 15, 34, 0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  photoViewerImage: {
+    width: '100%',
+    height: '85%',
+  },
+  photoViewerClose: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  photoViewerCloseText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+  },
   // Cobro al terminar: el monto grande y su desglose.
   amountValue: {
     color: colors.textDark,

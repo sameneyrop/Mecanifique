@@ -258,6 +258,9 @@ export async function initDb(): Promise<void> {
   await ensureColumn("service_requests", "customer_paid_at", "ALTER TABLE service_requests ADD COLUMN customer_paid_at TEXT");
   await ensureColumn("service_requests", "payment_method", "ALTER TABLE service_requests ADD COLUMN payment_method TEXT");
   await ensureColumn("service_requests", "unpaid_reported_at", "ALTER TABLE service_requests ADD COLUMN unpaid_reported_at TEXT");
+  // Cuándo salió por refacciones sin haber subido todavía el ticket (o dicho
+  // que no compró nada): mientras tenga valor, no puede retomar la reparación.
+  await ensureColumn("service_requests", "parts_trip_started_at", "ALTER TABLE service_requests ADD COLUMN parts_trip_started_at TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS service_request_declines (
@@ -610,6 +613,33 @@ export async function initDb(): Promise<void> {
     )
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_service_quotes_request ON service_quotes(service_request_id)");
+  // Refacciones que ya trae el mecánico (precio fijo). NULL en cotizaciones
+  // anteriores a los tickets: ahí parts_amount era un precio fijo. En las
+  // nuevas, parts_amount es lo estimado de las refacciones a comprar, que se
+  // cobran a precio de ticket (src/partsReceipts.ts).
+  await ensureColumn("service_quotes", "parts_on_hand_amount", "ALTER TABLE service_quotes ADD COLUMN parts_on_hand_amount REAL");
+
+  // Tickets de las refacciones que compra el mecánico (src/partsReceipts.ts):
+  // foto tomada con la cámara de la app y lo que costó. status: 'accepted'
+  // (dentro de lo estimado o aprobado por el cliente), 'pending' (el cliente
+  // tiene que aprobarlo: pasa de lo estimado o no hay ticket) o 'rejected'.
+  await run(`
+    CREATE TABLE IF NOT EXISTS parts_receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      amount REAL NOT NULL CHECK(amount > 0),
+      has_ticket INTEGER NOT NULL DEFAULT 1,
+      photo_url TEXT NOT NULL,
+      store_note TEXT,
+      status TEXT NOT NULL CHECK(status IN ('accepted', 'pending', 'rejected')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      responded_at TEXT,
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_parts_receipts_request ON parts_receipts(service_request_id)");
 
   // Cuota de servicio (ver src/serviceFees.ts): una fila por pago en Stripe
   // Checkout. claimed_at marca que ya se usó para una solicitud.

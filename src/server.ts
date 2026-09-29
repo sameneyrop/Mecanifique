@@ -70,6 +70,16 @@ import {
   respondToQuote
 } from "./quotes";
 import {
+  ReceiptError,
+  createReceipt,
+  declareNoPurchase,
+  getReceiptsForRequest,
+  hasPendingReceipt,
+  isPartsTripOpen,
+  respondToReceipt,
+  startPartsTrip
+} from "./partsReceipts";
+import {
   PAYMENT_METHOD_LABELS,
   type PaymentChange,
   ServicePaymentError,
@@ -826,7 +836,8 @@ async function createNotification(
     createdAt: new Date().toISOString()
   });
 
-  void sendExpoPushNotifications(userId, title, body, data).catch((error) => {
+  // Con el id, tocar el push en el teléfono abre lo que avisa y lo marca como leído.
+  void sendExpoPushNotifications(userId, title, body, { ...data, notificationId: result.lastID }).catch((error) => {
     console.error("Expo push notification failed:", error);
   });
 }
@@ -3299,13 +3310,18 @@ app.post(
     }
 
     const fileName = await savePhoto(photo, req.auth?.user.id ?? null);
-    // Detrás del proxy de Render req.protocol es "http"; el original viene
-    // en x-forwarded-proto. Android bloquea imágenes por http en producción.
-    const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`;
-    res.status(201).json({ url: `${baseUrl}/uploads/${fileName}` });
+    res.status(201).json({ url: publicPhotoUrl(req, fileName) });
   })
 );
+
+/** Dirección pública de una foto guardada con savePhoto. */
+function publicPhotoUrl(req: Request, fileName: string): string {
+  // Detrás del proxy de Render req.protocol es "http"; el original viene
+  // en x-forwarded-proto. Android bloquea imágenes por http en producción.
+  const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
+  const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`;
+  return `${baseUrl}/uploads/${fileName}`;
+}
 
 app.post(
   "/api/mechanics/:id/reviews",
@@ -4248,10 +4264,20 @@ app.get(
       [requestId]
     );
 
+    const [{ receipts }, amountDue, partsTripOpen] = await Promise.all([
+      getReceiptsForRequest(requestId),
+      amountDueForRequest(requestId),
+      isPartsTripOpen(requestId)
+    ]);
     res.status(200).json({
       ...request,
       reviewed: Boolean(request.reviewed),
       updates,
+      // Lo que se cobra, calculado aquí para que la app muestre lo mismo que
+      // cobra el servidor (visita, mano de obra, refacciones y tickets).
+      amountDue,
+      receipts,
+      partsTripOpen,
       serviceFee: await getServiceFeeForRequest(requestId),
       quotes: await getQuotesForRequest(requestId)
     });
@@ -4390,7 +4416,10 @@ app.post(
 
 const quoteSchema = z.object({
   laborAmount: z.number().min(0).max(1_000_000),
+  // Refacciones a comprar (estimado; se cobran a precio de ticket).
   partsAmount: z.number().min(0).max(1_000_000).optional().default(0),
+  // Refacciones que ya trae el mecánico (precio fijo).
+  partsOnHandAmount: z.number().min(0).max(1_000_000).optional().default(0),
   description: z.string().trim().min(5).max(1_000)
 });
 
@@ -4413,7 +4442,7 @@ app.post("/api/service-requests/:id/quotes", requireAuth, requireRole("mechanic"
     return;
   }
   const payload = quoteSchema.parse(req.body);
-  if (payload.laborAmount + payload.partsAmount <= 0) {
+  if (payload.laborAmount + payload.partsAmount + payload.partsOnHandAmount <= 0) {
     res.status(400).json({ error: "Escribe cuánto cobrarás de mano de obra o de refacciones." });
     return;
   }
@@ -4512,6 +4541,28 @@ app.patch(
       return;
     }
 
+    // Ticket de refacciones (src/partsReceipts.ts): el mecánico no regresa
+    // de comprar sin foto del ticket (o decir que no compró nada), ni termina
+    // con un ticket esperando al cliente. Un admin sí puede, para destrabar.
+    if (req.auth?.user.role === "mechanic") {
+      const leavingPartsTrip =
+        existing.status === "awaiting_parts" && (payload.status === "repairing" || payload.status === "completed");
+      if (leavingPartsTrip && (await isPartsTripOpen(requestId))) {
+        res.status(409).json({
+          error: "Sube la foto del ticket de las refacciones (o marca que no compraste nada) para continuar.",
+          code: "PARTS_RECEIPT_REQUIRED"
+        });
+        return;
+      }
+      if (payload.status === "completed" && (await hasPendingReceipt(requestId))) {
+        res.status(409).json({
+          error: "Espera a que el cliente conteste el ticket de refacciones para terminar.",
+          code: "PARTS_RECEIPT_PENDING"
+        });
+        return;
+      }
+    }
+
     // Al terminar, el precio final es lo que el cliente le paga al mecánico:
     // la visita más las cotizaciones aceptadas (si el mecánico no manda otro).
     let finalPrice = payload.finalPrice ?? null;
@@ -4539,6 +4590,12 @@ app.patch(
     );
 
     await settleServiceFee(requestId, payload.status);
+
+    if (payload.status === "awaiting_parts") {
+      await startPartsTrip(requestId);
+    } else if (existing.status === "awaiting_parts") {
+      await run("UPDATE service_requests SET parts_trip_started_at = NULL WHERE id = ?", [requestId]);
+    }
 
     if (payload.status === "completed" && existing.mechanic_id) {
       await run(
@@ -4742,6 +4799,154 @@ app.post(
       res.json({ ok: true, disagreement: change.disagreement });
     } catch (error) {
       if (!sendServicePaymentError(res, error)) throw error;
+    }
+  })
+);
+
+// --- Tickets de refacciones (src/partsReceipts.ts) ---
+
+const partsReceiptSchema = z.object({
+  imageBase64: z.string().min(100),
+  amount: z.number().positive().max(500_000),
+  hasTicket: z.boolean(),
+  storeNote: z.string().trim().max(120).optional()
+});
+
+function sendReceiptError(res: Response, error: unknown): boolean {
+  if (error instanceof ReceiptError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  if (error instanceof PhotoUploadError) {
+    res.status(400).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+async function notifyRequestCustomer(customerId: number, title: string, body: string, requestId: number): Promise<void> {
+  const customerUserId = await getUserIdByCustomerId(customerId);
+  if (customerUserId) {
+    await createNotification(customerUserId, title, body, { requestId });
+  }
+}
+
+// El mecánico sube la foto del ticket (o de la nota / las piezas) y lo que costó.
+app.post(
+  "/api/service-requests/:id/parts-receipts",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    if (applyRateLimit("parts-receipt", req, res, 20)) {
+      return;
+    }
+    const payload = partsReceiptSchema.parse(req.body);
+    try {
+      const photo = decodePhoto(payload.imageBase64);
+      const result = await createReceipt({
+        requestId,
+        mechanicId: req.auth?.user.mechanicId,
+        amount: payload.amount,
+        hasTicket: payload.hasTicket,
+        storeNote: payload.storeNote,
+        savePhoto: async () => publicPhotoUrl(req, await savePhoto(photo, req.auth?.user.id ?? null))
+      });
+      const name = req.auth?.user.fullName || "Tu mecánico";
+      const amountText = formatMxn(payload.amount);
+      const where = payload.storeNote ? ` en ${payload.storeNote}` : "";
+      await logPaymentUpdate(
+        requestId,
+        `${name} subió ${payload.hasTicket ? "el ticket" : "una compra sin ticket"} de refacciones: ${amountText}${where}.`
+      );
+      if (result.receipt.status === "accepted") {
+        await notifyRequestCustomer(result.customerId, `${name} compró las refacciones`, `Ticket por ${amountText}${where}. Puedes ver la foto en la app.`, requestId);
+      } else if (!payload.hasTicket) {
+        await notifyRequestCustomer(
+          result.customerId,
+          `Revisa la compra de ${name}`,
+          `Compró refacciones por ${amountText}, pero la tienda no dio ticket. Revisa la foto y apruébalo para que siga.`,
+          requestId
+        );
+      } else {
+        await notifyRequestCustomer(
+          result.customerId,
+          `Revisa el ticket de ${name}`,
+          `Las refacciones costaron ${amountText}, más de lo que estimó (${formatMxn(result.estimate)}). Apruébalo para que siga.`,
+          requestId
+        );
+      }
+      res.status(201).json(result.receipt);
+    } catch (error) {
+      if (!sendReceiptError(res, error)) throw error;
+    }
+  })
+);
+
+// El cliente aprueba (o no) un ticket que pasa de lo estimado o no tiene ticket.
+app.post(
+  "/api/service-requests/:id/parts-receipts/:receiptId/respond",
+  requireAuth,
+  requireRole("customer"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const receiptId = Number(req.params.receiptId);
+    if (!Number.isInteger(receiptId) || receiptId <= 0) {
+      res.status(400).json({ error: "receiptId inválido" });
+      return;
+    }
+    const { accept } = z.object({ accept: z.boolean() }).parse(req.body);
+    try {
+      const { receipt, mechanicId } = await respondToReceipt({
+        requestId,
+        receiptId,
+        customerId: req.auth?.user.customerId,
+        accept
+      });
+      await logPaymentUpdate(
+        requestId,
+        accept
+          ? `El cliente aprobó el ticket de ${formatMxn(receipt.amount)}.`
+          : `El cliente no aprobó el ticket de ${formatMxn(receipt.amount)}; se cobra ${formatMxn(receipt.chargedAmount)}.`
+      );
+      const mechanicUserId = mechanicId ? await getUserIdByMechanicId(mechanicId) : null;
+      if (mechanicUserId) {
+        await createNotification(
+          mechanicUserId,
+          accept ? "El cliente aprobó el ticket" : "El cliente no aprobó el ticket",
+          accept
+            ? `Aprobó ${formatMxn(receipt.amount)}. Ya puedes seguir.`
+            : receipt.chargedAmount > 0
+              ? `De ese ticket se cobrará hasta lo estimado: ${formatMxn(receipt.chargedAmount)}. Si quieres, puedes devolver la pieza.`
+              : "Ese ticket no se cobrará. Si quieres, puedes devolver la pieza.",
+          { requestId }
+        );
+      }
+      res.json(receipt);
+    } catch (error) {
+      if (!sendReceiptError(res, error)) throw error;
+    }
+  })
+);
+
+// El mecánico regresa sin haber comprado nada (no encontró la pieza).
+app.post(
+  "/api/service-requests/:id/parts-trip/none",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    try {
+      const { customerId } = await declareNoPurchase(requestId, req.auth?.user.mechanicId);
+      const name = req.auth?.user.fullName || "Tu mecánico";
+      await logPaymentUpdate(requestId, `${name} regresó sin comprar refacciones.`);
+      await notifyRequestCustomer(customerId, `${name} regresó sin refacciones`, "No compró nada en esta salida: no se te cobra nada de ella.", requestId);
+      res.json({ ok: true });
+    } catch (error) {
+      if (!sendReceiptError(res, error)) throw error;
     }
   })
 );

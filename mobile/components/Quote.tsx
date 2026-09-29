@@ -8,17 +8,36 @@ import { formatError, formatPesos } from '../utils';
 import type { ApiCall } from '../App';
 
 // Cotización obligatoria antes de reparar (servidor: src/quotes.ts). El
-// mecánico la manda después del diagnóstico; el cliente la acepta o no.
+// mecánico la manda después del diagnóstico; el cliente la acepta o no. Las
+// refacciones van en dos: las que ya trae (precio fijo) y las que va a comprar
+// (estimado; se cobran a precio de ticket, ver components/PartsReceipts.tsx).
 
 const pesos = formatPesos;
 
+/** Las refacciones a comprar son un estimado: el total final depende del ticket. */
+function hasPartsEstimate(quote: ServiceQuote): boolean {
+  return Boolean(quote.partsAreEstimate) && quote.partsAmount > 0;
+}
+
 function QuoteBreakdown({ quote }: { quote: ServiceQuote }) {
+  const onHand = quote.partsOnHandAmount ?? 0;
   return (
     <View style={styles.stack}>
       <Text style={styles.itemText}>{quote.description}</Text>
       {quote.laborAmount > 0 && <InfoRow icon="construct-outline" text={`Mano de obra: ${pesos(quote.laborAmount)}`} />}
-      {quote.partsAmount > 0 && <InfoRow icon="cube-outline" text={`Refacciones: ${pesos(quote.partsAmount)}`} />}
-      <Text style={styles.itemTitle}>Total: {pesos(quote.total)}</Text>
+      {onHand > 0 && <InfoRow icon="cube-outline" text={`Refacciones que trae: ${pesos(onHand)}`} />}
+      {quote.partsAmount > 0 &&
+        (quote.partsAreEstimate ? (
+          <InfoRow icon="receipt-outline" text={`Refacciones a comprar (estimado): ${pesos(quote.partsAmount)}`} />
+        ) : (
+          <InfoRow icon="cube-outline" text={`Refacciones: ${pesos(quote.partsAmount)}`} />
+        ))}
+      <Text style={styles.itemTitle}>
+        {hasPartsEstimate(quote) ? 'Total estimado' : 'Total'}: {pesos(quote.total)}
+      </Text>
+      {hasPartsEstimate(quote) && (
+        <Text style={styles.smallText}>Las refacciones que compre se cobran a precio de ticket: verás la foto en la app.</Text>
+      )}
     </View>
   );
 }
@@ -44,12 +63,13 @@ export function MechanicQuotePanel({
   const accepted = quotes.filter((quote) => quote.status === 'accepted');
   const repairing = REPAIR_STATUSES.has(status);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ labor: '', parts: '', description: '' });
+  const [form, setForm] = useState({ labor: '', onHand: '', toBuy: '', description: '' });
 
   async function send() {
     const laborAmount = Number(form.labor) || 0;
-    const partsAmount = Number(form.parts) || 0;
-    if (laborAmount + partsAmount <= 0) {
+    const partsOnHandAmount = Number(form.onHand) || 0;
+    const partsAmount = Number(form.toBuy) || 0;
+    if (laborAmount + partsOnHandAmount + partsAmount <= 0) {
       setMessage('Escribe cuánto cobrarás de mano de obra o de refacciones');
       return;
     }
@@ -61,10 +81,10 @@ export function MechanicQuotePanel({
     try {
       await api(`/api/service-requests/${requestId}/quotes`, {
         method: 'POST',
-        body: { laborAmount, partsAmount, description: form.description.trim() },
+        body: { laborAmount, partsAmount, partsOnHandAmount, description: form.description.trim() },
       });
       setEditing(false);
-      setForm({ labor: '', parts: '', description: '' });
+      setForm({ labor: '', onHand: '', toBuy: '', description: '' });
       setMessage('Cotización enviada. Te avisamos cuando el cliente conteste.');
       onChanged();
     } catch (error) {
@@ -84,14 +104,26 @@ export function MechanicQuotePanel({
           onChangeText={(value) => setForm({ ...form, labor: value.replace(/[^0-9.]/g, '') })}
         />
       </Field>
-      <Field label="Refacciones estimadas (pesos, opcional)">
+      <Field label="Refacciones que ya traes (pesos, opcional)">
         <Input
-          value={form.parts}
+          value={form.onHand}
           keyboardType="numeric"
-          placeholder="Ej. 1200"
-          onChangeText={(value) => setForm({ ...form, parts: value.replace(/[^0-9.]/g, '') })}
+          placeholder="Ej. 150"
+          onChangeText={(value) => setForm({ ...form, onHand: value.replace(/[^0-9.]/g, '') })}
         />
       </Field>
+      <Field label="Refacciones que vas a comprar, estimado (pesos, opcional)">
+        <Input
+          value={form.toBuy}
+          keyboardType="numeric"
+          placeholder="Ej. 1200"
+          onChangeText={(value) => setForm({ ...form, toBuy: value.replace(/[^0-9.]/g, '') })}
+        />
+      </Field>
+      <Text style={styles.smallText}>
+        Las que compres se cobran a precio de ticket: al pagarlas le tomas foto en la app. Si cuestan más de lo estimado, el cliente
+        aprueba la diferencia.
+      </Text>
       <Field label="¿Qué vas a hacer?">
         <Input
           value={form.description}
@@ -197,7 +229,11 @@ export function CustomerQuoteCard({
         {pending && (
           <>
             <QuoteBreakdown quote={pending} />
-            <PrimaryButton title={`Aceptar ${pesos(pending.total)}`} busy={busy} onPress={() => void respond(pending, true)} />
+            <PrimaryButton
+              title={hasPartsEstimate(pending) ? `Aceptar (estimado ${pesos(pending.total)})` : `Aceptar ${pesos(pending.total)}`}
+              busy={busy}
+              onPress={() => void respond(pending, true)}
+            />
             <SecondaryButton title="No aceptar" busy={busy} onPress={() => void respond(pending, false)} />
             <Text style={styles.smallText}>El pago es directo con tu mecánico; Mecanifique no cobra este monto.</Text>
           </>

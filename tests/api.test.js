@@ -41,6 +41,15 @@ const {
   mechanicReportsUnpaid,
   unpaidServiceForCustomer
 } = require("../src/servicePayment.ts");
+const {
+  ReceiptError,
+  createReceipt,
+  declareNoPurchase,
+  hasPendingReceipt,
+  isPartsTripOpen,
+  respondToReceipt,
+  startPartsTrip
+} = require("../src/partsReceipts.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -78,6 +87,7 @@ async function cleanupCreatedRows() {
   for (const requestId of createdRows.requests) {
     await run("DELETE FROM service_quotes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM disputes WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM parts_receipts WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
@@ -789,7 +799,10 @@ test("cotización: el mecánico cotiza, el cliente acepta o no, y solo con una a
   await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
   const extra = await quote(0, 300);
   await respondToQuote({ requestId, quoteId: extra.id, customerId: customer.lastID, accept: true });
-  assert.equal((await amountDueForRequest(requestId)).repairTotal, 1700);
+  const due = await amountDueForRequest(requestId);
+  assert.equal(due.labor, 400);
+  assert.equal(due.partsToBuyEstimate, 1300, "las refacciones a comprar quedan como estimado");
+  assert.equal(due.repairTotal, 400, "sin ticket no se cobran refacciones compradas");
 });
 
 test("cobro: el precio de la visita queda fijo al aceptar y se suma a lo cotizado", async () => {
@@ -801,11 +814,114 @@ test("cobro: el precio de la visita queda fijo al aceptar y se suma a lo cotizad
 
   // Si el mecánico sube su tarifa después de aceptar, este servicio no cambia.
   await run("UPDATE mechanics SET labor_rate = 900 WHERE id = ?", [mechanicId]);
+  // Cotización anterior a los tickets (sin parts_on_hand_amount): sus
+  // refacciones se cobran fijas, como antes.
   await run(
     "INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, description, status) VALUES (?, ?, 600, 1200, 'Cambio de batería', 'accepted')",
     [requestId, mechanicId]
   );
-  assert.deepEqual(await amountDueForRequest(requestId), { visitFee: 400, repairTotal: 1800, total: 2200 });
+  const due = await amountDueForRequest(requestId);
+  assert.equal(due.visitFee, 400);
+  assert.equal(due.repairTotal, 1800);
+  assert.equal(due.total, 2200);
+});
+
+async function createRequestInStatus(mechanicId, status) {
+  const { requestId, customerId } = await createCompletedRequest(mechanicId);
+  await run("UPDATE service_requests SET status = ? WHERE id = ?", [status, requestId]);
+  return { requestId, customerId };
+}
+
+const fakePhoto = async () => "https://example.test/ticket.jpg";
+
+test("ticket: las refacciones compradas se cobran a precio de ticket, con tope en lo estimado salvo que el cliente apruebe", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createRequestInStatus(mechanicId, "diagnosing");
+  const quote = await createQuote({
+    requestId,
+    mechanicId,
+    laborAmount: 600,
+    partsAmount: 1200,
+    partsOnHandAmount: 150,
+    description: "Cambio de batería y terminales"
+  });
+  assert.equal(quote.total, 1950);
+  assert.equal(quote.partsAreEstimate, true);
+  await respondToQuote({ requestId, quoteId: quote.id, customerId, accept: true });
+  await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
+  await startPartsTrip(requestId);
+  assert.equal(await isPartsTripOpen(requestId), true);
+
+  // Con ticket y dentro de lo estimado: se acepta solo y cierra la salida.
+  const first = await createReceipt({ requestId, mechanicId, amount: 950, hasTicket: true, savePhoto: fakePhoto });
+  assert.equal(first.receipt.status, "accepted");
+  assert.equal(first.receipt.chargedAmount, 950);
+  assert.equal(await isPartsTripOpen(requestId), false);
+  let due = await amountDueForRequest(requestId);
+  assert.deepEqual([due.labor, due.partsOnHand, due.partsBought, due.total], [600, 150, 950, 1700]);
+
+  // Otro que pasa de lo estimado: espera al cliente y cuenta solo lo que cabe.
+  const second = await createReceipt({ requestId, mechanicId, amount: 400, hasTicket: true, savePhoto: fakePhoto });
+  assert.equal(second.receipt.status, "pending");
+  assert.equal(second.overEstimate, true);
+  assert.equal(second.receipt.chargedAmount, 250);
+  assert.equal(await hasPendingReceipt(requestId), true);
+
+  // Solo el cliente del servicio contesta, y una sola vez.
+  await assert.rejects(
+    respondToReceipt({ requestId, receiptId: second.receipt.id, customerId: customerId + 100000, accept: true }),
+    (error) => error instanceof ReceiptError && error.status === 403
+  );
+  const rejected = await respondToReceipt({ requestId, receiptId: second.receipt.id, customerId, accept: false });
+  assert.equal(rejected.receipt.chargedAmount, 250, "si no lo aprueba, se cobra hasta lo estimado");
+  await assert.rejects(
+    respondToReceipt({ requestId, receiptId: second.receipt.id, customerId, accept: true }),
+    (error) => error.status === 409
+  );
+  assert.equal((await amountDueForRequest(requestId)).partsBought, 1200);
+
+  // Sin ticket siempre lo aprueba el cliente; aprobado, se cobra completo.
+  const noTicket = await createReceipt({ requestId, mechanicId, amount: 100, hasTicket: false, savePhoto: fakePhoto });
+  assert.equal(noTicket.receipt.status, "pending");
+  assert.equal(noTicket.receipt.chargedAmount, 0);
+  await respondToReceipt({ requestId, receiptId: noTicket.receipt.id, customerId, accept: true });
+  due = await amountDueForRequest(requestId);
+  assert.equal(due.partsBought, 1300);
+  assert.equal(await hasPendingReceipt(requestId), false);
+});
+
+test("ticket: solo lo sube el mecánico del servicio, en refacciones o reparación, y 'no compré nada' cierra la salida", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId } = await createRequestInStatus(mechanicId, "diagnosing");
+  let photoSaved = false;
+  const trackPhoto = async () => {
+    photoSaved = true;
+    return "https://example.test/ticket.jpg";
+  };
+
+  await assert.rejects(
+    createReceipt({ requestId, mechanicId, amount: 100, hasTicket: true, savePhoto: trackPhoto }),
+    (error) => error instanceof ReceiptError && error.status === 409
+  );
+  await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
+  await assert.rejects(
+    createReceipt({ requestId, mechanicId: mechanicId + 100000, amount: 100, hasTicket: true, savePhoto: trackPhoto }),
+    (error) => error.status === 403
+  );
+  assert.equal(photoSaved, false, "la foto no se guarda si no pasa la validación");
+
+  await startPartsTrip(requestId);
+  await declareNoPurchase(requestId, mechanicId);
+  assert.equal(await isPartsTripOpen(requestId), false);
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+  await assert.rejects(declareNoPurchase(requestId, mechanicId), (error) => error.status === 409);
+});
+
+test("ticket: las rutas piden sesión", async () => {
+  for (const path of ["parts-receipts", "parts-receipts/1/respond", "parts-trip/none"]) {
+    const { response } = await request(`/api/service-requests/1/${path}`, { method: "POST", body: "{}" });
+    assert.equal(response.status, 401, path);
+  }
 });
 
 async function createCompletedRequest(mechanicId) {
