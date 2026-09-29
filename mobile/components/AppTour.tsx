@@ -133,7 +133,7 @@ const MECHANIC_STEPS: TourStep[] = [
   {
     icon: 'receipt-outline',
     title: 'Comisión de Mecanifique',
-    text: 'El cliente te paga todo a ti. Mecanifique cobra 10 % de la visita y la mano de obra (no de las refacciones): mínimo $30 y máximo $300 por servicio. Tus primeros 30 días no pagas nada. Cada lunes llega tu corte y tienes 7 días para pagarlo.',
+    text: 'El cliente te paga todo a ti. Mecanifique cobra 10 % de la visita y la mano de obra (no de las refacciones): mínimo $30 y máximo $300 por servicio. En tus primeros 30 días, contados desde tu primer servicio, no pagas nada. Cada lunes llega tu corte y tienes 7 días para pagarlo.',
   },
   {
     screen: 'home',

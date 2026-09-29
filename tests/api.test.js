@@ -1153,13 +1153,23 @@ async function completedWithAmounts(mechanicId, visit = 400, labor = 600) {
   return { requestId, customerId };
 }
 
-test("comisión: se registra al terminar, sin refacciones, y es gratis en los primeros 30 días del mecánico", async () => {
+test("comisión: se registra al terminar, sin refacciones, y es gratis 30 días desde su primer servicio", async () => {
   const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  // Cuenta vieja sin servicios: sus días gratis no se gastaron esperando.
+  await run("UPDATE mechanics SET created_at = datetime('now', '-90 days') WHERE id = ?", [mechanicId]);
+  const before = await mechanicCommissionSummary(mechanicId);
+  assert.equal(before.freeNotStarted, true);
+  assert.equal(before.freeUntil, null);
+
   const first = await completedWithAmounts(mechanicId);
   assert.deepEqual(await recordCommission(first.requestId), { commission: 100, waived: true });
   assert.deepEqual(await recordCommission(first.requestId), { commission: 100, waived: true }, "una sola por servicio");
+  const after = await mechanicCommissionSummary(mechanicId);
+  assert.equal(after.freeNotStarted, false);
+  assert.ok(after.freeUntil, "sus 30 días empezaron con este servicio");
 
-  await run("UPDATE mechanics SET created_at = datetime('now', '-40 days') WHERE id = ?", [mechanicId]);
+  // 40 días después de su primer servicio ya paga.
+  await run("UPDATE commission_charges SET created_at = datetime('now', '-40 days') WHERE service_request_id = ?", [first.requestId]);
   const second = await completedWithAmounts(mechanicId);
   assert.deepEqual(await recordCommission(second.requestId), { commission: 100, waived: false });
 });
@@ -1169,6 +1179,9 @@ test("comisión: el corte semanal junta lo pagado (o sin reporte en 48 h), una v
   await run("UPDATE mechanics SET created_at = datetime('now', '-60 days') WHERE id = ?", [mechanicId]);
   const now = new Date();
   const daysAgo = (days) => new Date(now.getTime() - days * 86_400_000);
+  // Su primer servicio fue hace 60 días: ya pasaron sus días gratis.
+  const oldest = await completedWithAmounts(mechanicId);
+  await recordCommission(oldest.requestId, daysAgo(60));
 
   const paid = await completedWithAmounts(mechanicId);
   await recordCommission(paid.requestId, daysAgo(1));
@@ -1202,12 +1215,16 @@ test("comisión: el corte semanal junta lo pagado (o sin reporte en 48 h), una v
   assert.equal(states[fresh.requestId], "next");
 });
 
-test("comisión: quien ya era mecánico al lanzarla cuenta sus 30 días gratis desde el lanzamiento", async () => {
+test("comisión: un servicio de antes del lanzamiento no gasta los días gratis (cuentan desde el lanzamiento)", async () => {
   const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
   await run("UPDATE mechanics SET created_at = datetime('now', '-90 days') WHERE id = ?", [mechanicId]);
   const previous = process.env.COMMISSION_LAUNCH_DATE;
   process.env.COMMISSION_LAUNCH_DATE = new Date(Date.now() - 5 * 86_400_000).toISOString();
   try {
+    // Un servicio de hace 20 días (antes del lanzamiento, hace 5): sus 30 días
+    // cuentan desde el lanzamiento, así que le quedan unos 25.
+    const beforeLaunch = await completedWithAmounts(mechanicId);
+    await recordCommission(beforeLaunch.requestId, new Date(Date.now() - 20 * 86_400_000));
     const { requestId } = await completedWithAmounts(mechanicId);
     assert.deepEqual(await recordCommission(requestId), { commission: 100, waived: true });
     assert.ok((await mechanicCommissionSummary(mechanicId)).freeUntil, "le quedan días gratis");

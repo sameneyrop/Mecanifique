@@ -579,7 +579,7 @@ function MechanicOnboarding({
             number={3}
             done={rateDone}
             title="Pon el precio de tu visita y diagnóstico"
-            description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico. Mecanifique cobra 10 % de la visita y la mano de obra; tus primeros 30 días, nada."
+            description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico. Mecanifique cobra 10 % de la visita y la mano de obra; en tus primeros 30 días, desde tu primer servicio, nada."
           >
             <Field label="Visita y diagnóstico (pesos)">
               <Input

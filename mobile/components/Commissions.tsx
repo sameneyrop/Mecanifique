@@ -15,7 +15,8 @@ import type { ApiCall } from '../App';
 /**
  * Comisión de Mecanifique para el mecánico (servidor: src/commissions.ts):
  * 10 % de la visita y la mano de obra de cada servicio terminado, sin
- * refacciones, con mínimo $30 y tope $300. Sus primeros 30 días son gratis.
+ * refacciones, con mínimo $30 y tope $300. Sus primeros 30 días, desde su
+ * primer servicio terminado, son gratis.
  * Cada lunes se arma su corte y tiene 7 días para pagarlo; vencido, no puede
  * conectarse.
  */
@@ -46,6 +47,9 @@ export type CommissionSummary = {
   min: number;
   cap: number;
   freeUntil: string | null;
+  /** Todavía no termina ningún servicio: sus días gratis no han empezado. */
+  freeNotStarted?: boolean;
+  freeDays?: number;
   nextStatementEstimate: number;
   statements: Statement[];
   charges: Charge[];
@@ -139,6 +143,15 @@ function PayStatement({
   );
 }
 
+/** Sus días sin comisión: empiezan con su primer servicio terminado. */
+function freePeriodText(summary: CommissionSummary): string | null {
+  const days = summary.freeDays ?? 30;
+  if (summary.freeNotStarted) {
+    return `Tus ${days} días sin comisión empiezan con tu primer servicio terminado.`;
+  }
+  return summary.freeUntil ? `Sin comisión hasta el ${longDate(summary.freeUntil)}: tus primeros ${days} días.` : null;
+}
+
 /** Inicio: el corte por pagar (o vencido) y, si aplica, hasta cuándo no paga comisión. */
 export function CommissionHomeCard({ api }: { api: ApiCall }) {
   const { summary, setSummary, reload } = useCommissions(api);
@@ -148,9 +161,8 @@ export function CommissionHomeCard({ api }: { api: ApiCall }) {
   const current = overdue ?? open[0];
 
   if (!current) {
-    return summary.freeUntil ? (
-      <InfoRow icon="gift-outline" text={`Sin comisión hasta el ${longDate(summary.freeUntil)}: tus primeros 30 días.`} />
-    ) : null;
+    const free = freePeriodText(summary);
+    return free ? <InfoRow icon="gift-outline" text={free} /> : null;
   }
 
   return (
@@ -257,9 +269,7 @@ export function CommissionsPanel({ api }: { api: ApiCall }) {
           <InfoRow icon="resize-outline" text="Mínimo $30 por servicio (nunca más de lo que cobraste) y máximo $300." />
           <InfoRow icon="shield-checkmark-outline" text="Si reportas que no te pagaron, ese servicio no te cobra comisión." />
           <InfoRow icon="calendar-outline" text="Cada lunes se arma tu corte y tienes 7 días para pagarlo." />
-          {summary?.freeUntil ? (
-            <InfoRow icon="gift-outline" text={`Sin comisión hasta el ${longDate(summary.freeUntil)}: tus primeros 30 días.`} />
-          ) : null}
+          {summary && freePeriodText(summary) ? <InfoRow icon="gift-outline" text={freePeriodText(summary) as string} /> : null}
         </View>
       </Card>
 

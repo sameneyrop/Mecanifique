@@ -471,10 +471,13 @@ obligación de informar al SAT como plataforma que intermedia.)
   precio de ticket), con **mínimo $30** (nunca más de lo que cobró) y **tope
   $300** por servicio (`commissionFor`). Se registra al terminar el servicio
   (`commission_charges`). Las cancelaciones con cargo no pagan comisión.
-- **Primeros 30 días gratis** desde que el mecánico crea su cuenta
-  (`COMMISSION_FREE_DAYS`): el servicio queda con comisión $0. Quien ya era
-  mecánico al lanzar la comisión los cuenta desde el lanzamiento, el 29 de
-  septiembre de 2026 (`COMMISSION_LAUNCH_DATE`).
+- **Primeros 30 días gratis** (`COMMISSION_FREE_DAYS`), contados desde el
+  primer servicio que el mecánico termina (el `created_at` más antiguo en
+  `commission_charges`), no desde que crea su cuenta, para que no los pierda
+  mientras llegan sus primeros clientes. Nunca empiezan antes del lanzamiento
+  (29 de septiembre de 2026, `COMMISSION_LAUNCH_DATE`). Mientras no termine
+  ninguno, la app dice "Tus 30 días sin comisión empiezan con tu primer
+  servicio terminado" (`freeNotStarted`).
 - **Nunca paga comisión de lo que no le pagaron**: entra al corte cuando
   confirma el pago, o 48 h después de terminar si no reportó que no le
   pagaron; con un reporte abierto queda "en espera".

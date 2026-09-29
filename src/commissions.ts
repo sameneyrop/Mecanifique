@@ -10,9 +10,10 @@ import { getStripeGateway } from "./stripe";
  * servicio terminado, sin las refacciones (esas siguen a precio de ticket),
  * con mínimo de $30 (nunca más de lo que cobró) y tope de $300.
  *
- * - Sus primeros 30 días son gratis (COMMISSION_FREE_DAYS): el servicio queda
- *   registrado con comisión $0. Quien ya era mecánico al lanzar la comisión
- *   los cuenta desde el lanzamiento (COMMISSION_LAUNCH_DATE).
+ * - Sus primeros 30 días son gratis (COMMISSION_FREE_DAYS), contados desde su
+ *   primer servicio terminado, no desde que abrió su cuenta (y nunca antes del
+ *   lanzamiento, COMMISSION_LAUNCH_DATE): el servicio queda registrado con
+ *   comisión $0.
  * - Nunca paga comisión de un servicio que no le pagaron: entra al corte
  *   cuando él confirma el pago, o 48 h después de terminar si nadie reportó
  *   que no le pagaron.
@@ -46,10 +47,19 @@ function commissionLaunchMs(): number {
   return Number.isNaN(launch) ? 0 : launch;
 }
 
-/** Hasta cuándo no paga comisión: 30 días desde que abrió su cuenta o desde el lanzamiento, lo que sea después. */
-function freeUntilMs(mechanicSince: string | null): number {
-  const since = mechanicSince ? parseSqliteDate(mechanicSince) : 0;
-  return Math.max(since, commissionLaunchMs()) + commissionFreeDays() * 86_400_000;
+/**
+ * Cuándo empezaron sus días gratis: con su primer servicio terminado (no al
+ * abrir la cuenta: si no hay clientes todavía, no se le gastan esperando), y
+ * nunca antes del lanzamiento. `firstServiceMs` es el de ahora si todavía no
+ * había terminado ninguno; null si no ha terminado ninguno.
+ */
+async function freeStartMs(mechanicId: number, firstServiceMs: number | null = null): Promise<number | null> {
+  const first = await get<{ firstAt: string | null }>(
+    "SELECT MIN(created_at) AS firstAt FROM commission_charges WHERE mechanic_id = ?",
+    [mechanicId]
+  );
+  const startMs = first?.firstAt ? parseSqliteDate(first.firstAt) : firstServiceMs;
+  return startMs === null ? null : Math.max(startMs, commissionLaunchMs());
 }
 
 export class CommissionError extends Error {
@@ -82,10 +92,8 @@ export async function recordCommission(
   requestId: number,
   now = new Date()
 ): Promise<{ commission: number; waived: boolean } | null> {
-  const row = await get<{ mechanicId: number | null; status: string; mechanicSince: string | null }>(
-    `SELECT sr.mechanic_id AS mechanicId, sr.status, m.created_at AS mechanicSince
-     FROM service_requests sr LEFT JOIN mechanics m ON m.id = sr.mechanic_id
-     WHERE sr.id = ?`,
+  const row = await get<{ mechanicId: number | null; status: string }>(
+    "SELECT mechanic_id AS mechanicId, status FROM service_requests WHERE id = ?",
     [requestId]
   );
   if (!row || row.status !== "completed" || !row.mechanicId) {
@@ -94,7 +102,8 @@ export async function recordCommission(
   const { visitFee, labor } = await amountDueForRequest(requestId);
   const base = visitFee + labor;
   const commission = commissionFor(base);
-  const waived = commission > 0 && now.getTime() < freeUntilMs(row.mechanicSince);
+  const freeStart = (await freeStartMs(row.mechanicId, now.getTime())) as number;
+  const waived = commission > 0 && now.getTime() < freeStart + commissionFreeDays() * 86_400_000;
   await run(
     `INSERT OR IGNORE INTO commission_charges (mechanic_id, service_request_id, base_amount, commission, waived_reason, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -211,8 +220,8 @@ export function transferDetails(): { clabe: string; holder: string } | null {
 
 /** Todo lo que el mecánico ve de sus comisiones. */
 export async function mechanicCommissionSummary(mechanicId: number, now = new Date()) {
-  const mechanic = await get<{ createdAt: string }>("SELECT created_at AS createdAt FROM mechanics WHERE id = ?", [mechanicId]);
-  const freeUntil = mechanic ? freeUntilMs(mechanic.createdAt) : 0;
+  const freeStart = await freeStartMs(mechanicId);
+  const freeUntil = freeStart === null ? null : freeStart + commissionFreeDays() * 86_400_000;
   const statements = await all<StatementRow>(
     `SELECT ${STATEMENT_COLUMNS} FROM commission_statements WHERE mechanic_id = ? ORDER BY id DESC LIMIT 12`,
     [mechanicId]
@@ -244,7 +253,10 @@ export async function mechanicCommissionSummary(mechanicId: number, now = new Da
     rate: COMMISSION_RATE,
     min: COMMISSION_MIN,
     cap: COMMISSION_CAP,
-    freeUntil: freeUntil > now.getTime() ? new Date(freeUntil).toISOString() : null,
+    freeUntil: freeUntil !== null && freeUntil > now.getTime() ? new Date(freeUntil).toISOString() : null,
+    // Todavía no termina ningún servicio: sus días gratis no han empezado.
+    freeNotStarted: freeStart === null,
+    freeDays: commissionFreeDays(),
     // Lo que irá en su próximo corte (estimado).
     nextStatementEstimate: Math.round(nextStatement * 100) / 100,
     statements: statements.map((statement) => ({ ...statement, overdue: statement.status === "open" && statement.dueAt < nowSql })),
