@@ -451,6 +451,17 @@ las **refacciones que ya trae** (`parts_on_hand_amount`, precio fijo) de las
   (`PARTS_RECEIPT_PENDING`).
 - El recorrido GPS del viaje por refacciones ya queda registrado (seguimiento
   en vivo), como evidencia si hay disputa.
+- Puede recorrer varias tiendas: el ticket se pide al regresar, no en cada
+  una, y puede subir varios. "No la encontré, voy a otra tienda" solo avisa al
+  cliente (`/parts-trip/next-store`), que lo ve moverse en el mapa.
+- **Ajuste de lo acordado** (`service_quotes.kind = 'adjustment'`): si no se
+  hizo todo (p. ej. la pieza no estaba), el mecánico cobra solo lo que sí hizo.
+  Un ajuste solo puede **bajar** lo acordado (para subir está "cotizar algo
+  adicional"); aprobado por el cliente, reemplaza a las cotizaciones
+  aceptadas, y si no lo aprueba sigue lo de antes. Al tocar "Terminar" con
+  refacciones a comprar cotizadas y sin ningún ticket, la app pregunta "¿Hiciste
+  la reparación completa?". No se puede terminar con un ajuste pendiente
+  (`ADJUSTMENT_PENDING`).
 
 Las cotizaciones anteriores a los tickets (`parts_on_hand_amount` NULL)
 cobran `parts_amount` fijo, como antes. El detalle de la solicitud trae

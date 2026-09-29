@@ -83,6 +83,8 @@ function agreedText(amounts: AmountDue, buyer: 'él' | 'tú'): string {
 }
 
 const hasPendingReceipt = (request: GuideRequest) => (request.receipts ?? []).some((receipt) => receipt.status === 'pending');
+const hasPendingAdjustment = (request: GuideRequest) =>
+  (request.quotes ?? []).some((quote) => quote.status === 'pending' && quote.kind === 'adjustment');
 
 function daysSince(timestamp: string | null | undefined): number {
   const time = parseServerTimestamp(timestamp);
@@ -161,6 +163,13 @@ function customerGuide(request: GuideRequest): Guide | null {
           text: 'Míralo abajo y apruébalo si estás de acuerdo. Si no, se cobra solo hasta lo que estimó.',
         };
       }
+      if (hasPendingAdjustment(request)) {
+        return {
+          icon: 'document-text-outline',
+          title: 'Revisa el ajuste',
+          text: `${name} te cobra menos porque no se hizo todo. Apruébalo si estás de acuerdo.`,
+        };
+      }
       if (pendingQuote) {
         return { icon: 'document-text-outline', title: 'Revisa lo adicional', text: 'Te cotizó algo extra. Acéptalo solo si estás de acuerdo; lo ya acordado sigue igual.' };
       }
@@ -229,6 +238,13 @@ function mechanicGuide(request: GuideRequest): Guide | null {
         return {
           icon: 'time-outline',
           title: `Esperando a que ${client} apruebe el ticket`,
+          text: 'Te avisamos cuando conteste. Mientras tanto no puedes terminar el servicio.',
+        };
+      }
+      if (hasPendingAdjustment(request)) {
+        return {
+          icon: 'time-outline',
+          title: `Esperando a que ${client} apruebe el ajuste`,
           text: 'Te avisamos cuando conteste. Mientras tanto no puedes terminar el servicio.',
         };
       }

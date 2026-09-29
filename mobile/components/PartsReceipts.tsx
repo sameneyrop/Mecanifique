@@ -209,6 +209,18 @@ export function MechanicPartsPanel({ api, request, onChanged }: { api: ApiCall; 
     }
   }
 
+  async function nextStore() {
+    setBusy(true);
+    try {
+      await api(`/api/service-requests/${request.id}/parts-trip/next-store`, { method: 'POST' });
+      setMessage('Le avisamos al cliente que vas a otra tienda.');
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function confirmNoPurchase() {
     Alert.alert('¿Regresaste sin comprar nada?', 'Le avisaremos al cliente. Sin ticket no se cobra ninguna refacción comprada.', [
       { text: 'Cancelar', style: 'cancel' },
@@ -275,7 +287,11 @@ export function MechanicPartsPanel({ api, request, onChanged }: { api: ApiCall; 
               onPress={() => void upload()}
             />
             {tripOpen ? (
-              <SecondaryButton title="No compré nada" busy={busy} onPress={confirmNoPurchase} />
+              <>
+                {/* Puede recorrer varias tiendas: el ticket se pide al regresar. */}
+                <SecondaryButton title="No la encontré, voy a otra tienda" busy={busy} onPress={() => void nextStore()} />
+                <SecondaryButton title="No compré nada" busy={busy} onPress={confirmNoPurchase} />
+              </>
             ) : (
               <SecondaryButton title="Cancelar" onPress={() => setOpen(false)} />
             )}

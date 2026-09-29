@@ -30,6 +30,7 @@ const {
   createQuote,
   getQuotesForRequest,
   hasAcceptedQuote,
+  hasPendingAdjustment,
   respondToQuote
 } = require("../src/quotes.ts");
 const {
@@ -44,6 +45,7 @@ const {
 const {
   ReceiptError,
   createReceipt,
+  customerForPartsTrip,
   declareNoPurchase,
   hasPendingReceipt,
   isPartsTripOpen,
@@ -917,8 +919,49 @@ test("ticket: solo lo sube el mecánico del servicio, en refacciones o reparaci�
   await assert.rejects(declareNoPurchase(requestId, mechanicId), (error) => error.status === 409);
 });
 
+test("ajuste: solo baja lo acordado; aceptado reemplaza lo anterior y rechazado lo deja igual", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createRequestInStatus(mechanicId, "diagnosing");
+  const adjust = (laborAmount) =>
+    createQuote({ requestId, mechanicId, laborAmount, partsAmount: 0, description: "Solo diagnóstico: la pieza no estaba", kind: "adjustment" });
+
+  // Sin nada acordado no hay qué ajustar.
+  await assert.rejects(adjust(100), (error) => error instanceof QuoteError && error.status === 409);
+
+  const original = await createQuote({ requestId, mechanicId, laborAmount: 600, partsAmount: 1200, partsOnHandAmount: 150, description: "Cambio de batería" });
+  await respondToQuote({ requestId, quoteId: original.id, customerId, accept: true });
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+
+  // Un ajuste que no baja lo acordado se rechaza: para subir está "adicional".
+  await assert.rejects(adjust(1950), (error) => error.status === 409);
+
+  const rejected = await adjust(300);
+  assert.equal(rejected.kind, "adjustment");
+  assert.equal(await hasPendingAdjustment(requestId), true);
+  await respondToQuote({ requestId, quoteId: rejected.id, customerId, accept: false });
+  assert.equal((await amountDueForRequest(requestId)).labor, 600, "si no lo aprueba, sigue lo de antes");
+
+  const accepted = await adjust(300);
+  await respondToQuote({ requestId, quoteId: accepted.id, customerId, accept: true });
+  const statuses = Object.fromEntries((await getQuotesForRequest(requestId)).map((row) => [row.id, row.status]));
+  assert.equal(statuses[original.id], "replaced");
+  assert.equal(statuses[accepted.id], "accepted");
+  const due = await amountDueForRequest(requestId);
+  assert.deepEqual([due.labor, due.partsOnHand, due.partsToBuyEstimate], [300, 0, 0]);
+  assert.equal(await hasPendingAdjustment(requestId), false);
+});
+
+test("ticket: 'voy a otra tienda' solo mientras va por refacciones", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createRequestInStatus(mechanicId, "repairing");
+  await assert.rejects(customerForPartsTrip(requestId, mechanicId), (error) => error.status === 409);
+  await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
+  await assert.rejects(customerForPartsTrip(requestId, mechanicId + 100000), (error) => error.status === 403);
+  assert.equal(await customerForPartsTrip(requestId, mechanicId), customerId);
+});
+
 test("ticket: las rutas piden sesión", async () => {
-  for (const path of ["parts-receipts", "parts-receipts/1/respond", "parts-trip/none"]) {
+  for (const path of ["parts-receipts", "parts-receipts/1/respond", "parts-trip/none", "parts-trip/next-store"]) {
     const { response } = await request(`/api/service-requests/1/${path}`, { method: "POST", body: "{}" });
     assert.equal(response.status, 401, path);
   }

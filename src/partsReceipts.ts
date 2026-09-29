@@ -183,6 +183,18 @@ export async function declareNoPurchase(requestId: number, mechanicId: number | 
   return { customerId: request.customerId };
 }
 
+/**
+ * No encontró la pieza en una tienda y va a otra: solo avisa al cliente (que
+ * lo ve moverse en el mapa). El ticket se pide al regresar, no en cada tienda.
+ */
+export async function customerForPartsTrip(requestId: number, mechanicId: number | null | undefined): Promise<number> {
+  const request = await requestForMechanic(requestId, mechanicId);
+  if (request.status !== "awaiting_parts") {
+    throw new ReceiptError(409, "Esto se usa mientras vas por refacciones.");
+  }
+  return request.customerId;
+}
+
 export async function startPartsTrip(requestId: number): Promise<void> {
   await run("UPDATE service_requests SET parts_trip_started_at = CURRENT_TIMESTAMP WHERE id = ?", [requestId]);
 }

@@ -102,6 +102,8 @@ export type ServiceQuote = {
   partsOnHandAmount?: number;
   partsAreEstimate?: boolean;
   total: number;
+  // 'adjustment': baja lo acordado; al aceptarla reemplaza a las aceptadas.
+  kind?: 'quote' | 'adjustment';
   description: string;
   status: 'pending' | 'accepted' | 'rejected' | 'replaced';
   createdAt: string;

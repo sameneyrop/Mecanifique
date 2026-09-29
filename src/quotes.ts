@@ -16,9 +16,15 @@ import { all, get, run } from "./db";
  * Las refacciones van en dos partes: las que el mecánico ya trae (precio
  * fijo) y las que va a comprar (estimado; se cobran a precio de ticket, ver
  * src/partsReceipts.ts).
+ *
+ * Un **ajuste** (kind 'adjustment') solo sirve para bajar lo acordado: por
+ * ejemplo, la pieza no estaba y no se hizo toda la reparación. Si el cliente
+ * lo acepta, reemplaza a las cotizaciones aceptadas; si no, sigue lo de antes.
+ * Para subir lo acordado está "cotizar algo adicional".
  */
 
 export type QuoteStatus = "pending" | "accepted" | "rejected" | "replaced";
+export type QuoteKind = "quote" | "adjustment";
 
 export type ServiceQuote = {
   id: number;
@@ -31,6 +37,7 @@ export type ServiceQuote = {
   /** false en cotizaciones anteriores a los tickets: partsAmount era fijo. */
   partsAreEstimate: boolean;
   total: number;
+  kind: QuoteKind;
   description: string;
   status: QuoteStatus;
   createdAt: string;
@@ -51,7 +58,7 @@ export const STATUSES_REQUIRING_QUOTE = new Set(["repairing", "awaiting_parts"])
 const QUOTE_COLUMNS = `
   id, service_request_id AS serviceRequestId, labor_amount AS laborAmount, parts_amount AS partsAmount,
   COALESCE(parts_on_hand_amount, 0) AS partsOnHandAmount, parts_on_hand_amount IS NOT NULL AS partsAreEstimate,
-  labor_amount + parts_amount + COALESCE(parts_on_hand_amount, 0) AS total,
+  labor_amount + parts_amount + COALESCE(parts_on_hand_amount, 0) AS total, kind,
   description, status, created_at AS createdAt, responded_at AS respondedAt
 `;
 
@@ -91,7 +98,9 @@ export async function createQuote(input: {
   /** Refacciones que ya trae (precio fijo). */
   partsOnHandAmount?: number;
   description: string;
+  kind?: QuoteKind;
 }): Promise<ServiceQuote> {
+  const kind = input.kind ?? "quote";
   const request = await get<{ mechanicId: number | null; status: string }>(
     "SELECT mechanic_id AS mechanicId, status FROM service_requests WHERE id = ?",
     [input.requestId]
@@ -105,16 +114,46 @@ export async function createQuote(input: {
   if (!QUOTABLE_STATUSES.has(request.status)) {
     throw new QuoteError(409, "La cotización se manda cuando ya estás con el auto.");
   }
+  if (kind === "adjustment") {
+    const agreed = await acceptedQuotesTotal(input.requestId);
+    if (agreed === null) {
+      throw new QuoteError(409, "No hay nada acordado que ajustar todavía.");
+    }
+    const adjusted = input.laborAmount + input.partsAmount + (input.partsOnHandAmount ?? 0);
+    if (adjusted >= agreed) {
+      throw new QuoteError(409, "Un ajuste es para cobrar menos de lo acordado. Para agregar algo, cotízalo como adicional.");
+    }
+  }
   // Una cotización nueva reemplaza a la que el cliente todavía no contesta.
   await run("UPDATE service_quotes SET status = 'replaced' WHERE service_request_id = ? AND status = 'pending'", [
     input.requestId
   ]);
   const result = await run(
-    `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [input.requestId, input.mechanicId, input.laborAmount, input.partsAmount, input.partsOnHandAmount ?? 0, input.description]
+    `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description, kind)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [input.requestId, input.mechanicId, input.laborAmount, input.partsAmount, input.partsOnHandAmount ?? 0, input.description, kind]
   );
   return getQuote(result.lastID);
+}
+
+/** Lo acordado en las cotizaciones aceptadas (null si no hay ninguna). */
+export async function acceptedQuotesTotal(requestId: number): Promise<number | null> {
+  const row = await get<{ total: number | null }>(
+    `SELECT SUM(labor_amount + parts_amount + COALESCE(parts_on_hand_amount, 0)) AS total
+     FROM service_quotes WHERE service_request_id = ? AND status = 'accepted'`,
+    [requestId]
+  );
+  return row?.total ?? null;
+}
+
+/** Un ajuste esperando al cliente: mientras tanto no se puede terminar. */
+export async function hasPendingAdjustment(requestId: number): Promise<boolean> {
+  return Boolean(
+    await get<{ id: number }>(
+      "SELECT id FROM service_quotes WHERE service_request_id = ? AND status = 'pending' AND kind = 'adjustment' LIMIT 1",
+      [requestId]
+    )
+  );
 }
 
 export async function respondToQuote(input: {
@@ -123,8 +162,8 @@ export async function respondToQuote(input: {
   customerId: number | null | undefined;
   accept: boolean;
 }): Promise<ServiceQuote> {
-  const row = await get<{ customerId: number; status: string; requestId: number }>(
-    `SELECT sr.customer_id AS customerId, q.status, q.service_request_id AS requestId
+  const row = await get<{ customerId: number; status: string; requestId: number; kind: QuoteKind }>(
+    `SELECT sr.customer_id AS customerId, q.status, q.service_request_id AS requestId, q.kind
      FROM service_quotes q JOIN service_requests sr ON sr.id = q.service_request_id
      WHERE q.id = ?`,
     [input.quoteId]
@@ -137,6 +176,12 @@ export async function respondToQuote(input: {
   }
   if (row.status !== "pending") {
     throw new QuoteError(409, "Esta cotización ya no está pendiente.");
+  }
+  // Un ajuste aceptado pasa a ser todo lo acordado.
+  if (input.accept && row.kind === "adjustment") {
+    await run("UPDATE service_quotes SET status = 'replaced' WHERE service_request_id = ? AND status = 'accepted'", [
+      input.requestId
+    ]);
   }
   await run("UPDATE service_quotes SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?", [
     input.accept ? "accepted" : "rejected",

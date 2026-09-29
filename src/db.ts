@@ -618,6 +618,13 @@ export async function initDb(): Promise<void> {
   // nuevas, parts_amount es lo estimado de las refacciones a comprar, que se
   // cobran a precio de ticket (src/partsReceipts.ts).
   await ensureColumn("service_quotes", "parts_on_hand_amount", "ALTER TABLE service_quotes ADD COLUMN parts_on_hand_amount REAL");
+  // 'adjustment': baja lo acordado (p. ej. la pieza no estaba y no se hizo
+  // toda la reparación). Al aceptarla reemplaza a las cotizaciones aceptadas.
+  await ensureColumn(
+    "service_quotes",
+    "kind",
+    "ALTER TABLE service_quotes ADD COLUMN kind TEXT NOT NULL DEFAULT 'quote' CHECK(kind IN ('quote', 'adjustment'))"
+  );
 
   // Tickets de las refacciones que compra el mecánico (src/partsReceipts.ts):
   // foto tomada con la cámara de la app y lo que costó. status: 'accepted'

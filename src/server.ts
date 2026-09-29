@@ -64,14 +64,17 @@ import {
 import {
   QuoteError,
   STATUSES_REQUIRING_QUOTE,
+  acceptedQuotesTotal,
   createQuote,
   getQuotesForRequest,
   hasAcceptedQuote,
+  hasPendingAdjustment,
   respondToQuote
 } from "./quotes";
 import {
   ReceiptError,
   createReceipt,
+  customerForPartsTrip,
   declareNoPurchase,
   getReceiptsForRequest,
   hasPendingReceipt,
@@ -4420,7 +4423,9 @@ const quoteSchema = z.object({
   partsAmount: z.number().min(0).max(1_000_000).optional().default(0),
   // Refacciones que ya trae el mecánico (precio fijo).
   partsOnHandAmount: z.number().min(0).max(1_000_000).optional().default(0),
-  description: z.string().trim().min(5).max(1_000)
+  description: z.string().trim().min(5).max(1_000),
+  // 'adjustment': baja lo acordado (src/quotes.ts).
+  kind: z.enum(["quote", "adjustment"]).optional().default("quote")
 });
 
 function sendQuoteError(res: Response, error: unknown): boolean {
@@ -4447,14 +4452,17 @@ app.post("/api/service-requests/:id/quotes", requireAuth, requireRole("mechanic"
     return;
   }
   try {
+    const agreedBefore = await acceptedQuotesTotal(requestId);
     const quote = await createQuote({ requestId, mechanicId: req.auth!.user.mechanicId!, ...payload });
     const request = await get<{ customerId: number }>("SELECT customer_id AS customerId FROM service_requests WHERE id = ?", [requestId]);
     const customerUserId = request ? await getUserIdByCustomerId(request.customerId) : null;
     if (customerUserId) {
       await createNotification(
         customerUserId,
-        "Tienes una cotización",
-        `${req.auth!.user.fullName} te cotizó ${formatMxn(quote.total)}. Revísala para que pueda empezar.`,
+        quote.kind === "adjustment" ? `${req.auth!.user.fullName} ajustó lo acordado` : "Tienes una cotización",
+        quote.kind === "adjustment"
+          ? `Ahora son ${formatMxn(quote.total)} en lugar de ${formatMxn(agreedBefore ?? 0)}: solo lo que sí hizo. Revísalo en la app.`
+          : `${req.auth!.user.fullName} te cotizó ${formatMxn(quote.total)}. Revísala para que pueda empezar.`,
         { requestId }
       );
     }
@@ -4558,6 +4566,13 @@ app.patch(
         res.status(409).json({
           error: "Espera a que el cliente conteste el ticket de refacciones para terminar.",
           code: "PARTS_RECEIPT_PENDING"
+        });
+        return;
+      }
+      if (payload.status === "completed" && (await hasPendingAdjustment(requestId))) {
+        res.status(409).json({
+          error: "Espera a que el cliente apruebe el ajuste de lo acordado para terminar.",
+          code: "ADJUSTMENT_PENDING"
         });
         return;
       }
@@ -4925,6 +4940,29 @@ app.post(
         );
       }
       res.json(receipt);
+    } catch (error) {
+      if (!sendReceiptError(res, error)) throw error;
+    }
+  })
+);
+
+// No encontró la pieza en esa tienda y va a otra: se le avisa al cliente.
+app.post(
+  "/api/service-requests/:id/parts-trip/next-store",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    if (applyRateLimit("parts-next-store", req, res, 10)) {
+      return;
+    }
+    try {
+      const customerId = await customerForPartsTrip(requestId, req.auth?.user.mechanicId);
+      const name = req.auth?.user.fullName || "Tu mecánico";
+      await logPaymentUpdate(requestId, `${name} no encontró la refacción en esa tienda y fue a otra.`);
+      await notifyRequestCustomer(customerId, `${name} va a otra tienda`, "No encontró la refacción en la primera. Puedes seguirlo en el mapa.", requestId);
+      res.json({ ok: true });
     } catch (error) {
       if (!sendReceiptError(res, error)) throw error;
     }

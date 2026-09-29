@@ -1,5 +1,5 @@
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -572,8 +572,29 @@ function MechanicHome(props: HomeScreenProps) {
   // Sin ticket no regresa de refacciones, y no termina con uno esperando al
   // cliente (src/partsReceipts.ts; el servidor lo revisa igual).
   const receiptPending = (detail?.receipts ?? []).some((receipt) => receipt.status === 'pending');
+  const adjustmentPending = quotes.some((quote) => quote.status === 'pending' && quote.kind === 'adjustment');
   const blockedByReceipt = (status: string) =>
-    (detail?.status === 'awaiting_parts' && Boolean(detail.partsTripOpen)) || (status === 'completed' && receiptPending);
+    (detail?.status === 'awaiting_parts' && Boolean(detail.partsTripOpen)) ||
+    (status === 'completed' && (receiptPending || adjustmentPending));
+  // Si cotizó refacciones a comprar y no subió ningún ticket, pregunta si
+  // hizo todo antes de terminar: si no, cobra menos (ajuste) en vez de la
+  // mano de obra completa de algo que no hizo.
+  const [adjusting, setAdjusting] = useState(false);
+  function advance(requestId: number, status: string) {
+    const amounts = detail?.amountDue;
+    if (status === 'completed' && amounts && amounts.partsToBuyEstimate > 0 && amounts.partsBought === 0) {
+      Alert.alert(
+        '¿Hiciste la reparación completa?',
+        'Cotizaste refacciones a comprar y no subiste ningún ticket. Si no se hizo todo, cobra solo lo que sí hiciste.',
+        [
+          { text: 'No, cobrar menos', onPress: () => setAdjusting(true) },
+          { text: 'Sí, terminar', onPress: () => props.onAdvanceJob(requestId, status) },
+        ],
+      );
+      return;
+    }
+    props.onAdvanceJob(requestId, status);
+  }
   const address = detail ? detail.serviceAddress || `${detail.city}, ${detail.zone}` : '';
   // Una cuenta pendiente o suspendida no puede conectarse (el servidor lo
   // rechaza igual); desconectarse siempre se permite.
@@ -618,12 +639,14 @@ function MechanicHome(props: HomeScreenProps) {
                   status={detail.status}
                   quotes={quotes}
                   onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
+                  adjusting={adjusting}
+                  onAdjustingChange={setAdjusting}
                 />
               )}
               {nextStep && !needsQuote(nextStep.status) && !blockedByReceipt(nextStep.status) && (
                 <Pressable
                   style={({ pressed }) => [styles.nextStepButton, (pressed || busy) && styles.buttonPressed]}
-                  onPress={() => props.onAdvanceJob(detail.id, nextStep.status)}
+                  onPress={() => advance(detail.id, nextStep.status)}
                   disabled={busy}
                   accessibilityRole="button"
                   accessibilityState={{ busy, disabled: busy }}

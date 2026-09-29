@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { styles } from '../styles';
@@ -51,41 +51,75 @@ export function MechanicQuotePanel({
   status,
   quotes,
   onChanged,
+  adjusting = false,
+  onAdjustingChange,
 }: {
   api: ApiCall;
   requestId: number;
   status: string;
   quotes: ServiceQuote[];
   onChanged: () => void;
+  /** Abre el ajuste desde fuera (al terminar sin haber hecho todo). */
+  adjusting?: boolean;
+  onAdjustingChange?: (adjusting: boolean) => void;
 }) {
   const { busy, setBusy, setMessage } = useAppContext();
   const latest = quotes[0];
   const accepted = quotes.filter((quote) => quote.status === 'accepted');
+  const agreedTotal = accepted.reduce((sum, quote) => sum + quote.total, 0);
   const repairing = REPAIR_STATUSES.has(status);
   const [editing, setEditing] = useState(false);
+  // 'adjustment': bajar lo acordado porque no se hizo todo (src/quotes.ts).
+  const [mode, setMode] = useState<'quote' | 'adjustment'>('quote');
   const [form, setForm] = useState({ labor: '', onHand: '', toBuy: '', description: '' });
+  const isAdjustment = mode === 'adjustment';
+
+  useEffect(() => {
+    if (adjusting) {
+      setMode('adjustment');
+      setEditing(true);
+    }
+  }, [adjusting]);
+
+  function openForm(nextMode: 'quote' | 'adjustment') {
+    setMode(nextMode);
+    setEditing(true);
+  }
+
+  function closeForm() {
+    setEditing(false);
+    setMode('quote');
+    onAdjustingChange?.(false);
+  }
 
   async function send() {
     const laborAmount = Number(form.labor) || 0;
     const partsOnHandAmount = Number(form.onHand) || 0;
-    const partsAmount = Number(form.toBuy) || 0;
-    if (laborAmount + partsOnHandAmount + partsAmount <= 0) {
+    const partsAmount = isAdjustment ? 0 : Number(form.toBuy) || 0;
+    const total = laborAmount + partsOnHandAmount + partsAmount;
+    if (total <= 0 && !isAdjustment) {
       setMessage('Escribe cuánto cobrarás de mano de obra o de refacciones');
       return;
     }
+    if (isAdjustment && total >= agreedTotal) {
+      setMessage(`Un ajuste es para cobrar menos de lo acordado (${pesos(agreedTotal)}).`);
+      return;
+    }
     if (form.description.trim().length < 5) {
-      setMessage('Explica en pocas palabras qué vas a hacer');
+      setMessage(isAdjustment ? 'Explica en pocas palabras qué sí hiciste' : 'Explica en pocas palabras qué vas a hacer');
       return;
     }
     setBusy(true);
     try {
       await api(`/api/service-requests/${requestId}/quotes`, {
         method: 'POST',
-        body: { laborAmount, partsAmount, partsOnHandAmount, description: form.description.trim() },
+        body: { laborAmount, partsAmount, partsOnHandAmount, description: form.description.trim(), kind: mode },
       });
-      setEditing(false);
+      closeForm();
       setForm({ labor: '', onHand: '', toBuy: '', description: '' });
-      setMessage('Cotización enviada. Te avisamos cuando el cliente conteste.');
+      setMessage(
+        isAdjustment ? 'Ajuste enviado. Espera a que el cliente lo apruebe.' : 'Cotización enviada. Te avisamos cuando el cliente conteste.',
+      );
       onChanged();
     } catch (error) {
       setMessage(formatError(error));
@@ -96,7 +130,13 @@ export function MechanicQuotePanel({
 
   const quoteForm = (
     <View style={styles.stack}>
-      <Field label="Mano de obra (pesos)">
+      {isAdjustment && (
+        <Text style={styles.itemText}>
+          Cobra solo lo que sí hiciste. Lo acordado era {pesos(agreedTotal)} y el cliente aprueba el ajuste. Las refacciones con
+          ticket ya aceptado se cobran igual.
+        </Text>
+      )}
+      <Field label={isAdjustment ? 'Mano de obra que sí hiciste (pesos)' : 'Mano de obra (pesos)'}>
         <Input
           value={form.labor}
           keyboardType="numeric"
@@ -104,7 +144,7 @@ export function MechanicQuotePanel({
           onChangeText={(value) => setForm({ ...form, labor: value.replace(/[^0-9.]/g, '') })}
         />
       </Field>
-      <Field label="Refacciones que ya traes (pesos, opcional)">
+      <Field label={isAdjustment ? 'Refacciones tuyas que sí usaste (pesos, opcional)' : 'Refacciones que ya traes (pesos, opcional)'}>
         <Input
           value={form.onHand}
           keyboardType="numeric"
@@ -112,28 +152,34 @@ export function MechanicQuotePanel({
           onChangeText={(value) => setForm({ ...form, onHand: value.replace(/[^0-9.]/g, '') })}
         />
       </Field>
-      <Field label="Refacciones que vas a comprar, estimado (pesos, opcional)">
-        <Input
-          value={form.toBuy}
-          keyboardType="numeric"
-          placeholder="Ej. 1200"
-          onChangeText={(value) => setForm({ ...form, toBuy: value.replace(/[^0-9.]/g, '') })}
-        />
-      </Field>
-      <Text style={styles.smallText}>
-        Las que compres se cobran a precio de ticket: al pagarlas le tomas foto en la app. Si cuestan más de lo estimado, el cliente
-        aprueba la diferencia.
-      </Text>
-      <Field label="¿Qué vas a hacer?">
+      {!isAdjustment && (
+        <>
+          <Field label="Refacciones que vas a comprar, estimado (pesos, opcional)">
+            <Input
+              value={form.toBuy}
+              keyboardType="numeric"
+              placeholder="Ej. 1200"
+              onChangeText={(value) => setForm({ ...form, toBuy: value.replace(/[^0-9.]/g, '') })}
+            />
+          </Field>
+          <Text style={styles.smallText}>
+            Las que compres se cobran a precio de ticket: al pagarlas le tomas foto en la app. Si cuestan más de lo estimado, el
+            cliente aprueba la diferencia.
+          </Text>
+        </>
+      )}
+      <Field label={isAdjustment ? '¿Qué sí hiciste?' : '¿Qué vas a hacer?'}>
         <Input
           value={form.description}
           multiline
-          placeholder="Ej. Cambiar la batería y revisar el alternador"
+          placeholder={
+            isAdjustment ? 'Ej. Hice el diagnóstico; la batería no estaba disponible' : 'Ej. Cambiar la batería y revisar el alternador'
+          }
           onChangeText={(value) => setForm({ ...form, description: value })}
         />
       </Field>
-      <PrimaryButton title="Mandar cotización" busy={busy} onPress={send} />
-      {editing && <SecondaryButton title="Cancelar" onPress={() => setEditing(false)} />}
+      <PrimaryButton title={isAdjustment ? 'Mandar ajuste' : 'Mandar cotización'} busy={busy} onPress={send} />
+      {editing && <SecondaryButton title="Cancelar" onPress={closeForm} />}
     </View>
   );
 
@@ -141,13 +187,23 @@ export function MechanicQuotePanel({
   if (repairing) {
     return (
       <View style={styles.stack}>
-        <InfoRow icon="checkmark-circle-outline" text={`Acordado con el cliente: ${pesos(accepted.reduce((sum, quote) => sum + quote.total, 0))}`} />
+        <InfoRow icon="checkmark-circle-outline" text={`Acordado con el cliente: ${pesos(agreedTotal)}`} />
         {latest?.status === 'pending' ? (
-          <InfoRow icon="time-outline" text={`Esperando que el cliente acepte lo adicional: ${pesos(latest.total)}`} />
+          <InfoRow
+            icon="time-outline"
+            text={
+              latest.kind === 'adjustment'
+                ? `Esperando que el cliente apruebe el ajuste: ${pesos(latest.total)}`
+                : `Esperando que el cliente acepte lo adicional: ${pesos(latest.total)}`
+            }
+          />
         ) : editing ? (
           quoteForm
         ) : (
-          <SecondaryButton title="Cotizar algo adicional" onPress={() => setEditing(true)} />
+          <>
+            <SecondaryButton title="Cotizar algo adicional" onPress={() => openForm('quote')} />
+            <SecondaryButton title="Cobrar menos: no se hizo todo" onPress={() => openForm('adjustment')} />
+          </>
         )}
       </View>
     );
@@ -207,11 +263,23 @@ export function CustomerQuoteCard({
     return null;
   }
 
+  // Un ajuste baja lo acordado porque no se hizo todo (src/quotes.ts).
+  const adjustment = pending?.kind === 'adjustment';
+  const agreedTotal = accepted.reduce((sum, quote) => sum + quote.total, 0);
+
   async function respond(quote: ServiceQuote, accept: boolean) {
     setBusy(true);
     try {
       await api(`/api/service-requests/${requestId}/quotes/${quote.id}/respond`, { method: 'POST', body: { accept } });
-      setMessage(accept ? 'Aceptaste la cotización. Tu mecánico ya puede empezar.' : 'Le avisamos a tu mecánico que no la aceptaste.');
+      setMessage(
+        quote.kind === 'adjustment'
+          ? accept
+            ? 'Aprobaste el ajuste.'
+            : 'Le avisamos a tu mecánico que no aprobaste el ajuste.'
+          : accept
+            ? 'Aceptaste la cotización. Tu mecánico ya puede empezar.'
+            : 'Le avisamos a tu mecánico que no la aceptaste.',
+      );
       onChanged();
     } catch (error) {
       setMessage(formatError(error));
@@ -222,26 +290,38 @@ export function CustomerQuoteCard({
 
   return (
     <Card
-      title={pending ? `${name} te mandó una cotización` : 'Cotización'}
-      subtitle={pending ? 'Revísala: no empezará a reparar hasta que la aceptes.' : undefined}
+      title={pending ? (adjustment ? `${name} ajustó lo acordado` : `${name} te mandó una cotización`) : 'Cotización'}
+      subtitle={
+        pending
+          ? adjustment
+            ? `Te cobra menos porque no se hizo todo. Si no lo apruebas, sigue lo acordado antes (${pesos(agreedTotal)}).`
+            : 'Revísala: no empezará a reparar hasta que la aceptes.'
+          : undefined
+      }
     >
       <View style={styles.stack}>
         {pending && (
           <>
             <QuoteBreakdown quote={pending} />
             <PrimaryButton
-              title={hasPartsEstimate(pending) ? `Aceptar (estimado ${pesos(pending.total)})` : `Aceptar ${pesos(pending.total)}`}
+              title={
+                adjustment
+                  ? `Aprobar ajuste (${pesos(pending.total)})`
+                  : hasPartsEstimate(pending)
+                    ? `Aceptar (estimado ${pesos(pending.total)})`
+                    : `Aceptar ${pesos(pending.total)}`
+              }
               busy={busy}
               onPress={() => void respond(pending, true)}
             />
-            <SecondaryButton title="No aceptar" busy={busy} onPress={() => void respond(pending, false)} />
+            <SecondaryButton title={adjustment ? 'No aprobar' : 'No aceptar'} busy={busy} onPress={() => void respond(pending, false)} />
             <Text style={styles.smallText}>El pago es directo con tu mecánico; Mecanifique no cobra este monto.</Text>
           </>
         )}
         {accepted.length > 0 && (
           <InfoRow
             icon="checkmark-circle-outline"
-            text={`Aceptaste ${pesos(accepted.reduce((sum, quote) => sum + quote.total, 0))}${accepted.length > 1 ? ' en total' : ''}.`}
+            text={`Aceptaste ${pesos(agreedTotal)}${accepted.length > 1 ? ' en total' : ''}.`}
           />
         )}
         {!pending && lastRejected && (
