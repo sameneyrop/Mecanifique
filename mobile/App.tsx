@@ -293,6 +293,13 @@ type ServiceRequest = {
   // Visita de regreso: de qué servicio viene, o la programada desde este.
   parentRequestId?: number | null;
   returnVisit?: { id: number; preferredTime: string; status: string } | null;
+  // Cancelaciones (src/cancellations.ts).
+  enRouteAt?: string | null;
+  arrivedAt?: string | null;
+  cancelledBy?: 'customer' | 'mechanic' | 'admin' | null;
+  cancelReason?: 'customer_cancelled' | 'customer_absent' | 'admin_cancelled' | null;
+  cancellationFee?: number | null;
+  absencePhotoUrl?: string | null;
 };
 
 type RequestSummary = {
@@ -322,6 +329,8 @@ type RequestSummary = {
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
   parentRequestId?: number | null;
+  cancellationFee?: number | null;
+  cancelReason?: string | null;
 };
 
 type IdentityVerificationStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
@@ -2720,26 +2729,66 @@ export default function App() {
     }
   }
 
-  function handleCancelRequest(requestId: number) {
-    Alert.alert('¿Cancelar la solicitud?', 'El mecánico dejará de atenderla y no se puede deshacer.', [
-      { text: 'No, mantenerla', style: 'cancel' },
-      { text: 'Sí, cancelar', style: 'destructive', onPress: () => void cancelRequest(requestId) },
-    ]);
+  // El cliente ve cuánto cuesta cancelar en ese momento y por qué antes de
+  // confirmar (src/cancellations.ts). Un admin cancela sin cargo.
+  async function handleCancelRequest(requestId: number) {
+    if (user?.role !== 'customer') {
+      Alert.alert('¿Cancelar la solicitud?', 'El mecánico dejará de atenderla y no se puede deshacer.', [
+        { text: 'No, mantenerla', style: 'cancel' },
+        { text: 'Sí, cancelar', style: 'destructive', onPress: () => void cancelRequest(requestId) },
+      ]);
+      return;
+    }
+    let quote: { allowed: boolean; fee: number; message: string };
+    setBusy(true);
+    try {
+      quote = await apiRequest(`/api/service-requests/${requestId}/cancellation-quote`, { token });
+    } catch (error) {
+      setMessage(formatError(error));
+      return;
+    } finally {
+      setBusy(false);
+    }
+    if (!quote.allowed) {
+      Alert.alert('No se puede cancelar ahora', quote.message);
+      return;
+    }
+    const fee = quote.fee;
+    Alert.alert(
+      fee > 0 ? `Cancelar cuesta ${formatPesos(fee)}` : '¿Cancelar la solicitud?',
+      fee > 0 ? `${quote.message} Se lo pagas directo y lo confirman en la app.` : `${quote.message} No se puede deshacer.`,
+      [
+        { text: 'No, mantenerla', style: 'cancel' },
+        {
+          text: fee > 0 ? `Cancelar y pagar ${formatPesos(fee)}` : 'Sí, cancelar',
+          style: 'destructive',
+          onPress: () => void cancelRequest(requestId, fee),
+        },
+      ],
+    );
   }
 
-  async function cancelRequest(requestId: number) {
+  async function cancelRequest(requestId: number, acceptedFee?: number) {
     setBusy(true);
     try {
       await apiRequest(`/api/service-requests/${requestId}/cancel`, {
         method: 'POST',
         token,
+        body: acceptedFee !== undefined ? { acceptedFee } : undefined,
       });
       await loadMyRequests();
       if (selectedRequest?.id === requestId) {
         setSelectedRequest(null);
       }
-      setMessage('Solicitud cancelada');
+      setMessage(acceptedFee ? `Solicitud cancelada. Págale ${formatPesos(acceptedFee)} a tu mecánico.` : 'Solicitud cancelada');
     } catch (error) {
+      // El cargo cambió mientras decidía (p. ej. pasaron los 5 minutos): se le
+      // vuelve a preguntar con el monto nuevo.
+      if (error instanceof ApiError && error.status === 409 && acceptedFee !== undefined) {
+        setBusy(false);
+        void handleCancelRequest(requestId);
+        return;
+      }
       setMessage(formatError(error));
     } finally {
       setBusy(false);

@@ -67,6 +67,8 @@ type RequestSummary = {
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
   parentRequestId?: number | null;
+  cancellationFee?: number | null;
+  cancelReason?: string | null;
 };
 
 /** Lo que el cliente le paga al mecánico (servidor: src/servicePayment.ts). */
@@ -77,6 +79,8 @@ export type AmountDue = {
   partsToBuyEstimate: number;
   partsBought: number;
   repairTotal: number;
+  // Cargo por cancelación (src/cancellations.ts); si hay, es todo lo que se paga.
+  cancellationFee?: number;
   total: number;
 };
 
@@ -159,6 +163,13 @@ type ServiceRequest = {
   // Visita de regreso: de qué servicio viene, o la programada desde este.
   parentRequestId?: number | null;
   returnVisit?: { id: number; preferredTime: string; status: string } | null;
+  // Cancelaciones (src/cancellations.ts).
+  enRouteAt?: string | null;
+  arrivedAt?: string | null;
+  cancelledBy?: 'customer' | 'mechanic' | 'admin' | null;
+  cancelReason?: 'customer_cancelled' | 'customer_absent' | 'admin_cancelled' | null;
+  cancellationFee?: number | null;
+  absencePhotoUrl?: string | null;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

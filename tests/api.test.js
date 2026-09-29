@@ -6,7 +6,8 @@ const {
   applyMechanicConnection,
   activateMechanicIfIdentityApproved,
   lastBookableSlotDate,
-  sweepStaleMechanics
+  sweepStaleMechanics,
+  sweepArrivalReminders
 } = require("../src/server.ts");
 const { ensureLocalUser } = require("../src/supabaseAuth.ts");
 const { all, get, run } = require("../src/db.ts");
@@ -53,6 +54,13 @@ const {
   startPartsTrip
 } = require("../src/partsReceipts.ts");
 const { ReturnVisitError, createReturnVisit, getReturnVisit } = require("../src/returnVisits.ts");
+const {
+  CancellationError,
+  cancellationQuote,
+  markCustomerAbsent,
+  mechanicWithdraws,
+  recentWithdrawals
+} = require("../src/cancellations.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -91,6 +99,7 @@ async function cleanupCreatedRows() {
     await run("DELETE FROM service_quotes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM disputes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM parts_receipts WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM mechanic_withdrawals WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
@@ -998,6 +1007,96 @@ test("ticket: la pieza pedida queda marcada y se cobra como cualquier ticket", a
   assert.equal(ordered.receipt.ordered, true);
   assert.equal(ordered.receipt.status, "accepted");
   assert.equal((await amountDueForRequest(requestId)).partsBought, 1800);
+});
+
+test("cancelar: gratis antes de salir y en los primeros 5 min; mitad en camino; visita completa si ya llegó", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await run("UPDATE mechanics SET labor_rate = 400 WHERE id = ?", [mechanicId]);
+  const { requestId } = await createRequestInStatus(mechanicId, "assigned");
+  const at = (status, column, minutesAgo) =>
+    run(`UPDATE service_requests SET status = ?, ${column} = datetime('now', ?) WHERE id = ?`, [status, `-${minutesAgo} minutes`, requestId]);
+  const quote = () => cancellationQuote(requestId);
+
+  await at("assigned", "accepted_at", 10);
+  assert.deepEqual([(await quote()).fee, (await quote()).reason], [0, "free_not_departed"]);
+  await at("assigned", "accepted_at", 61);
+  assert.equal((await quote()).reason, "free_mechanic_late", "aceptó hace más de una hora y no ha salido");
+
+  await at("en_route", "en_route_at", 3);
+  assert.deepEqual([(await quote()).fee, (await quote()).reason], [0, "free_grace"]);
+  await at("en_route", "en_route_at", 10);
+  assert.deepEqual([(await quote()).fee, (await quote()).reason], [200, "half_visit"]);
+  await at("en_route", "en_route_at", 70);
+  assert.equal((await quote()).reason, "free_mechanic_late", "salió hace más de una hora y no llega");
+
+  await at("on_site", "arrived_at", 1);
+  assert.deepEqual([(await quote()).fee, (await quote()).reason], [400, "full_visit"]);
+
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+  const blocked = await quote();
+  assert.equal(blocked.allowed, false, "ya reparando no se cancela desde la app");
+  assert.equal(blocked.reason, "work_started");
+});
+
+test("cliente ausente: a los 15 min, cerca de la dirección y con foto; se cobra la visita con el cobro normal", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await run("UPDATE mechanics SET labor_rate = 400 WHERE id = ?", [mechanicId]);
+  const { requestId, customerId } = await createRequestInStatus(mechanicId, "on_site");
+  await run("UPDATE service_requests SET latitude = 21.8818, longitude = -102.2916, arrived_at = datetime('now', '-5 minutes') WHERE id = ?", [
+    requestId
+  ]);
+  const mark = (coords) => markCustomerAbsent({ requestId, mechanicId, ...coords, savePhoto: fakePhoto });
+
+  await assert.rejects(mark({ latitude: 21.8818, longitude: -102.2916 }), (error) => error instanceof CancellationError && error.status === 409);
+  await run("UPDATE service_requests SET arrived_at = datetime('now', '-16 minutes') WHERE id = ?", [requestId]);
+  await assert.rejects(mark({ latitude: 21.95, longitude: -102.2916 }), (error) => /No estás en la dirección/.test(error.message));
+  await assert.rejects(mark({}), (error) => /Activa tu ubicación/.test(error.message));
+
+  const result = await mark({ latitude: 21.8819, longitude: -102.2915 });
+  assert.equal(result.fee, 400);
+  const row = await get("SELECT status, cancel_reason, cancellation_fee, absence_photo_url FROM service_requests WHERE id = ?", [requestId]);
+  assert.deepEqual([row.status, row.cancel_reason, row.cancellation_fee, row.absence_photo_url], ["cancelled", "customer_absent", 400, "https://example.test/ticket.jpg"]);
+  assert.equal((await amountDueForRequest(requestId)).total, 400);
+  // Se paga con la misma doble confirmación que un servicio terminado.
+  await customerConfirmsPayment(requestId, customerId, "cash");
+  await mechanicConfirmsPayment(requestId, mechanicId);
+});
+
+test("cliente ausente: el aviso de los 10 min sale una sola vez", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId } = await createRequestInStatus(mechanicId, "on_site");
+  await run("UPDATE service_requests SET arrived_at = datetime('now', '-11 minutes') WHERE id = ?", [requestId]);
+  await sweepArrivalReminders();
+  const first = await get("SELECT absence_reminder_at FROM service_requests WHERE id = ?", [requestId]);
+  assert.ok(first.absence_reminder_at);
+  await sweepArrivalReminders();
+  const second = await get("SELECT absence_reminder_at FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(second.absence_reminder_at, first.absence_reminder_at);
+});
+
+test("ya no puedo ir: antes de llegar la solicitud vuelve a buscar mecánico y queda en su historial", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId } = await createRequestInStatus(mechanicId, "en_route");
+  await mechanicWithdraws({ requestId, mechanicId, reason: "Se me ponchó una llanta" });
+  const row = await get("SELECT status, mechanic_id, visit_fee FROM service_requests WHERE id = ?", [requestId]);
+  assert.deepEqual([row.status, row.mechanic_id], ["pending", null]);
+  assert.equal(await recentWithdrawals(mechanicId), 1);
+  await run("DELETE FROM mechanic_withdrawals WHERE service_request_id = ?", [requestId]);
+
+  // Ya llegó: no se suelta así; y una visita de regreso tampoco.
+  const arrived = await createRequestInStatus(mechanicId, "on_site");
+  await assert.rejects(mechanicWithdraws({ requestId: arrived.requestId, mechanicId }), (error) => error.status === 409);
+  await run("UPDATE service_requests SET status = 'assigned', parent_request_id = ? WHERE id = ?", [requestId, arrived.requestId]);
+  await assert.rejects(mechanicWithdraws({ requestId: arrived.requestId, mechanicId }), (error) => /visita de regreso/.test(error.message));
+});
+
+test("cancelaciones: las rutas piden sesión", async () => {
+  const { response: quoteResponse } = await request("/api/service-requests/1/cancellation-quote");
+  assert.equal(quoteResponse.status, 401);
+  for (const path of ["customer-absent", "withdraw"]) {
+    const { response } = await request(`/api/service-requests/1/${path}`, { method: "POST", body: "{}" });
+    assert.equal(response.status, 401, path);
+  }
 });
 
 test("ticket: las rutas piden sesión", async () => {

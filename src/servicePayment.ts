@@ -29,6 +29,8 @@ export type AmountDue = {
   /** Refacciones compradas, a precio de ticket (src/partsReceipts.ts). */
   partsBought: number;
   repairTotal: number;
+  /** Cargo por cancelación (src/cancellations.ts); si hay, es todo lo que se paga. */
+  cancellationFee: number;
   total: number;
 };
 export type PaymentMethod = "cash" | "transfer";
@@ -54,6 +56,14 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
  * (parts_on_hand_amount NULL), parts_amount se cobra fijo, como antes.
  */
 export async function amountDueForRequest(requestId: number): Promise<AmountDue> {
+  const cancelled = await get<{ fee: number | null }>(
+    "SELECT cancellation_fee AS fee FROM service_requests WHERE id = ? AND status = 'cancelled'",
+    [requestId]
+  );
+  if (cancelled) {
+    const fee = cancelled.fee ?? 0;
+    return { visitFee: 0, labor: 0, partsOnHand: 0, partsToBuyEstimate: 0, partsBought: 0, repairTotal: 0, cancellationFee: fee, total: fee };
+  }
   const row = await get<{ visitFee: number | null; labor: number | null; partsOnHand: number | null }>(
     `SELECT ${VISIT_FEE_SQL} AS visitFee,
             (SELECT SUM(q.labor_amount) FROM service_quotes q
@@ -77,6 +87,7 @@ export async function amountDueForRequest(requestId: number): Promise<AmountDue>
     partsToBuyEstimate: estimate,
     partsBought: chargedTotal,
     repairTotal,
+    cancellationFee: 0,
     total: visitFee + repairTotal
   };
 }
@@ -99,12 +110,16 @@ export async function freezeVisitFee(requestId: number): Promise<void> {
   );
 }
 
+// Se cobra al terminar, o al cancelar con cargo (cancelación tardía o cliente ausente).
+const PAYABLE_SQL = "(sr.status = 'completed' OR (sr.status = 'cancelled' AND COALESCE(sr.cancellation_fee, 0) > 0))";
+
 type PaymentRow = {
   customerId: number;
   mechanicId: number | null;
   mechanicName: string | null;
   customerName: string;
   status: string;
+  payable: number;
   paidAt: string | null;
   customerPaidAt: string | null;
   paymentMethod: PaymentMethod | null;
@@ -114,7 +129,7 @@ type PaymentRow = {
 async function getPaymentRow(requestId: number): Promise<PaymentRow> {
   const row = await get<PaymentRow>(
     `SELECT sr.customer_id AS customerId, sr.mechanic_id AS mechanicId, m.full_name AS mechanicName,
-            c.full_name AS customerName, sr.status, sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt,
+            c.full_name AS customerName, sr.status, ${PAYABLE_SQL} AS payable, sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt,
             sr.payment_method AS paymentMethod, sr.unpaid_reported_at AS unpaidReportedAt
      FROM service_requests sr
      JOIN customers c ON c.id = sr.customer_id
@@ -125,7 +140,7 @@ async function getPaymentRow(requestId: number): Promise<PaymentRow> {
   if (!row) {
     throw new ServicePaymentError(404, "Solicitud no encontrada");
   }
-  if (row.status !== "completed") {
+  if (!row.payable) {
     throw new ServicePaymentError(409, "El pago se confirma cuando el servicio ya terminó.");
   }
   return row;
@@ -280,7 +295,7 @@ export async function unpaidServiceForCustomer(
     `SELECT sr.id, m.full_name AS mechanicName
      FROM service_requests sr
      LEFT JOIN mechanics m ON m.id = sr.mechanic_id
-     WHERE sr.customer_id = ? AND sr.status = 'completed'
+     WHERE sr.customer_id = ? AND ${PAYABLE_SQL}
        AND sr.unpaid_reported_at IS NOT NULL AND sr.paid_at IS NULL AND sr.customer_paid_at IS NULL
      ORDER BY sr.id DESC
      LIMIT 1`,

@@ -73,6 +73,14 @@ import {
 } from "./quotes";
 import { ReturnVisitError, createReturnVisit, getReturnVisit } from "./returnVisits";
 import {
+  ABSENCE_REMINDER_MINUTES,
+  ABSENCE_WAIT_MINUTES,
+  CancellationError,
+  cancellationQuote,
+  markCustomerAbsent,
+  mechanicWithdraws
+} from "./cancellations";
+import {
   ReceiptError,
   createReceipt,
   customerForPartsTrip,
@@ -1300,12 +1308,45 @@ export async function sweepStaleMechanics(): Promise<number> {
   return stale.length;
 }
 
+/**
+ * A los 10 min de "Ya llegué" sin que empiece el diagnóstico, se le recuerda
+ * al cliente que lo reciba: a los 15 el mecánico puede marcar que no está y
+ * se cobra la visita (src/cancellations.ts). Una vez por servicio.
+ */
+export async function sweepArrivalReminders(): Promise<number> {
+  const waiting = await all<{ id: number; customerId: number; mechanicName: string | null }>(
+    `SELECT sr.id, sr.customer_id AS customerId, m.full_name AS mechanicName
+     FROM service_requests sr
+     LEFT JOIN mechanics m ON m.id = sr.mechanic_id
+     WHERE sr.status IN ('on_site', 'in_progress')
+       AND sr.absence_reminder_at IS NULL
+       AND sr.arrived_at IS NOT NULL
+       AND sr.arrived_at <= datetime('now', '-${ABSENCE_REMINDER_MINUTES} minutes')`
+  );
+  for (const row of waiting) {
+    const marked = await run(
+      "UPDATE service_requests SET absence_reminder_at = CURRENT_TIMESTAMP WHERE id = ? AND absence_reminder_at IS NULL",
+      [row.id]
+    );
+    if (marked.changes === 0) continue;
+    const name = row.mechanicName?.trim().split(/\s+/)[0] || "Tu mecánico";
+    await notifyRequestCustomer(
+      row.customerId,
+      `${name} te espera desde hace ${ABSENCE_REMINDER_MINUTES} minutos`,
+      `Si todavía no lo recibes, sal a recibirlo: a los ${ABSENCE_WAIT_MINUTES} minutos puede marcar que no estás y se cobra la visita.`,
+      row.id
+    );
+  }
+  return waiting.length;
+}
+
 function startPresenceSweep(): void {
   if (presenceSweepTimer) {
     return;
   }
   presenceSweepTimer = setInterval(() => {
     sweepStaleMechanics().catch((error) => console.error("Presence sweep failed:", error));
+    sweepArrivalReminders().catch((error) => console.error("Arrival reminder sweep failed:", error));
   }, PRESENCE_SWEEP_INTERVAL_MS);
   presenceSweepTimer.unref();
 }
@@ -3078,7 +3119,7 @@ app.post(
     const requestClaim = await run(
       `
       UPDATE service_requests
-      SET mechanic_id = ?, status = 'assigned', updated_at = CURRENT_TIMESTAMP
+      SET mechanic_id = ?, status = 'assigned', accepted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
         AND status = 'pending'
         AND mechanic_id IS NULL
@@ -3836,7 +3877,7 @@ app.get(
              m.full_name AS mechanicName, c.full_name AS customerName, c.phone AS customerPhone,
              sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt, sr.unpaid_reported_at AS unpaidReportedAt,
              EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
-             sr.parent_request_id AS parentRequestId,
+             sr.parent_request_id AS parentRequestId, sr.cancellation_fee AS cancellationFee, sr.cancel_reason AS cancelReason,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
@@ -3974,7 +4015,7 @@ app.post(
       const acceptResult = await run(
         `
         UPDATE service_requests
-        SET status = 'assigned', hold_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+        SET status = 'assigned', hold_expires_at = NULL, accepted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
           AND status = 'pending'
           AND hold_expires_at IS NOT NULL
@@ -4160,13 +4201,33 @@ app.post(
       return;
     }
 
+    // Cargo por cancelar (src/cancellations.ts). El cliente confirma el monto
+    // que vio; si cambió mientras decidía (p. ej. pasaron los 5 minutos), se
+    // le vuelve a preguntar. Un admin cancela sin cargo.
+    const byCustomer = req.auth?.user.role === "customer";
+    let fee = 0;
+    if (byCustomer) {
+      const { acceptedFee } = z.object({ acceptedFee: z.number().min(0).optional() }).parse(req.body ?? {});
+      const quote = await cancellationQuote(requestId);
+      if (!quote.allowed) {
+        res.status(409).json({ error: quote.message, code: "CANCEL_NOT_ALLOWED" });
+        return;
+      }
+      if (quote.fee > 0 && (acceptedFee === undefined || Math.abs(acceptedFee - quote.fee) > 0.5)) {
+        res.status(409).json({ error: quote.message, code: "CANCELLATION_FEE_CHANGED", fee: quote.fee });
+        return;
+      }
+      fee = quote.fee;
+    }
+
     await run(
       `
       UPDATE service_requests
-      SET status = 'cancelled', hold_expires_at = NULL, schedule_slot_id = NULL, updated_at = CURRENT_TIMESTAMP
+      SET status = 'cancelled', hold_expires_at = NULL, schedule_slot_id = NULL, cancelled_by = ?, cancel_reason = ?,
+          cancellation_fee = ?, final_price = CASE WHEN ? > 0 THEN ? ELSE final_price END, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
-      [requestId]
+      [byCustomer ? "customer" : "admin", byCustomer ? "customer_cancelled" : "admin_cancelled", fee, fee, fee, requestId]
     );
     await settleServiceFee(requestId, "cancelled");
 
@@ -4198,15 +4259,19 @@ app.post(
       await createNotification(
         cancelledCustomerUserId,
         "Solicitud cancelada",
-        `Tu solicitud #${requestId} fue cancelada`,
+        fee > 0
+          ? `Cancelaste la solicitud #${requestId}. Le pagas ${formatMxn(fee)} directo a tu mecánico y lo confirmas en la app.`
+          : `Tu solicitud #${requestId} fue cancelada.`,
         { requestId }
       );
     }
     if (cancelledMechanicUserId) {
       await createNotification(
         cancelledMechanicUserId,
-        "Solicitud cancelada",
-        `La solicitud #${requestId} fue cancelada`,
+        "El cliente canceló",
+        fee > 0
+          ? `Canceló la solicitud #${requestId} cuando ya ibas o habías llegado: te toca ${formatMxn(fee)}. Confírmalo en la app cuando te pague.`
+          : `La solicitud #${requestId} fue cancelada.`,
         { requestId }
       );
     }
@@ -4214,12 +4279,131 @@ app.post(
     await run(
       `
       INSERT INTO service_request_updates (service_request_id, source, message)
-      VALUES (?, 'system', 'Solicitud cancelada por cliente/admin')
+      VALUES (?, 'system', ?)
       `,
-      [requestId]
+      [
+        requestId,
+        byCustomer
+          ? fee > 0
+            ? `El cliente canceló; cargo por cancelación: ${formatMxn(fee)}.`
+            : "El cliente canceló sin cargo."
+          : "Solicitud cancelada por un admin."
+      ]
     );
 
     res.status(200).json({ ok: true, status: "cancelled" });
+  })
+);
+
+// --- Cancelaciones (src/cancellations.ts) ---
+
+function sendCancellationError(res: Response, error: unknown): boolean {
+  if (error instanceof CancellationError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  if (error instanceof PhotoUploadError) {
+    res.status(400).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+// Cuánto cuesta cancelar ahora y por qué (la app lo muestra antes de confirmar).
+app.get(
+  "/api/service-requests/:id/cancellation-quote",
+  requireAuth,
+  requireRole("customer"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const owner = await get<{ customerId: number }>("SELECT customer_id AS customerId FROM service_requests WHERE id = ?", [requestId]);
+    if (!owner) {
+      res.status(404).json({ error: "Solicitud no encontrada" });
+      return;
+    }
+    if (owner.customerId !== req.auth?.user.customerId) {
+      res.status(403).json({ error: "Solo puedes cancelar tus propias solicitudes" });
+      return;
+    }
+    res.json(await cancellationQuote(requestId));
+  })
+);
+
+// El mecánico llegó, esperó 15 min y el cliente no está: foto del lugar.
+app.post(
+  "/api/service-requests/:id/customer-absent",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const payload = z
+      .object({
+        imageBase64: z.string().min(100),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional()
+      })
+      .parse(req.body);
+    try {
+      const photo = decodePhoto(payload.imageBase64);
+      const { customerId, fee, mechanicName } = await markCustomerAbsent({
+        requestId,
+        mechanicId: req.auth?.user.mechanicId,
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        savePhoto: async () => publicPhotoUrl(req, await savePhoto(photo, req.auth?.user.id ?? null))
+      });
+      await settleServiceFee(requestId, "cancelled");
+      await logPaymentUpdate(requestId, `${mechanicName} esperó ${ABSENCE_WAIT_MINUTES} minutos y marcó que el cliente no estaba.`);
+      await notifyRequestCustomer(
+        customerId,
+        `${mechanicName} no te encontró`,
+        fee > 0
+          ? `Esperó ${ABSENCE_WAIT_MINUTES} minutos en el lugar. Se cobra la visita: ${formatMxn(fee)}. Si sí estabas, repórtalo en la app.`
+          : `Esperó ${ABSENCE_WAIT_MINUTES} minutos en el lugar y canceló. Si sí estabas, repórtalo en la app.`,
+        requestId
+      );
+      res.json({ ok: true, fee });
+    } catch (error) {
+      if (!sendCancellationError(res, error)) throw error;
+    }
+  })
+);
+
+// "Ya no puedo ir": antes de llegar. El cliente no paga nada.
+app.post(
+  "/api/service-requests/:id/withdraw",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const { reason } = z.object({ reason: z.string().trim().max(200).optional() }).parse(req.body ?? {});
+    const mechanicId = req.auth?.user.mechanicId;
+    try {
+      const result = await mechanicWithdraws({ requestId, mechanicId, reason });
+      await releaseScheduleSlot(result.scheduleSlotId);
+      await logPaymentUpdate(requestId, `${result.mechanicName} ya no pudo ir${reason ? `: ${reason}` : ""}.`);
+      const mode = await get<{ assignmentMode: string | null }>(
+        "SELECT assignment_mode AS assignmentMode FROM service_requests WHERE id = ?",
+        [requestId]
+      );
+      // Si era automática, se le avisa aquí y se busca a otro; si el cliente
+      // lo eligió, handleMechanicDeclined le avisa para que elija otro.
+      if (mode?.assignmentMode !== "direct") {
+        await notifyRequestCustomer(
+          result.customerId,
+          `${result.mechanicName} ya no puede ir`,
+          "Estamos buscando a otro mecánico cerca de ti. No se te cobra nada.",
+          requestId
+        );
+      }
+      await handleMechanicDeclined(requestId, mechanicId!, "rejected");
+      res.json({ ok: true });
+    } catch (error) {
+      if (!sendCancellationError(res, error)) throw error;
+    }
   })
 );
 
@@ -4250,7 +4434,9 @@ app.get(
              ${VISIT_FEE_SQL} AS visitFee, sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt,
              sr.payment_method AS paymentMethod, sr.unpaid_reported_at AS unpaidReportedAt,
              EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
-             sr.parent_request_id AS parentRequestId
+             sr.parent_request_id AS parentRequestId,
+             sr.en_route_at AS enRouteAt, sr.arrived_at AS arrivedAt, sr.cancelled_by AS cancelledBy,
+             sr.cancel_reason AS cancelReason, sr.cancellation_fee AS cancellationFee, sr.absence_photo_url AS absencePhotoUrl
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
       LEFT JOIN mechanics m ON m.id = sr.mechanic_id
@@ -4635,6 +4821,14 @@ app.patch(
     // Al salir hacia una cita o visita de regreso, deja de recibir solicitudes.
     if (payload.status === "en_route" && existing.mechanic_id) {
       await run("UPDATE mechanics SET is_available = 0 WHERE id = ?", [existing.mechanic_id]);
+    }
+    // Cuándo salió y cuándo llegó: el cargo por cancelar y la espera por un
+    // cliente ausente dependen de eso (src/cancellations.ts).
+    if (payload.status === "en_route") {
+      await run("UPDATE service_requests SET en_route_at = CURRENT_TIMESTAMP WHERE id = ?", [requestId]);
+    }
+    if (payload.status === "on_site" || payload.status === "in_progress") {
+      await run("UPDATE service_requests SET arrived_at = COALESCE(arrived_at, CURRENT_TIMESTAMP) WHERE id = ?", [requestId]);
     }
 
     if (payload.status === "completed" && existing.mechanic_id) {

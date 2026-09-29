@@ -30,6 +30,7 @@ import { MechanicTracker } from '../components/MechanicTracker';
 import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
 import { MechanicPartsPanel, ReceiptsCard } from '../components/PartsReceipts';
 import { ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/ReturnVisit';
+import { CustomerAbsentAction, WithdrawButton } from '../components/CancellationActions';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -655,6 +656,7 @@ function MechanicHome(props: HomeScreenProps) {
               <ContactRow label="Cliente" name={detail.customerName || 'Cliente'} phone={detail.customerPhone} />
               <Text style={styles.itemText}>{address}</Text>
               <SecondaryButton title="Cómo llegar" onPress={() => void openServiceNavigation(detail)} />
+              <WithdrawButton api={props.api} request={detail} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
             </View>
           </Card>
           <MechanicPartsPanel
@@ -705,6 +707,14 @@ function MechanicHome(props: HomeScreenProps) {
               {RETURN_VISIT_STATUSES.has(detail.status) && (
                 <ReturnVisitPanel api={props.api} request={detail} onChanged={reloadDetail} />
               )}
+              <CustomerAbsentAction
+                api={props.api}
+                request={detail}
+                onDone={() => {
+                  reloadDetail();
+                  void props.onRefreshRequests().catch(() => undefined);
+                }}
+              />
             </View>
           </Card>
           <EmergencyButton onPress={props.onEmergencyCall} />
@@ -724,6 +734,9 @@ function MechanicHome(props: HomeScreenProps) {
         role="mechanic"
         onOpen={openDetail}
         onStart={activeId === null ? (requestId) => props.onAdvanceJob(requestId, 'en_route') : undefined}
+        renderActions={(item) => (
+          <WithdrawButton api={props.api} request={item} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
+        )}
         busy={busy}
       />
 

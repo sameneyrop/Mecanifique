@@ -36,6 +36,8 @@ type GuideRequest = {
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
   serviceFee?: { amount: number; status: string } | null;
+  cancelReason?: string | null;
+  cancellationFee?: number | null;
   amountDue?: AmountDue;
   receipts?: PartsReceipt[];
   partsTripOpen?: boolean;
@@ -43,6 +45,7 @@ type GuideRequest = {
 
 type RequestListItem = {
   status: string;
+  cancellationFee?: number | null;
   mechanicId: number | null;
   updatedAt: string;
   paidAt?: string | null;
@@ -98,17 +101,23 @@ function daysSince(timestamp: string | null | undefined): number {
  * hasta resolverse: sin eso no puede pedir otro servicio).
  */
 export function customerNeedsClosure(request: RequestListItem): boolean {
-  if (request.status !== 'completed' || !request.mechanicId) return false;
+  if (!isPayable(request) || !request.mechanicId) return false;
   if (request.unpaidReportedAt && !request.paidAt) {
     return !request.customerPaidAt || daysSince(request.updatedAt) < 7;
   }
   const paid = Boolean(request.paidAt || request.customerPaidAt);
-  return daysSince(request.updatedAt) < 3 && (!paid || !request.reviewed);
+  // Una cancelación con cargo no se califica: solo falta pagarla.
+  return daysSince(request.updatedAt) < 3 && (!paid || (request.status === 'completed' && !request.reviewed));
+}
+
+/** Se cobra: servicio terminado, o cancelado con cargo (cancelación tardía o cliente ausente). */
+export function isPayable(request: { status: string; cancellationFee?: number | null }): boolean {
+  return request.status === 'completed' || (request.status === 'cancelled' && (request.cancellationFee ?? 0) > 0);
 }
 
 /** Servicio terminado que el mecánico todavía no confirma que le pagaron. */
 export function mechanicNeedsClosure(request: RequestListItem): boolean {
-  if (request.status !== 'completed' || request.paidAt) return false;
+  if (!isPayable(request) || request.paidAt) return false;
   return daysSince(request.updatedAt) < (request.unpaidReportedAt ? 7 : 3);
 }
 
@@ -149,7 +158,7 @@ function customerGuide(request: GuideRequest): Guide | null {
       return {
         icon: 'hand-left-outline',
         title: `${name} llegó`,
-        text: 'Recíbelo y cuéntale qué le pasa a tu auto. Primero lo revisa y después te dice cuánto costaría repararlo.',
+        text: 'Recíbelo (tienes 15 minutos) y cuéntale qué le pasa a tu auto. Primero lo revisa y después te dice cuánto costaría repararlo.',
       };
     case 'diagnosing':
       if (pendingQuote) {
@@ -230,7 +239,7 @@ function mechanicGuide(request: GuideRequest): Guide | null {
       return {
         icon: 'search-outline',
         title: 'Revisa el auto',
-        text: `Saluda a ${client} y toca «Empezar diagnóstico».${visitFee > 0 ? ` Por la visita cobras ${formatPesos(visitFee)}.` : ''}`,
+        text: `Saluda a ${client} y toca «Empezar diagnóstico».${visitFee > 0 ? ` Por la visita cobras ${formatPesos(visitFee)}.` : ''} Si no aparece en 15 minutos, podrás marcar que no está.`,
       };
     case 'diagnosing':
       if (accepted) {
@@ -310,6 +319,7 @@ function AmountBreakdown({ request }: { request: GuideRequest }) {
     ['Mano de obra', amounts.labor],
     ['Refacciones que traía', amounts.partsOnHand],
     ['Refacciones compradas (ticket)', amounts.partsBought],
+    ['Cargo por cancelación', amounts.cancellationFee ?? 0],
   ];
   return (
     <View style={styles.stack}>
@@ -344,6 +354,35 @@ function usePaymentAction(api: ApiCall, requestId: number, onChanged: () => void
 
 type TipInfo = { clabe: string | null; holderName: string | null };
 
+/** Por qué se cobra una cancelación (src/cancellations.ts). */
+function CancellationNote({ request, role }: { request: GuideRequest; role: Role }) {
+  const name = firstName(request.mechanicName, 'Tu mecánico');
+  const client = firstName(request.customerName, 'el cliente');
+  if (request.cancelReason === 'customer_cancelled') {
+    return (
+      <GuideBox
+        icon="close-circle-outline"
+        title="Cargo por cancelación"
+        text={role === 'customer' ? `Cancelaste cuando ${name} ya iba en camino o había llegado.` : `${client} canceló cuando ya ibas o habías llegado.`}
+      />
+    );
+  }
+  if (request.cancelReason === 'customer_absent') {
+    return (
+      <GuideBox
+        icon="home-outline"
+        title={role === 'customer' ? `${name} no te encontró` : 'Marcaste que el cliente no estaba'}
+        text={
+          role === 'customer'
+            ? 'Llegó y esperó 15 minutos. Se cobra la visita. Si sí estabas, dilo aquí abajo y lo revisamos.'
+            : `Esperaste 15 minutos y ${client} no apareció. Se cobra la visita.`
+        }
+      />
+    );
+  }
+  return null;
+}
+
 /** Cliente: cuánto pagarle al mecánico, cómo, y confirmar que ya le pagó. */
 export function CustomerPaymentCard({
   api,
@@ -372,7 +411,32 @@ export function CustomerPaymentCard({
       .catch(() => setBank(null));
   }, [request.id, request.paidAt, customerPaid]);
 
-  const rateButton = onRate && !request.reviewed ? <PrimaryButton title={`Calificar a ${name}`} onPress={onRate} /> : null;
+  const rateButton =
+    onRate && request.status === 'completed' && !request.reviewed ? <PrimaryButton title={`Calificar a ${name}`} onPress={onRate} /> : null;
+
+  // "Yo sí estaba": el cliente niega la ausencia; queda como disputa para revisar.
+  function disputeAbsence() {
+    Alert.alert('¿Sí estabas en el lugar?', 'Abriremos una revisión con la foto que tomó el mecánico y lo que nos cuentes.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Sí estaba',
+        onPress: () => {
+          api('/api/disputes', {
+            method: 'POST',
+            body: {
+              serviceRequestId: request.id,
+              category: 'incorrect_charge',
+              description: 'El mecánico marcó que no estaba, pero sí estaba en el lugar.',
+            },
+          })
+            .then(() => setMessage('Lo revisaremos y te contactaremos.'))
+            .catch((error) => setMessage(formatError(error)));
+        },
+      },
+    ]);
+  }
+  const absenceDispute =
+    request.cancelReason === 'customer_absent' ? <SecondaryButton title="Yo sí estaba" onPress={disputeAbsence} /> : null;
 
   if (total <= 0) {
     return rateButton ? <Card title="Tu servicio terminó">{rateButton}</Card> : null;
@@ -435,6 +499,7 @@ export function CustomerPaymentCard({
   return (
     <Card title={reportedUnpaid ? `${name} reporta que no le has pagado` : `Págale a ${name}`}>
       <View style={styles.stack}>
+        <CancellationNote request={request} role="customer" />
         {reportedUnpaid && (
           <GuideBox
             warning
@@ -463,6 +528,7 @@ export function CustomerPaymentCard({
         </Text>
         <PrimaryButton title="Ya le pagué en efectivo" busy={busy} onPress={() => confirmPaid('cash')} />
         <SecondaryButton title="Ya le pagué por transferencia" busy={busy} onPress={() => confirmPaid('transfer')} />
+        {absenceDispute}
       </View>
     </Card>
   );
@@ -533,6 +599,7 @@ export function MechanicCollectCard({ api, request, onChanged }: { api: ApiCall;
   return (
     <Card title={customerSaysPaid ? `${client} dice que ya te pagó` : `Cobra a ${client}`}>
       <View style={styles.stack}>
+        <CancellationNote request={request} role="mechanic" />
         <AmountBreakdown request={request} />
         {customerSaysPaid ? (
           <Text style={styles.itemText}>

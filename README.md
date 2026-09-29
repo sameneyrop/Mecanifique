@@ -473,6 +473,34 @@ las **refacciones que ya trae** (`parts_on_hand_amount`, precio fijo) de las
   visita** (`visit_fee = 0`); ahí cotiza lo que falta. Hoy se cobra solo lo que
   hizo (ajuste) y las refacciones con ticket.
 
+### Cancelaciones (`src/cancellations.ts`)
+
+El cargo por cancelar depende de cuándo aceptó, salió y llegó el mecánico
+(`accepted_at`, `en_route_at`, `arrived_at`) y se le paga directo a él con el
+mismo cobro de doble confirmación (`cancellation_fee`; `amountDueForRequest`
+devuelve solo ese cargo en una solicitud cancelada).
+
+- **Cliente cancela** (`GET /cancellation-quote` le dice cuánto cuesta y por
+  qué antes de confirmar; `POST /cancel` con `acceptedFee`, y si cambió
+  mientras decidía se le vuelve a preguntar): gratis si el mecánico no ha
+  salido, hasta 5 min después de salir o si va tarde (más de 60 min sin
+  llegar desde que salió, o sin salir desde que aceptó); **mitad de la
+  visita** si va en camino; **visita completa** si ya llegó, más las
+  refacciones que ya compró con ticket aceptado. Ya reparando no se cancela
+  desde la app (`CANCEL_NOT_ALLOWED`): el mecánico cobra solo lo que hizo
+  (ajuste) y termina. La regla se muestra antes de pedir.
+- **Cliente ausente** (`POST /customer-absent`): a los 10 min de "Ya llegué"
+  se le avisa al cliente (`sweepArrivalReminders`, una vez); a los 15 el
+  mecánico puede marcar "El cliente no está" con foto del lugar
+  (`absence_photo_url`) y su ubicación, que debe estar a menos de 300 m de la
+  dirección si la solicitud tiene coordenadas. Se cobra la visita; el cliente
+  puede decir "Yo sí estaba" y se abre una disputa.
+- **"Ya no puedo ir"** (`POST /withdraw`): el mecánico suelta el servicio
+  antes de llegar; el cliente no paga nada. Si era automática se busca a otro
+  mecánico; si el cliente lo eligió, se le avisa. Queda en su historial
+  (`mechanic_withdrawals`; suspensión si pasa seguido). En una visita de
+  regreso no se puede: tiene la pieza que el cliente ya pagó.
+
 ### Citas y visitas de regreso "próximas"
 
 Una cita de la agenda o una visita de regreso que todavía no empieza (sigue

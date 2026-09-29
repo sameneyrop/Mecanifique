@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -112,12 +112,15 @@ export function UpcomingVisitsCard({
   role,
   onOpen,
   onStart,
+  renderActions,
   busy,
 }: {
   items: UpcomingItem[];
   role: 'customer' | 'mechanic';
   onOpen: (requestId: number) => void;
   onStart?: (requestId: number) => void;
+  /** Acciones extra por visita (p. ej. "Ya no puedo ir" del mecánico). */
+  renderActions?: (item: UpcomingItem) => ReactNode;
   busy: boolean;
 }) {
   if (items.length === 0) {
@@ -150,6 +153,7 @@ export function UpcomingVisitsCard({
               {role === 'mechanic' && onStart && (
                 <PrimaryButton title="Salir hacia esta visita" busy={busy} onPress={() => onStart(item.id)} />
               )}
+              {renderActions?.(item)}
             </View>
           );
         })}

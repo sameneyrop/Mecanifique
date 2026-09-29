@@ -30,7 +30,7 @@ import {
 import { MechanicTracker } from '../components/MechanicTracker';
 import { TipCard } from '../components/TipCard';
 import { CustomerQuoteCard } from '../components/Quote';
-import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide } from '../components/ServiceGuide';
+import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide, isPayable } from '../components/ServiceGuide';
 import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
@@ -492,6 +492,11 @@ export function RequestsScreen({
                       <InfoRow icon="cash-outline" text="El trabajo del mecánico se lo pagas directamente a él." />
                     </View>
                   )}
+                  {/* La regla de cancelación, antes de pedir (src/cancellations.ts). */}
+                  <InfoRow
+                    icon="information-circle-outline"
+                    text="Cancelar es gratis hasta 5 minutos después de que el mecánico sale. Después pagas la mitad de la visita si va en camino, o la visita completa si ya llegó. Al llegar, tienes 15 minutos para recibirlo."
+                  />
                   <SecondaryButton title="Volver" onPress={() => setRequestCreateStep('vehicle')} />
                   <PrimaryButton
                     title={
@@ -555,14 +560,15 @@ export function RequestsScreen({
                 canRespond={user.role === 'customer'}
                 onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
               />
-              {selectedRequest.status === 'completed' && selectedRequest.mechanicId != null && user.role === 'customer' && (
+              {/* Se cobra al terminar, o al cancelar con cargo (cancelación tardía o cliente ausente). */}
+              {isPayable(selectedRequest) && selectedRequest.mechanicId != null && user.role === 'customer' && (
                 <CustomerPaymentCard
                   api={api}
                   request={selectedRequest}
                   onChanged={() => void onReloadRequest(selectedRequest.id).catch(() => undefined)}
                 />
               )}
-              {selectedRequest.status === 'completed' && user.role === 'mechanic' && (
+              {isPayable(selectedRequest) && user.role === 'mechanic' && (
                 <MechanicCollectCard
                   api={api}
                   request={selectedRequest}

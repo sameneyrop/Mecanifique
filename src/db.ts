@@ -264,6 +264,32 @@ export async function initDb(): Promise<void> {
   // Visita de regreso (src/returnVisits.ts): la solicitud original de la que
   // viene. Sin cobro de visita: el mecánico vuelve a terminar con la pieza.
   await ensureColumn("service_requests", "parent_request_id", "ALTER TABLE service_requests ADD COLUMN parent_request_id INTEGER");
+  // Cancelaciones (src/cancellations.ts): cuándo aceptó, salió y llegó el
+  // mecánico (el cargo por cancelar depende de eso), quién canceló y por qué,
+  // cuánto le toca al mecánico, y la foto si marcó que el cliente no estaba.
+  await ensureColumn("service_requests", "accepted_at", "ALTER TABLE service_requests ADD COLUMN accepted_at TEXT");
+  await ensureColumn("service_requests", "en_route_at", "ALTER TABLE service_requests ADD COLUMN en_route_at TEXT");
+  await ensureColumn("service_requests", "arrived_at", "ALTER TABLE service_requests ADD COLUMN arrived_at TEXT");
+  await ensureColumn("service_requests", "cancelled_by", "ALTER TABLE service_requests ADD COLUMN cancelled_by TEXT");
+  await ensureColumn("service_requests", "cancel_reason", "ALTER TABLE service_requests ADD COLUMN cancel_reason TEXT");
+  await ensureColumn("service_requests", "cancellation_fee", "ALTER TABLE service_requests ADD COLUMN cancellation_fee REAL");
+  await ensureColumn("service_requests", "absence_photo_url", "ALTER TABLE service_requests ADD COLUMN absence_photo_url TEXT");
+  await ensureColumn("service_requests", "absence_reminder_at", "ALTER TABLE service_requests ADD COLUMN absence_reminder_at TEXT");
+  // "Ya no puedo ir": queda en el historial del mecánico (se suspende a quien
+  // lo hace seguido).
+  await run(`
+    CREATE TABLE IF NOT EXISTS mechanic_withdrawals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      stage TEXT NOT NULL,
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_mechanic_withdrawals_mechanic ON mechanic_withdrawals(mechanic_id, created_at)");
 
   await run(`
     CREATE TABLE IF NOT EXISTS service_request_declines (
