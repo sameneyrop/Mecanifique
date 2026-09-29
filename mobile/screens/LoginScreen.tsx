@@ -132,6 +132,8 @@ export function LoginScreen({
   onForgotPassword,
   onResendConfirmation,
   onFacebookLogin,
+  biometricName,
+  onBiometricLogin,
 }: {
   authMode: AuthMode;
   setAuthMode: (mode: AuthMode) => void;
@@ -149,6 +151,9 @@ export function LoginScreen({
   onForgotPassword: (email: string) => void;
   onResendConfirmation: (email: string) => void;
   onFacebookLogin: (asMechanic: boolean) => void;
+  /** Hay una sesión sellada con la huella (null si no): el nombre para "Entrar como…". */
+  biometricName: string | null;
+  onBiometricLogin: () => void;
 }) {
   const { setMessage } = useAppContext();
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -225,6 +230,29 @@ export function LoginScreen({
         {authMode === 'login' && (
           <Card title="Inicia sesión" subtitle="Con tu correo y contraseña, o con Facebook.">
             <View style={styles.stack}>
+              {biometricName !== null && (
+                <>
+                  <Pressable
+                    style={({ pressed }) => [styles.primaryButton, (busy || pressed) && styles.primaryButtonBusy]}
+                    onPress={onBiometricLogin}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityState={{ busy, disabled: busy }}
+                  >
+                    {busy ? (
+                      <ActivityIndicator color={colors.white} />
+                    ) : (
+                      <View style={styles.socialButtonInner}>
+                        <Ionicons name="finger-print" size={24} color={colors.white} />
+                        <Text style={styles.primaryButtonText}>
+                          {biometricName ? `Entrar como ${biometricName}` : 'Entrar con huella'}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                  <AuthDivider />
+                </>
+              )}
               <Field label="Correo electrónico">
                 <Input
                   {...EMAIL_INPUT_PROPS}

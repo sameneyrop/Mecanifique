@@ -26,6 +26,7 @@ import { MechanicPromotions } from '../components/MechanicPromotions';
 import { TipInfoCard } from '../components/TipInfoCard';
 import { AdminCommissionsCard, CommissionsPanel } from '../components/Commissions';
 import { AdminWaitlistCard } from '../components/Waitlist';
+import { BiometricSetting } from '../components/BiometricSetting';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -689,6 +690,7 @@ export function ActionsScreen({
             {user.role === 'mechanic' && (
               <SecondaryButton title="Ver el recorrido de la app" compact onPress={onStartTour} />
             )}
+            {user.role === 'mechanic' && <BiometricSetting />}
             <SecondaryButton title="Términos y condiciones" compact onPress={() => void openTerms()} />
             <SecondaryButton title="Aviso de privacidad" compact onPress={() => void openPrivacyNotice()} />
             {user.role === 'mechanic' && <DeleteAccountSection busy={busy} onDeleteAccount={onDeleteAccount} />}

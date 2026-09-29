@@ -1,6 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Application from 'expo-application';
 import * as SecureStore from 'expo-secure-store';
 import * as Updates from 'expo-updates';
+import {
+  BiometricUnavailableError,
+  biometricAvailable,
+  forgetSealedSession,
+  getBiometricHint,
+  getBiometricPref,
+  openSealedSession,
+  sealSession,
+  setBiometricPref,
+  type BiometricHint,
+} from './biometric';
 import { colors } from './colors';
 import { styles } from './styles';
 import { useAppContext, type AmountDue, type PartsReceipt } from './context/AppContext';
@@ -400,11 +412,18 @@ const AUTH_USER_KEY = 'mecanifique.auth.user';
 const AUTH_REFRESH_KEY = 'mecanifique.auth.refresh';
 // Identificador de este teléfono, en el encabezado X-Device-Id: para la
 // verificación por SMS y para reconocer una cuenta nueva abierta para no pagar
-// un servicio (src/unpaidFingerprints.ts). Se crea la primera vez que se abre
-// la app y no se borra al cerrar sesión (sí al desinstalarla).
+// un servicio (src/unpaidFingerprints.ts). En Android es el Android ID, que
+// no cambia al desinstalar la app (solo con un restablecimiento de fábrica);
+// si no se puede leer, uno al azar que se borra al desinstalar.
 const DEVICE_ID_KEY = 'mecanifique.device.id';
 
 function newDeviceId(): string {
+  try {
+    const androidId = Platform.OS === 'android' ? Application.getAndroidId() : null;
+    if (androidId) return `android-${androidId}`;
+  } catch {
+    // Sin módulo nativo (p. ej. un APK anterior a 1.0.1): uno al azar.
+  }
   const random = () => Math.random().toString(36).slice(2, 10);
   return `${Date.now().toString(36)}-${random()}-${random()}`;
 }
@@ -628,6 +647,8 @@ export default function App() {
   const mainScrollYRef = useRef(0);
   // Recorrido de la app (components/AppTour.tsx): la primera vez con cada rol.
   const [tourVisible, setTourVisible] = useState(false);
+  // Sesión sellada con la huella al cerrar sesión (ver biometric.ts).
+  const [biometricHint, setBiometricHint] = useState<BiometricHint | null>(null);
   const tourCheckedRef = useRef<string | null>(null);
   // Notificaciones se abre desde cualquier pantalla (campana de arriba);
   // "atrás" regresa a donde estaba.
@@ -749,10 +770,12 @@ export default function App() {
     async function restoreSession() {
       let hadSession = false;
       deviceIdRef.current = await SecureStore.getItemAsync(DEVICE_ID_KEY).catch(() => null);
-      if (!deviceIdRef.current) {
+      // Uno al azar de antes se cambia por el Android ID en cuanto se puede leer.
+      if (!deviceIdRef.current || (!deviceIdRef.current.startsWith('android-') && newDeviceId().startsWith('android-'))) {
         deviceIdRef.current = newDeviceId();
         await SecureStore.setItemAsync(DEVICE_ID_KEY, deviceIdRef.current).catch(() => undefined);
       }
+      setBiometricHint(await getBiometricHint());
       try {
         let [storedToken, storedUser, storedRefreshToken] = await Promise.all([
           SecureStore.getItemAsync(AUTH_TOKEN_KEY),
@@ -1465,7 +1488,80 @@ export default function App() {
       }).catch(() => undefined);
     }
     await stopLiveTracking();
+    await offerBiometricSeal();
     await clearSession();
+  }
+
+  /** Pregunta con un Alert y espera la respuesta. */
+  function askYesNo(title: string, text: string, no: string, yes: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      Alert.alert(title, text, [
+        { text: no, style: 'cancel', onPress: () => resolve(false) },
+        { text: yes, onPress: () => resolve(true) },
+      ], { cancelable: false });
+    });
+  }
+
+  // Al cerrar sesión: en vez de borrar la sesión, se sella con la huella para
+  // volver a entrar sin correo ni contraseña. Se pregunta la primera vez; la
+  // respuesta se recuerda (se cambia en Cuenta → Seguridad o Acciones → Sesión).
+  async function offerBiometricSeal() {
+    const refreshToken = refreshTokenRef.current;
+    if (!refreshToken || !biometricAvailable()) return;
+    const pref = await getBiometricPref();
+    if (pref === 'off') return;
+    const wants =
+      pref === 'on' ||
+      (await askYesNo(
+        '¿Entrar con tu huella la próxima vez?',
+        'Así no tendrás que escribir tu correo ni tu contraseña. Tu huella no sale de tu teléfono.',
+        'No, gracias',
+        'Sí',
+      ));
+    await setBiometricPref(wants ? 'on' : 'off');
+    if (!wants) return;
+    const hint = { name: getFirstName(user?.fullName) || '' };
+    if (await sealSession(refreshToken, hint)) {
+      setBiometricHint(hint);
+    }
+  }
+
+  async function handleBiometricLogin() {
+    setBusy(true);
+    try {
+      const refreshToken = await openSealedSession();
+      if (!refreshToken) return;
+      const session = await apiRequest<{ accessToken: string; refreshToken: string }>('/auth/v2/refresh', {
+        method: 'POST',
+        body: { refreshToken },
+      });
+      // Esa sesión ya se renovó: la sellada no vuelve a servir.
+      await forgetSealedSession();
+      setBiometricHint(null);
+      const me = await apiRequest<{ user: AuthUser }>('/auth/v2/me', { token: session.accessToken });
+      setToken(session.accessToken);
+      setUser(me.user);
+      setLocationAutoRequested(false);
+      setCurrentScreen('home');
+      await persistSession(session.accessToken, me.user, session.refreshToken);
+      await loadMyRequests(session.accessToken);
+      setMessage(`Hola de nuevo${getFirstName(me.user.fullName) ? `, ${getFirstName(me.user.fullName)}` : ''}`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      if (error instanceof BiometricUnavailableError || (error instanceof ApiError && error.status === 401)) {
+        await forgetSealedSession();
+        setBiometricHint(null);
+        setMessage(
+          error instanceof BiometricUnavailableError
+            ? 'Tu huella ya no abre la sesión guardada (¿agregaste otra huella al teléfono?). Entra con tu correo y contraseña.'
+            : 'Tu sesión guardada venció. Entra con tu correo y contraseña.',
+        );
+      } else {
+        setMessage(formatError(error));
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function clearSession() {
@@ -2209,6 +2305,8 @@ export default function App() {
     setBusy(true);
     try {
       await apiRequest('/api/account', { method: 'DELETE', token });
+      await forgetSealedSession();
+      setBiometricHint(null);
       await clearSession();
       setMessage('Tu cuenta fue eliminada.');
     } catch (error) {
@@ -2437,6 +2535,9 @@ export default function App() {
       setLocationAutoRequested(false);
       setCurrentScreen('home');
       await persistSession(response.accessToken, response.user, response.refreshToken ?? null);
+      // Entró normal: la sesión sellada con la huella (si había) ya no hace falta.
+      await forgetSealedSession();
+      setBiometricHint(null);
       await loadMyRequests(response.accessToken);
       setMessage(`Sesión iniciada como ${response.user.role}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -2516,6 +2617,8 @@ export default function App() {
       setAuthMode('login');
       setMechanicSignupStep('account');
       await persistSession(accessToken, nextUser, params.refresh_token ?? null);
+      await forgetSealedSession();
+      setBiometricHint(null);
       await loadMyRequests(accessToken);
       setMessage(notice);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
@@ -3307,6 +3410,8 @@ export default function App() {
                 onForgotPassword={handleForgotPassword}
                 onResendConfirmation={handleResendConfirmation}
                 onFacebookLogin={(asMechanic) => void handleFacebookLogin(asMechanic)}
+                biometricName={biometricHint ? biometricHint.name : null}
+                onBiometricLogin={() => void handleBiometricLogin()}
               />
             </View>
             </ScrollView>

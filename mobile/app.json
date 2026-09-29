@@ -8,7 +8,7 @@
     "name": "Mecanifique",
     "slug": "mecanifique",
     "scheme": "mecanifique",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -42,7 +42,12 @@
         }
       ],
       "expo-font",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Mecanifique usa Face ID para que vuelvas a entrar sin escribir tu contraseña."
+        }
+      ],
       [
         "expo-image-picker",
         {

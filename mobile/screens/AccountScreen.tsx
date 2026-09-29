@@ -17,6 +17,7 @@ import {
   SecondaryButton,
   IdentityVerificationCard,
 } from '../components/ui';
+import { BiometricSetting } from '../components/BiometricSetting';
 import { PASSWORD_RULE_TEXT, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms } from '../utils';
 import type { FavoriteMechanic } from '../App';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
@@ -346,7 +347,10 @@ export function AccountScreen({
             )}
             <MenuRow icon="shield-checkmark-outline" label="Seguridad" onPress={() => toggle('security')} />
             {expanded === 'security' && (
-              <SecurityPanel busy={busy} onChangePassword={onChangePassword} onDeleteAccount={onDeleteAccount} />
+              <>
+                <BiometricSetting />
+                <SecurityPanel busy={busy} onChangePassword={onChangePassword} onDeleteAccount={onDeleteAccount} />
+              </>
             )}
             <MenuRow
               icon="heart-outline"

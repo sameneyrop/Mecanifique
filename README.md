@@ -136,6 +136,21 @@ mantener informadas a ambas partes.
   `GET /api/mechanics/me` (la lista pública solo trae activos) y lo revisa
   cada 20 s mientras está pendiente, así el checklist avanza solo cuando
   Didit aprueba.
+- **Entrar con huella** (APK 1.0.1, `mobile/biometric.ts`). Al cerrar sesión
+  se pregunta una vez "¿Entrar con tu huella la próxima vez?". Si se acepta,
+  el refresh token se sella con `SecureStore` y `requireAuthentication` en vez
+  de borrarse, en un llavero propio. La pantalla de entrada muestra "Entrar
+  como <nombre>": pide la huella, renueva con `POST /auth/v2/refresh` y
+  descarta lo sellado, porque es de un solo uso (el refresh token rota). No se
+  guarda la contraseña y funciona también con Facebook. Si se agrega otra
+  huella al teléfono, Android invalida el sello y se entra con la contraseña.
+  Entrar normal o eliminar la cuenta borra lo sellado. Se activa o desactiva
+  en Cuenta → Seguridad (cliente) o Acciones → Sesión (mecánico), con el
+  componente `BiometricSetting`. No requiere módulo nuevo: `expo-secure-store`
+  ya trae la pantalla de huella de Android.
+- **Identificador del celular** (APK 1.0.1): en Android, `X-Device-Id` es
+  `android-<Android ID>` (`expo-application`), que no cambia al reinstalar,
+  solo con un restablecimiento de fábrica. En otros casos es uno al azar.
 - **Recorrido de la app** (`mobile/components/AppTour.tsx`): la primera vez
   que se entra con cada rol en ese teléfono, con sesión y sin la verificación
   de teléfono pendiente. Cliente y mecánico tienen 9 pasos cada uno y quien
