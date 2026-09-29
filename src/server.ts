@@ -72,7 +72,7 @@ import {
   hasPendingAdjustment,
   respondToQuote
 } from "./quotes";
-import { ReturnVisitError, createReturnVisit, getReturnVisit } from "./returnVisits";
+import { ReturnVisitError, createReturnVisit, getReturnVisit, rescheduleReturnVisit } from "./returnVisits";
 import {
   CommissionError,
   createStatementCheckout,
@@ -4856,7 +4856,8 @@ app.get(
              sr.parent_request_id AS parentRequestId,
              sr.en_route_at AS enRouteAt, sr.arrived_at AS arrivedAt, sr.cancelled_by AS cancelledBy,
              sr.cancel_reason AS cancelReason, sr.cancellation_fee AS cancellationFee, sr.absence_photo_url AS absencePhotoUrl,
-             sr.car_photo_url AS carPhotoUrl, sr.spot_photo_url AS spotPhotoUrl, sr.location_source AS locationSource
+             sr.car_photo_url AS carPhotoUrl, sr.spot_photo_url AS spotPhotoUrl, sr.location_source AS locationSource,
+             sr.completed_at AS completedAt
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
       LEFT JOIN mechanics m ON m.id = sr.mechanic_id
@@ -5364,6 +5365,9 @@ app.patch(
     if (payload.status === "on_site" || payload.status === "in_progress") {
       await run("UPDATE service_requests SET arrived_at = COALESCE(arrived_at, CURRENT_TIMESTAMP) WHERE id = ?", [requestId]);
     }
+    if (payload.status === "completed") {
+      await run("UPDATE service_requests SET completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP) WHERE id = ?", [requestId]);
+    }
 
     if (payload.status === "completed" && existing.mechanic_id) {
       await run(
@@ -5748,6 +5752,43 @@ app.post(
         requestId
       );
       res.status(201).json({ returnRequestId });
+    } catch (error) {
+      if (error instanceof ReturnVisitError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  })
+);
+
+// Cambiar la fecha de una visita de regreso (mecánico o cliente); se le avisa al otro.
+app.post(
+  "/api/service-requests/:id/reschedule",
+  requireAuth,
+  requireRole("mechanic", "customer"),
+  handleAsync(async (req, res) => {
+    const visitId = parseRequestIdParam(req, res);
+    if (visitId === null) return;
+    const { when } = z.object({ when: z.string().trim().min(3).max(80) }).parse(req.body);
+    try {
+      const change = await rescheduleReturnVisit({
+        visitId,
+        mechanicId: req.auth?.user.role === "mechanic" ? req.auth.user.mechanicId : null,
+        customerId: req.auth?.user.role === "customer" ? req.auth.user.customerId : null,
+        when
+      });
+      const name = req.auth?.user.fullName || (change.byMechanic ? "Tu mecánico" : "El cliente");
+      await logPaymentUpdate(visitId, `${name} cambió la visita de regreso: antes "${change.previous}", ahora "${when}".`);
+      if (change.byMechanic) {
+        await notifyRequestCustomer(change.customerId, `${name} cambió la fecha de su regreso`, `Ahora es: ${when}.`, visitId);
+      } else {
+        const mechanicUserId = await getUserIdByMechanicId(change.mechanicId);
+        if (mechanicUserId) {
+          await createNotification(mechanicUserId, `${name} cambió la fecha de tu regreso`, `Ahora es: ${when}.`, { requestId: visitId });
+        }
+      }
+      res.json({ ok: true });
     } catch (error) {
       if (error instanceof ReturnVisitError) {
         res.status(error.status).json({ error: error.message });

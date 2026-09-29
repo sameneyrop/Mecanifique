@@ -31,7 +31,7 @@ import {
 import { MechanicTracker } from '../components/MechanicTracker';
 import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
 import { MechanicPartsPanel, ReceiptsCard } from '../components/PartsReceipts';
-import { ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/ReturnVisit';
+import { RescheduleButton, ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/ReturnVisit';
 import { CustomerAbsentAction, WithdrawButton } from '../components/CancellationActions';
 import { CommissionHomeCard } from '../components/Commissions';
 import { TourTarget } from '../components/AppTour';
@@ -362,7 +362,17 @@ function CustomerHome(props: HomeScreenProps) {
       })
       .catch(() => undefined);
   };
-  const upcomingCard = <UpcomingVisitsCard items={upcoming} role="customer" onOpen={openDetail} busy={busy} />;
+  const upcomingCard = (
+    <UpcomingVisitsCard
+      items={upcoming}
+      role="customer"
+      onOpen={openDetail}
+      renderActions={(item) => (
+        <RescheduleButton api={props.api} item={item} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
+      )}
+      busy={busy}
+    />
+  );
 
   // Calificar vive en el detalle de la solicitud (pestaña Solicitudes).
   const closureCard = closure && (
@@ -817,7 +827,10 @@ function MechanicHome(props: HomeScreenProps) {
         onOpen={openDetail}
         onStart={activeId === null ? (requestId) => props.onAdvanceJob(requestId, 'en_route') : undefined}
         renderActions={(item) => (
-          <WithdrawButton api={props.api} request={item} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
+          <>
+            <RescheduleButton api={props.api} item={item} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
+            <WithdrawButton api={props.api} request={item} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
+          </>
         )}
         busy={busy}
       />

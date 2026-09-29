@@ -89,6 +89,46 @@ export async function createReturnVisit(input: {
   return { returnRequestId: created.lastID, customerId: original.customerId };
 }
 
+/**
+ * Cambiar la fecha de una visita de regreso que todavía no empieza. La puede
+ * mover el mecánico o el cliente; al otro se le avisa (en server.ts).
+ */
+export async function rescheduleReturnVisit(input: {
+  visitId: number;
+  mechanicId: number | null | undefined;
+  customerId: number | null | undefined;
+  when: string;
+}): Promise<{ customerId: number; mechanicId: number; previous: string; byMechanic: boolean }> {
+  const visit = await get<{
+    customerId: number;
+    mechanicId: number | null;
+    status: string;
+    parentRequestId: number | null;
+    preferredTime: string;
+  }>(
+    `SELECT customer_id AS customerId, mechanic_id AS mechanicId, status, parent_request_id AS parentRequestId,
+            preferred_time AS preferredTime
+     FROM service_requests WHERE id = ?`,
+    [input.visitId]
+  );
+  if (!visit || !visit.parentRequestId) {
+    throw new ReturnVisitError(404, "Visita de regreso no encontrada");
+  }
+  const byMechanic = Boolean(input.mechanicId) && visit.mechanicId === input.mechanicId;
+  const byCustomer = Boolean(input.customerId) && visit.customerId === input.customerId;
+  if (!byMechanic && !byCustomer) {
+    throw new ReturnVisitError(403, "Solo el mecánico o el cliente de esta visita pueden cambiarla");
+  }
+  if (visit.status !== "assigned") {
+    throw new ReturnVisitError(409, "Esta visita ya empezó: ya no se puede cambiar la fecha.");
+  }
+  await run("UPDATE service_requests SET preferred_time = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [
+    input.when.trim(),
+    input.visitId
+  ]);
+  return { customerId: visit.customerId, mechanicId: visit.mechanicId as number, previous: visit.preferredTime, byMechanic };
+}
+
 /** La visita de regreso abierta de un servicio, si la hay. */
 export async function getReturnVisit(
   requestId: number

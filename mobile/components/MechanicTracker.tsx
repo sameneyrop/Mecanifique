@@ -36,6 +36,19 @@ function formatDistance(distanceKm: number): string {
   return `${distanceKm.toFixed(1)} km`;
 }
 
+/**
+ * Llegada estimada: la distancia en línea recta por 1.4 (las calles no van
+ * derecho) a 25 km/h, velocidad típica en ciudad, más 2 minutos para
+ * estacionarse. Es aproximada y así se dice ("unos").
+ */
+function etaText(distanceKm: number): string {
+  const minutes = Math.max(1, Math.round(((distanceKm * 1.4) / 25) * 60 + 2));
+  const arrival = new Date(Date.now() + minutes * 60_000);
+  const hours = arrival.getHours();
+  const clock = `${hours % 12 === 0 ? 12 : hours % 12}:${String(arrival.getMinutes()).padStart(2, '0')} ${hours < 12 ? 'a. m.' : 'p. m.'}`;
+  return `llega en unos ${minutes} min (${clock})`;
+}
+
 // Escala del radar: la más chica que deja al mecánico dentro. Múltiplos de 3
 // para que los tres anillos queden en kilómetros enteros.
 function radarScaleKm(distanceKm: number): number {
@@ -92,7 +105,9 @@ export function MechanicTracker({
     ? 'Buscando su ubicación…'
     : !mechanic
       ? 'Todavía no recibimos su ubicación. Aparecerá aquí en cuanto la comparta.'
-      : `${distanceKm != null ? `A ${formatDistance(distanceKm)} de tu auto · ` : ''}Actualizado ${formatSecondsAgo(mechanic.secondsAgo)}`;
+      : `${distanceKm != null ? `A ${formatDistance(distanceKm)} de tu auto · ` : ''}${
+          distanceKm != null && status === 'en_route' ? `${etaText(distanceKm)} · ` : ''
+        }Actualizado ${formatSecondsAgo(mechanic.secondsAgo)}`;
 
   return (
     <Card title={title} subtitle={subtitle}>

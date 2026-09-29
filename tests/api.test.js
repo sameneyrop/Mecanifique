@@ -2164,6 +2164,38 @@ test("evidencia: fotos de antes y después solo del mecánico del servicio y con
   }
 });
 
+test("visita de regreso: la reprograman el mecánico o el cliente, nadie más, y no si ya empezó", async () => {
+  const { rescheduleReturnVisit } = require("../src/returnVisits.ts");
+  const tag = crypto.randomUUID().slice(0, 8);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const insert = async (status, parentId = null) => {
+    const row = await run(
+      `INSERT INTO service_requests
+         (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id, parent_request_id)
+       VALUES (?, 'Nissan', 'Versa', 2020, 'Regreso', 'Jueves 10:00', 'X', 'Centro', ?, ?, ?)`,
+      [customer.lastID, status, mechanicId, parentId]
+    );
+    createdRows.requests.push(row.lastID);
+    return row.lastID;
+  };
+  const original = await insert("completed");
+  const visit = await insert("assigned", original);
+
+  const byCustomer = await rescheduleReturnVisit({ visitId: visit, mechanicId: null, customerId: customer.lastID, when: "Viernes 12:00" });
+  assert.equal(byCustomer.byMechanic, false);
+  assert.equal(byCustomer.previous, "Jueves 10:00");
+  const byMechanic = await rescheduleReturnVisit({ visitId: visit, mechanicId, customerId: null, when: "Sábado 9:00" });
+  assert.equal(byMechanic.byMechanic, true);
+  assert.equal((await get("SELECT preferred_time AS t FROM service_requests WHERE id = ?", [visit])).t, "Sábado 9:00");
+
+  await assert.rejects(rescheduleReturnVisit({ visitId: visit, mechanicId: 999999, customerId: null, when: "Lunes" }), (error) => error.status === 403);
+  await assert.rejects(rescheduleReturnVisit({ visitId: original, mechanicId, customerId: null, when: "Lunes" }), (error) => error.status === 404);
+  await run("UPDATE service_requests SET status = 'en_route' WHERE id = ?", [visit]);
+  await assert.rejects(rescheduleReturnVisit({ visitId: visit, mechanicId, customerId: null, when: "Lunes" }), (error) => error.status === 409);
+});
+
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {
   const mechanicId = await createRegisteredMechanic("active");
   const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);

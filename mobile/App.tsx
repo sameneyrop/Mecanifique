@@ -294,6 +294,7 @@ type ServiceRequest = {
   customerReviewed?: boolean;
   // Fotos del auto y del lugar al pedir; 'address' = el auto no estaba donde el cliente.
   customerPhotoUrl?: string | null;
+  completedAt?: string | null;
   // Evidencia del servicio (src/serviceEvidence.ts).
   servicePhotos?: Array<{ id: number; kind: 'before' | 'after'; photoUrl: string; createdAt: string }>;
   oldPartsStatus?: 'delivered' | 'declined' | 'none' | null;

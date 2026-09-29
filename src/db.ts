@@ -787,6 +787,8 @@ export async function initDb(): Promise<void> {
     "ALTER TABLE service_requests ADD COLUMN old_parts_status TEXT CHECK(old_parts_status IN ('delivered', 'declined', 'none'))"
   );
   await ensureColumn("service_quotes", "warranty_days", "ALTER TABLE service_quotes ADD COLUMN warranty_days INTEGER");
+  // Cuándo se terminó (la fecha del comprobante y desde cuándo corre la garantía).
+  await ensureColumn("service_requests", "completed_at", "ALTER TABLE service_requests ADD COLUMN completed_at TEXT");
 
   // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
   await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");

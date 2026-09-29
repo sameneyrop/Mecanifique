@@ -554,6 +554,18 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   acepta direcciones de sus propias fotos). El mecánico las ve en "Nueva
   solicitud", en el trabajo en curso y en el detalle (`RequestPhotos`), con un
   aviso si la ubicación salió de una dirección escrita.
+- **Hora estimada de llegada** (`MechanicTracker`): mientras va en camino,
+  "llega en unos 12 min (5:42 p. m.)". Se calcula con la distancia en línea
+  recta × 1.4 a 25 km/h, más 2 minutos, y se presenta como aproximada.
+- **Comprobante** (`mobile/components/ServiceReceipt.tsx`): en el detalle de
+  un servicio terminado (o cancelado con cargo) aparece el resumen del
+  mecánico, el auto, cada monto, cómo se pagó, la garantía con su fecha de
+  vencimiento (desde `completed_at`, que ahora se guarda al terminar) y las
+  piezas. Se comparte con `Share` y dice que no es factura fiscal.
+- **Reprogramar la visita de regreso** (`rescheduleReturnVisit`,
+  `POST /api/service-requests/:id/reschedule`): el mecánico o el cliente
+  cambian la fecha desde "Próximas visitas" mientras no haya empezado; al
+  otro le llega un aviso y queda en el historial.
 - **Evidencia del servicio** (`src/serviceEvidence.ts`,
   `mobile/components/ServiceEvidence.tsx`): el mecánico toma fotos de antes y
   de después, solo con la cámara y hasta 6 de cada una (`service_photos`,

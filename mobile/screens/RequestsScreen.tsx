@@ -34,6 +34,7 @@ import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide, isPayable } fr
 import { CustomerReviewCard } from '../components/CustomerReview';
 import { RequestPhotos, RequestPlace } from '../components/RequestPlace';
 import { ServiceEvidenceView } from '../components/ServiceEvidence';
+import { ServiceReceipt } from '../components/ServiceReceipt';
 import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
@@ -541,6 +542,7 @@ export function RequestsScreen({
                     locationSource={selectedRequest.locationSource}
                   />
                   {!detailIsActive && <ServiceEvidenceView request={selectedRequest} />}
+                  {!detailIsActive && user.role !== 'admin' && <ServiceReceipt request={selectedRequest} />}
                   {detailFeeText && user.role !== 'mechanic' && <InfoRow icon="card-outline" text={detailFeeText} />}
                   {detailIsActive && user.role !== 'admin' && (
                     <NextStepGuide request={selectedRequest} role={user.role === 'mechanic' ? 'mechanic' : 'customer'} />

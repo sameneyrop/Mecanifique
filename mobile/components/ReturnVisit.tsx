@@ -104,6 +104,61 @@ export function ReturnVisitPanel({
 }
 
 /**
+ * Cambiar la fecha de una visita de regreso que todavía no empieza. Lo pueden
+ * hacer el mecánico o el cliente; al otro le llega un aviso.
+ */
+export function RescheduleButton({
+  api,
+  item,
+  onDone,
+}: {
+  api: ApiCall;
+  item: { id: number; parentRequestId?: number | null; preferredTime: string };
+  onDone: () => void;
+}) {
+  const { busy, setBusy, setMessage } = useAppContext();
+  const [open, setOpen] = useState(false);
+  const [when, setWhen] = useState('');
+
+  if (!item.parentRequestId) {
+    return null;
+  }
+  if (!open) {
+    return <SecondaryButton title="Cambiar fecha" compact onPress={() => setOpen(true)} />;
+  }
+
+  async function save() {
+    if (when.trim().length < 3) {
+      setMessage('Escribe el nuevo día y hora');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/api/service-requests/${item.id}/reschedule`, { method: 'POST', body: { when: when.trim() } });
+      setOpen(false);
+      setWhen('');
+      setMessage('Fecha cambiada. Le avisamos a la otra persona.');
+      onDone();
+    } catch (error) {
+      setMessage(formatError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={styles.stack}>
+      <Field label={`Nueva fecha (antes: ${item.preferredTime})`}>
+        <Input value={when} maxLength={80} placeholder="Ej. Viernes 4 de octubre, 12:00" onChangeText={setWhen} />
+      </Field>
+      <Text style={styles.smallText}>Mejor si antes lo platican por el chat.</Text>
+      <PrimaryButton title="Guardar nueva fecha" busy={busy} onPress={() => void save()} />
+      <SecondaryButton title="Cancelar" compact onPress={() => setOpen(false)} />
+    </View>
+  );
+}
+
+/**
  * Próximas citas y visitas de regreso. El mecánico sale hacia ellas desde
  * aquí; el cliente ve cuándo y abre el detalle.
  */
