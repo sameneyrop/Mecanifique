@@ -202,7 +202,6 @@ export function RequestPhotos({
   spotPhotoUrl?: string | null;
   locationSource?: string | null;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
   const photos = [
     { url: carPhotoUrl, label: 'El auto' },
     { url: spotPhotoUrl, label: 'Dónde está' },
@@ -214,28 +213,39 @@ export function RequestPhotos({
 
   return (
     <View style={styles.stack}>
-      {photos.length > 0 && (
-        <View style={styles.row}>
-          {photos.map((photo) => (
-            <Pressable
-              key={photo.url}
-              style={styles.requestPhotoThumb}
-              onPress={() => setOpen(photo.url)}
-              accessibilityRole="imagebutton"
-              accessibilityLabel={`Ver foto: ${photo.label}`}
-            >
-              <Image source={{ uri: photo.url }} style={styles.requestPhotoImage} />
-              <Text style={styles.requestPhotoLabel}>{photo.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      <PhotoThumbs photos={photos} />
       {locationSource === 'address' && (
         <Text style={styles.smallText}>
           El auto no está donde estaba el cliente al pedir: la ubicación sale de la dirección escrita. Revísala con las
           fotos.
         </Text>
       )}
+    </View>
+  );
+}
+
+/** Miniaturas con su etiqueta, de dos en dos; al tocar una se ve completa. */
+export function PhotoThumbs({ photos }: { photos: Array<{ url: string; label: string }> }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (photos.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      <View style={styles.row}>
+        {photos.map((photo) => (
+          <Pressable
+            key={photo.url}
+            style={styles.requestPhotoThumb}
+            onPress={() => setOpen(photo.url)}
+            accessibilityRole="imagebutton"
+            accessibilityLabel={`Ver foto: ${photo.label}`}
+          >
+            <Image source={{ uri: photo.url }} style={styles.requestPhotoImage} />
+            <Text style={styles.requestPhotoLabel}>{photo.label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Modal visible={open !== null} transparent animationType="fade" onRequestClose={() => setOpen(null)}>
         <Pressable style={styles.photoViewer} onPress={() => setOpen(null)} accessibilityLabel="Cerrar foto">
           {open ? <Image source={{ uri: open }} style={styles.photoViewerImage} resizeMode="contain" /> : null}
@@ -245,6 +255,6 @@ export function RequestPhotos({
           </View>
         </Pressable>
       </Modal>
-    </View>
+    </>
   );
 }

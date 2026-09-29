@@ -554,6 +554,18 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   acepta direcciones de sus propias fotos). El mecánico las ve en "Nueva
   solicitud", en el trabajo en curso y en el detalle (`RequestPhotos`), con un
   aviso si la ubicación salió de una dirección escrita.
+- **Evidencia del servicio** (`src/serviceEvidence.ts`,
+  `mobile/components/ServiceEvidence.tsx`): el mecánico toma fotos de antes y
+  de después, solo con la cámara y hasta 6 de cada una (`service_photos`,
+  `POST /api/service-requests/:id/service-photos`). También marca qué pasó
+  con las piezas cambiadas (`old_parts_status`: entregadas, no las quiso o no
+  hubo; `POST .../old-parts`). El servidor exige una foto de antes para pasar
+  a "reparando" (`BEFORE_PHOTO_REQUIRED`). Para terminar un servicio con
+  cotización aceptada exige una foto de después (`AFTER_PHOTO_REQUIRED`) y lo
+  de las piezas (`OLD_PARTS_REQUIRED`). La cotización lleva la garantía de la
+  mano de obra (`service_quotes.warranty_days`: 0, 30, 60 o 90 días,
+  obligatoria de elegir y visible antes de aceptar). El cliente lo ve en
+  "Cómo quedó tu auto".
 - **Foto y perfil del cliente**: la foto es opcional (`customers.photo_url`,
   `PUT /api/account/photo`, con cámara o galería; al reemplazarla se borra la
   anterior). El mecánico la ve en "Nueva solicitud" y en el trabajo en curso

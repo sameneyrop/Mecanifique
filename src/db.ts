@@ -767,6 +767,27 @@ export async function initDb(): Promise<void> {
       UNIQUE(contact_key, role)
     )
   `);
+  // Evidencia del servicio (src/serviceEvidence.ts): fotos de antes y después
+  // que toma el mecánico, qué pasó con las piezas cambiadas y la garantía de la
+  // mano de obra en la cotización.
+  await run(`
+    CREATE TABLE IF NOT EXISTS service_photos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('before', 'after')),
+      photo_url TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_service_photos_request ON service_photos(service_request_id)");
+  await ensureColumn(
+    "service_requests",
+    "old_parts_status",
+    "ALTER TABLE service_requests ADD COLUMN old_parts_status TEXT CHECK(old_parts_status IN ('delivered', 'declined', 'none'))"
+  );
+  await ensureColumn("service_quotes", "warranty_days", "ALTER TABLE service_quotes ADD COLUMN warranty_days INTEGER");
+
   // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
   await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");
 

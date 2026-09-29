@@ -116,7 +116,7 @@ const MECHANIC_STEPS: TourStep[] = [
   {
     icon: 'construct-outline',
     title: 'Así haces un servicio',
-    text: '1. Toca «Voy en camino» y se abre la ruta.\n2. Al llegar, revisa el auto y manda tu cotización.\n3. Repara solo cuando el cliente la apruebe.\n4. Si compras refacciones, tómale foto al ticket.\n5. Al terminar, cobra directo al cliente y confírmalo en la app.',
+    text: '1. Toca «Voy en camino» y se abre la ruta.\n2. Al llegar, revisa el auto y manda tu cotización con su garantía.\n3. Cuando el cliente la apruebe, toma la foto de antes y repara.\n4. Si compras refacciones, tómale foto al ticket.\n5. Toma la foto de cómo quedó, ofrécele las piezas cambiadas y cobra directo al cliente.',
   },
   {
     screen: 'map',

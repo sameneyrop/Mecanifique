@@ -111,6 +111,7 @@ async function cleanupCreatedRows() {
     await run("DELETE FROM parts_receipts WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM mechanic_withdrawals WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM unpaid_fingerprints WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM service_photos WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM customer_reviews WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM commission_charges WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
@@ -2112,6 +2113,55 @@ test("mercado: precio sugerido agregado (mínimo de datos) y tendencias por hora
     { zone: "Centro", count: 2 },
     { zone: "Otras zonas", count: 1 }
   ]);
+});
+
+test("evidencia: fotos de antes y después solo del mecánico del servicio y con el auto; piezas; garantía", async () => {
+  const { ServiceEvidenceError, addServicePhoto, getOldPartsStatus, getServicePhotos, hasServicePhoto, setOldPartsStatus } =
+    require("../src/serviceEvidence.ts");
+  const tag = crypto.randomUUID().slice(0, 8);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const otherMechanic = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES ('Cliente', ?)", [uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const request = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone, status, mechanic_id)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', 'X', 'Centro', 'assigned', ?)`,
+    [customer.lastID, mechanicId]
+  );
+  createdRows.requests.push(request.lastID);
+  const requestId = request.lastID;
+  let saved = 0;
+  const savePhoto = async () => {
+    saved += 1;
+    return `https://example.test/uploads/${crypto.randomUUID()}.jpg`;
+  };
+
+  try {
+    // Todavía no llega: no hay fotos que tomar.
+    await assert.rejects(addServicePhoto({ requestId, mechanicId, kind: "before", savePhoto }), (error) => error.status === 409);
+    await run("UPDATE service_requests SET status = 'diagnosing' WHERE id = ?", [requestId]);
+    await assert.rejects(
+      addServicePhoto({ requestId, mechanicId: otherMechanic, kind: "before", savePhoto }),
+      (error) => error instanceof ServiceEvidenceError && error.status === 403
+    );
+    assert.equal(saved, 0, "no se guarda la foto si no pasa las reglas");
+    assert.equal(await hasServicePhoto(requestId, "before"), false);
+    await addServicePhoto({ requestId, mechanicId, kind: "before", savePhoto });
+    assert.equal(await hasServicePhoto(requestId, "before"), true);
+    assert.equal(await hasServicePhoto(requestId, "after"), false);
+    await addServicePhoto({ requestId, mechanicId, kind: "after", savePhoto });
+    assert.deepEqual((await getServicePhotos(requestId)).map((photo) => photo.kind), ["before", "after"]);
+
+    assert.equal(await getOldPartsStatus(requestId), null);
+    await setOldPartsStatus({ requestId, mechanicId, status: "delivered" });
+    assert.equal(await getOldPartsStatus(requestId), "delivered");
+
+    const quote = await createQuote({ requestId, mechanicId, laborAmount: 800, partsAmount: 0, description: "Cambio de balatas", warrantyDays: 30 });
+    assert.equal(quote.warrantyDays, 30);
+  } finally {
+    await run("DELETE FROM service_photos WHERE service_request_id = ?", [requestId]);
+  }
 });
 
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {

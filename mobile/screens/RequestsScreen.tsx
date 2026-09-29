@@ -33,6 +33,7 @@ import { CustomerQuoteCard } from '../components/Quote';
 import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide, isPayable } from '../components/ServiceGuide';
 import { CustomerReviewCard } from '../components/CustomerReview';
 import { RequestPhotos, RequestPlace } from '../components/RequestPlace';
+import { ServiceEvidenceView } from '../components/ServiceEvidence';
 import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
@@ -539,6 +540,7 @@ export function RequestsScreen({
                     spotPhotoUrl={selectedRequest.spotPhotoUrl}
                     locationSource={selectedRequest.locationSource}
                   />
+                  {!detailIsActive && <ServiceEvidenceView request={selectedRequest} />}
                   {detailFeeText && user.role !== 'mechanic' && <InfoRow icon="card-outline" text={detailFeeText} />}
                   {detailIsActive && user.role !== 'admin' && (
                     <NextStepGuide request={selectedRequest} role={user.role === 'mechanic' ? 'mechanic' : 'customer'} />

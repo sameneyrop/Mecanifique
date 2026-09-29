@@ -128,6 +128,14 @@ import {
 import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
 import { CustomerReviewError, customerRating, hasCustomerReview, reviewCustomer } from "./customerReviews";
 import { profileChecklist } from "./profileChecklist";
+import {
+  ServiceEvidenceError,
+  addServicePhoto,
+  getOldPartsStatus,
+  getServicePhotos,
+  hasServicePhoto,
+  setOldPartsStatus
+} from "./serviceEvidence";
 import { requestTrends, visitRateSuggestion } from "./marketInsights";
 import {
   customerCompletedServices,
@@ -4910,9 +4918,66 @@ app.get(
       commission,
       // Si el mecánico ya calificó al cliente (el cliente no lo ve).
       customerReviewed: req.auth?.user.role === "customer" ? undefined : await hasCustomerReview(requestId),
+      // Evidencia del servicio: fotos de antes y después, y las piezas cambiadas.
+      servicePhotos: await getServicePhotos(requestId),
+      oldPartsStatus: await getOldPartsStatus(requestId),
       serviceFee: await getServiceFeeForRequest(requestId),
       quotes: await getQuotesForRequest(requestId)
     });
+  })
+);
+
+// Fotos de antes y después, y qué pasó con las piezas (src/serviceEvidence.ts).
+function sendEvidenceError(res: Response, error: unknown): boolean {
+  if (error instanceof ServiceEvidenceError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  if (error instanceof PhotoUploadError) {
+    res.status(400).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+app.post(
+  "/api/service-requests/:id/service-photos",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    if (applyRateLimit("service-photo", req, res, 30)) return;
+    const payload = z.object({ kind: z.enum(["before", "after"]), imageBase64: z.string().min(100) }).parse(req.body);
+    try {
+      const photo = decodePhoto(payload.imageBase64);
+      const saved = await addServicePhoto({
+        requestId,
+        mechanicId: req.auth?.user.mechanicId,
+        kind: payload.kind,
+        savePhoto: async () => publicPhotoUrl(req, await savePhoto(photo, req.auth?.user.id ?? null))
+      });
+      res.status(201).json(saved);
+    } catch (error) {
+      if (!sendEvidenceError(res, error)) throw error;
+    }
+  })
+);
+
+app.post(
+  "/api/service-requests/:id/old-parts",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const { status } = z.object({ status: z.enum(["delivered", "declined", "none"]) }).parse(req.body);
+    try {
+      await setOldPartsStatus({ requestId, mechanicId: req.auth?.user.mechanicId, status });
+      res.json({ ok: true });
+    } catch (error) {
+      if (!sendEvidenceError(res, error)) throw error;
+    }
   })
 );
 
@@ -5078,7 +5143,9 @@ const quoteSchema = z.object({
   partsOnHandAmount: z.number().min(0).max(1_000_000).optional().default(0),
   description: z.string().trim().min(5).max(1_000),
   // 'adjustment': baja lo acordado (src/quotes.ts).
-  kind: z.enum(["quote", "adjustment"]).optional().default("quote")
+  kind: z.enum(["quote", "adjustment"]).optional().default("quote"),
+  // Garantía de la mano de obra, en días (0 = sin garantía).
+  warrantyDays: z.number().int().min(0).max(365).optional()
 });
 
 function sendQuoteError(res: Response, error: unknown): boolean {
@@ -5214,6 +5281,26 @@ app.patch(
           code: "PARTS_RECEIPT_REQUIRED"
         });
         return;
+      }
+      // Evidencia (src/serviceEvidence.ts): foto de antes para empezar a
+      // reparar; foto de después y qué pasó con las piezas para terminar un
+      // servicio donde sí hubo reparación.
+      if (payload.status === "repairing" && !(await hasServicePhoto(requestId, "before"))) {
+        res.status(409).json({
+          error: "Toma una foto de cómo está el auto antes de empezar a repararlo.",
+          code: "BEFORE_PHOTO_REQUIRED"
+        });
+        return;
+      }
+      if (payload.status === "completed" && (await hasAcceptedQuote(requestId))) {
+        if (!(await hasServicePhoto(requestId, "after"))) {
+          res.status(409).json({ error: "Toma una foto de cómo quedó el auto para terminar.", code: "AFTER_PHOTO_REQUIRED" });
+          return;
+        }
+        if (!(await getOldPartsStatus(requestId))) {
+          res.status(409).json({ error: "Marca qué pasó con las piezas cambiadas para terminar.", code: "OLD_PARTS_REQUIRED" });
+          return;
+        }
       }
       if (payload.status === "completed" && (await hasPendingReceipt(requestId))) {
         res.status(409).json({

@@ -38,6 +38,8 @@ export type ServiceQuote = {
   partsAreEstimate: boolean;
   total: number;
   kind: QuoteKind;
+  /** Días de garantía de la mano de obra (0 = sin garantía; null en cotizaciones de antes). */
+  warrantyDays: number | null;
   description: string;
   status: QuoteStatus;
   createdAt: string;
@@ -58,7 +60,7 @@ export const STATUSES_REQUIRING_QUOTE = new Set(["repairing", "awaiting_parts"])
 const QUOTE_COLUMNS = `
   id, service_request_id AS serviceRequestId, labor_amount AS laborAmount, parts_amount AS partsAmount,
   COALESCE(parts_on_hand_amount, 0) AS partsOnHandAmount, parts_on_hand_amount IS NOT NULL AS partsAreEstimate,
-  labor_amount + parts_amount + COALESCE(parts_on_hand_amount, 0) AS total, kind,
+  labor_amount + parts_amount + COALESCE(parts_on_hand_amount, 0) AS total, kind, warranty_days AS warrantyDays,
   description, status, created_at AS createdAt, responded_at AS respondedAt
 `;
 
@@ -99,6 +101,8 @@ export async function createQuote(input: {
   partsOnHandAmount?: number;
   description: string;
   kind?: QuoteKind;
+  /** Garantía de la mano de obra, en días (0 = sin garantía). */
+  warrantyDays?: number;
 }): Promise<ServiceQuote> {
   const kind = input.kind ?? "quote";
   const request = await get<{ mechanicId: number | null; status: string }>(
@@ -129,9 +133,18 @@ export async function createQuote(input: {
     input.requestId
   ]);
   const result = await run(
-    `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description, kind)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [input.requestId, input.mechanicId, input.laborAmount, input.partsAmount, input.partsOnHandAmount ?? 0, input.description, kind]
+    `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description, kind, warranty_days)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.requestId,
+      input.mechanicId,
+      input.laborAmount,
+      input.partsAmount,
+      input.partsOnHandAmount ?? 0,
+      input.description,
+      kind,
+      input.warrantyDays ?? null
+    ]
   );
   return getQuote(result.lastID);
 }

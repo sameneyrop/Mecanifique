@@ -3,7 +3,7 @@ import { Text, View } from 'react-native';
 
 import { styles } from '../styles';
 import { useAppContext, type ServiceQuote } from '../context/AppContext';
-import { Card, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from './ui';
+import { Card, Field, InfoRow, Input, PrimaryButton, SecondaryButton, Segmented } from './ui';
 import { formatError, formatPesos } from '../utils';
 import type { ApiCall } from '../App';
 
@@ -19,6 +19,19 @@ function hasPartsEstimate(quote: ServiceQuote): boolean {
   return Boolean(quote.partsAreEstimate) && quote.partsAmount > 0;
 }
 
+/** "Garantía de la mano de obra: 30 días" (null en cotizaciones de antes). */
+export function warrantyText(days: number | null | undefined): string | null {
+  if (days == null) return null;
+  return days > 0 ? `Garantía de la mano de obra: ${days} días` : 'Sin garantía en la mano de obra';
+}
+
+const WARRANTY_OPTIONS = [
+  { key: '0', label: 'Sin garantía' },
+  { key: '30', label: '30 días' },
+  { key: '60', label: '60 días' },
+  { key: '90', label: '90 días' },
+];
+
 function QuoteBreakdown({ quote }: { quote: ServiceQuote }) {
   const onHand = quote.partsOnHandAmount ?? 0;
   return (
@@ -32,6 +45,7 @@ function QuoteBreakdown({ quote }: { quote: ServiceQuote }) {
         ) : (
           <InfoRow icon="cube-outline" text={`Refacciones: ${pesos(quote.partsAmount)}`} />
         ))}
+      {warrantyText(quote.warrantyDays) && <InfoRow icon="shield-checkmark-outline" text={warrantyText(quote.warrantyDays) as string} />}
       <Text style={styles.itemTitle}>
         {hasPartsEstimate(quote) ? 'Total estimado' : 'Total'}: {pesos(quote.total)}
       </Text>
@@ -71,7 +85,8 @@ export function MechanicQuotePanel({
   const [editing, setEditing] = useState(false);
   // 'adjustment': bajar lo acordado porque no se hizo todo (src/quotes.ts).
   const [mode, setMode] = useState<'quote' | 'adjustment'>('quote');
-  const [form, setForm] = useState({ labor: '', onHand: '', toBuy: '', description: '' });
+  // warranty: días de garantía de la mano de obra; se elige a propósito (puede ser sin garantía).
+  const [form, setForm] = useState({ labor: '', onHand: '', toBuy: '', description: '', warranty: '' });
   const isAdjustment = mode === 'adjustment';
 
   useEffect(() => {
@@ -109,14 +124,25 @@ export function MechanicQuotePanel({
       setMessage(isAdjustment ? 'Explica en pocas palabras qué sí hiciste' : 'Explica en pocas palabras qué vas a hacer');
       return;
     }
+    if (!isAdjustment && !form.warranty) {
+      setMessage('Elige la garantía de tu mano de obra (puede ser sin garantía).');
+      return;
+    }
     setBusy(true);
     try {
       await api(`/api/service-requests/${requestId}/quotes`, {
         method: 'POST',
-        body: { laborAmount, partsAmount, partsOnHandAmount, description: form.description.trim(), kind: mode },
+        body: {
+          laborAmount,
+          partsAmount,
+          partsOnHandAmount,
+          description: form.description.trim(),
+          kind: mode,
+          ...(isAdjustment ? {} : { warrantyDays: Number(form.warranty) }),
+        },
       });
       closeForm();
-      setForm({ labor: '', onHand: '', toBuy: '', description: '' });
+      setForm({ labor: '', onHand: '', toBuy: '', description: '', warranty: '' });
       setMessage(
         isAdjustment ? 'Ajuste enviado. Espera a que el cliente lo apruebe.' : 'Cotización enviada. Te avisamos cuando el cliente conteste.',
       );
@@ -178,6 +204,14 @@ export function MechanicQuotePanel({
           onChangeText={(value) => setForm({ ...form, description: value })}
         />
       </Field>
+      {!isAdjustment && (
+        <Field label="Garantía de tu mano de obra">
+          <Segmented value={form.warranty} options={WARRANTY_OPTIONS} onChange={(value) => setForm({ ...form, warranty: value })} />
+          <Text style={styles.smallText}>
+            El cliente la ve antes de aceptar y queda por escrito en su servicio. Cubre tu trabajo, no las refacciones.
+          </Text>
+        </Field>
+      )}
       <PrimaryButton title={isAdjustment ? 'Mandar ajuste' : 'Mandar cotización'} busy={busy} onPress={send} />
       {editing && <SecondaryButton title="Cancelar" onPress={closeForm} />}
     </View>
@@ -237,6 +271,12 @@ export function MechanicQuotePanel({
       {quoteForm}
     </View>
   );
+}
+
+/** La garantía de lo aceptado: la de la cotización principal (no la de un ajuste). */
+export function acceptedWarranty(accepted: ServiceQuote[]): number | null {
+  const withWarranty = accepted.filter((quote) => quote.kind !== 'adjustment' && quote.warrantyDays != null);
+  return withWarranty.length > 0 ? Math.max(...withWarranty.map((quote) => quote.warrantyDays as number)) : null;
 }
 
 /** Cliente: revisar y aceptar (o no) la cotización del mecánico. */
@@ -323,6 +363,9 @@ export function CustomerQuoteCard({
             icon="checkmark-circle-outline"
             text={`Aceptaste ${pesos(agreedTotal)}${accepted.length > 1 ? ' en total' : ''}.`}
           />
+        )}
+        {accepted.length > 0 && warrantyText(acceptedWarranty(accepted)) && (
+          <InfoRow icon="shield-checkmark-outline" text={warrantyText(acceptedWarranty(accepted)) as string} />
         )}
         {!pending && lastRejected && (
           <Text style={styles.itemText}>No aceptaste la cotización. Tu mecánico puede mandarte otra.</Text>

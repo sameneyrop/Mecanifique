@@ -254,6 +254,8 @@ export type ServiceQuote = {
   partsAmount: number;
   // Refacciones que ya trae el mecánico, a precio fijo.
   partsOnHandAmount?: number;
+  /** Garantía de la mano de obra en días (0 = sin garantía; null en cotizaciones de antes). */
+  warrantyDays?: number | null;
   partsAreEstimate?: boolean;
   total: number;
   // 'adjustment': baja lo acordado; al aceptarla reemplaza a las aceptadas.
@@ -292,6 +294,9 @@ type ServiceRequest = {
   customerReviewed?: boolean;
   // Fotos del auto y del lugar al pedir; 'address' = el auto no estaba donde el cliente.
   customerPhotoUrl?: string | null;
+  // Evidencia del servicio (src/serviceEvidence.ts).
+  servicePhotos?: Array<{ id: number; kind: 'before' | 'after'; photoUrl: string; createdAt: string }>;
+  oldPartsStatus?: 'delivered' | 'declined' | 'none' | null;
   carPhotoUrl?: string | null;
   spotPhotoUrl?: string | null;
   locationSource?: string | null;

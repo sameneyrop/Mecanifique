@@ -777,7 +777,8 @@ function buildStyles(colors: Palette) {
     overflow: 'hidden',
   },
   requestPhotoThumb: {
-    flex: 1,
+    // De dos en dos (la fila hace wrap): con 3 a 6 fotos no se encogen.
+    width: '47%',
     aspectRatio: 4 / 3,
     borderRadius: 14,
     overflow: 'hidden',

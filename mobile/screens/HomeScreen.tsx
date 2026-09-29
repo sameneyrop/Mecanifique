@@ -39,6 +39,7 @@ import { CustomerReviewCard } from '../components/CustomerReview';
 import { ProfileChecklist } from '../components/ProfileChecklist';
 import { RateSuggestion } from '../components/MarketInsights';
 import { RequestPhotos } from '../components/RequestPlace';
+import { MechanicEvidencePanel, ServiceEvidenceView } from '../components/ServiceEvidence';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -423,6 +424,7 @@ function CustomerHome(props: HomeScreenProps) {
         mechanicName={detail.mechanicName}
         onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
       />
+      <ServiceEvidenceView request={detail} />
       <ReceiptsCard
         api={props.api}
         request={detail}
@@ -733,6 +735,11 @@ function MechanicHome(props: HomeScreenProps) {
               <WithdrawButton api={props.api} request={detail} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
             </View>
           </Card>
+          <MechanicEvidencePanel
+            api={props.api}
+            request={detail}
+            onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
+          />
           <MechanicPartsPanel
             api={props.api}
             request={detail}
