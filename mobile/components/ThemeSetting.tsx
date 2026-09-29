@@ -19,7 +19,7 @@ export function ThemeSetting() {
         ]}
         onChange={(value) => applyColorScheme(value as ColorScheme)}
       />
-      <Text style={styles.smallText}>También lo cambias con el botón de luna junto a la campana.</Text>
+      <Text style={styles.smallText}>También lo cambias con el botón de luna o sol junto a la campana.</Text>
     </View>
   );
 }

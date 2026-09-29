@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
@@ -58,11 +58,12 @@ export function CustomerReviewCard({
   }
 
   return (
-    <Card
-      title={`Califica a ${name}`}
-      subtitle="¿Te recibió a tiempo, fue claro y te pagó lo acordado? Otros mecánicos verán su promedio antes de aceptar sus solicitudes. El cliente solo ve su promedio, no tu calificación."
-    >
+    <Card title={`Califica a ${name}`} subtitle="¿Te recibió a tiempo, fue claro y te pagó lo acordado?">
       <View style={styles.stack}>
+        <Text style={styles.smallText}>
+          Otros mecánicos verán su promedio antes de aceptar sus solicitudes. El cliente solo ve su promedio, no tu
+          calificación.
+        </Text>
         <Field label="Calificación">
           <StarRating value={rating} onChange={setRating} />
         </Field>

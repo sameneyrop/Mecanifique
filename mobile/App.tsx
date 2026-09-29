@@ -1144,10 +1144,12 @@ export default function App() {
     }
   }, [currentScreen]);
 
-  // Abrir o cerrar un perfil empieza desde arriba de la pantalla.
+  // Abrir o cerrar un perfil, o cambiar de pantalla, empieza desde arriba (la
+  // barra de desplazamiento es la misma para todas: sin esto, Acciones abría a
+  // la altura en que se había dejado la pantalla anterior).
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ y: 0, animated: false });
-  }, [mechanicsView]);
+  }, [mechanicsView, currentScreen]);
 
   // El recorrido sale la primera vez que se entra con cada rol (en este
   // teléfono), ya con sesión y sin la verificación de teléfono pendiente.
