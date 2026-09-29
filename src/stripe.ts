@@ -1,5 +1,7 @@
 /**
- * Conexión con Stripe para la cuota de servicio (ver src/serviceFees.ts).
+ * Conexión con Stripe: el corte semanal de comisiones que paga el mecánico
+ * (src/commissions.ts) y la cuota de servicio al cliente, que ya no se usa
+ * (src/serviceFees.ts, apagada salvo SERVICE_FEE_ENABLED=true).
  *
  * Todo pasa por esta interfaz pequeña para que los tests puedan usar un
  * Stripe simulado. Sin STRIPE_SECRET_KEY no hay pasarela y la cuota queda
@@ -21,6 +23,16 @@ export type StripeGateway = {
     cancelUrl: string;
     customerEmail?: string;
     userId: number;
+  }): Promise<{ id: string; url: string }>;
+  /** Pago normal (se cobra al momento), con tarjeta u OXXO: el corte de comisiones. */
+  createPaymentCheckout(input: {
+    amountCents: number;
+    name: string;
+    description: string;
+    successUrl: string;
+    cancelUrl: string;
+    customerEmail?: string;
+    reference: string;
   }): Promise<{ id: string; url: string }>;
   retrieveCheckout(sessionId: string): Promise<CheckoutSummary>;
   capture(paymentIntentId: string, idempotencyKey: string): Promise<void>;
@@ -61,6 +73,31 @@ function createStripeGateway(secretKey: string): StripeGateway {
         cancel_url: cancelUrl,
         // Stripe exige entre 30 minutos y 24 horas.
         expires_at: Math.floor(Date.now() / 1000) + 35 * 60
+      });
+      if (!session.url) {
+        throw new Error("Stripe no devolvió la dirección de pago");
+      }
+      return { id: session.id, url: session.url };
+    },
+
+    async createPaymentCheckout({ amountCents, name, description, successUrl, cancelUrl, customerEmail, reference }) {
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        // OXXO: el mecánico paga en efectivo en tienda; se confirma en 1 a 3 días.
+        payment_method_types: ["card", "oxxo"],
+        payment_method_options: { oxxo: { expires_after_days: 3 } },
+        locale: "es-419",
+        line_items: [
+          {
+            quantity: 1,
+            price_data: { currency: "mxn", unit_amount: amountCents, product_data: { name, description } }
+          }
+        ],
+        payment_intent_data: { description: name, metadata: { reference } },
+        client_reference_id: reference,
+        customer_email: customerEmail,
+        success_url: successUrl,
+        cancel_url: cancelUrl
       });
       if (!session.url) {
         throw new Error("Stripe no devolvió la dirección de pago");

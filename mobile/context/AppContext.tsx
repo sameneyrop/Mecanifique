@@ -170,6 +170,8 @@ type ServiceRequest = {
   cancelReason?: 'customer_cancelled' | 'customer_absent' | 'admin_cancelled' | null;
   cancellationFee?: number | null;
   absencePhotoUrl?: string | null;
+  // Comisión de Mecanifique por este servicio (solo la ve el mecánico; src/commissions.ts).
+  commission?: { commission: number; baseAmount: number; waivedReason: string | null } | null;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

@@ -23,6 +23,7 @@ import { ILLUSTRATIONS } from '../illustrations';
 import { formatCalendarDate, openExternalNavigation, openPrivacyNotice, openTerms } from '../utils';
 import { MechanicPromotions } from '../components/MechanicPromotions';
 import { TipInfoCard } from '../components/TipInfoCard';
+import { AdminCommissionsCard, CommissionsPanel } from '../components/Commissions';
 import { DeleteAccountSection } from '../components/DeleteAccountSection';
 import type { ApiCall } from '../App';
 
@@ -224,7 +225,7 @@ export function ActionsScreen({
   const { user, busy, identityState, identityBusy, setMessage } = useAppContext();
   // El avance de un trabajo se maneja desde Inicio (botón de siguiente paso);
   // aquí el mecánico solo administra lo que ven los clientes: perfil y agenda.
-  const [mechanicView, setMechanicView] = useState<'profile' | 'schedule' | 'promotions'>('profile');
+  const [mechanicView, setMechanicView] = useState<'profile' | 'schedule' | 'promotions' | 'commissions'>('profile');
 
   if (!user || (user.role !== 'admin' && user.role !== 'mechanic')) {
     return null;
@@ -293,8 +294,9 @@ export function ActionsScreen({
                 { key: 'profile', label: 'Mi perfil', icon: 'person-outline' },
                 { key: 'schedule', label: 'Mi agenda', icon: 'calendar-outline' },
                 { key: 'promotions', label: 'Promociones', icon: 'pricetag-outline' },
+                { key: 'commissions', label: 'Comisiones', icon: 'receipt-outline' },
               ]}
-              onChange={(value) => setMechanicView(value as 'profile' | 'schedule' | 'promotions')}
+              onChange={(value) => setMechanicView(value as 'profile' | 'schedule' | 'promotions' | 'commissions')}
             />
           </Animated.View>
 
@@ -393,6 +395,12 @@ export function ActionsScreen({
                 identityBusy={identityBusy}
                 onStart={onStartIdentityVerification}
               />
+            </Animated.View>
+          )}
+
+          {mechanicView === 'commissions' && (
+            <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
+              <CommissionsPanel api={api} />
             </Animated.View>
           )}
 
@@ -496,6 +504,10 @@ export function ActionsScreen({
                 ))}
               </View>
             </Card>
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(80).duration(300)} needsOffscreenAlphaCompositing>
+            <AdminCommissionsCard api={api} />
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>

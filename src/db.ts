@@ -291,6 +291,42 @@ export async function initDb(): Promise<void> {
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_mechanic_withdrawals_mechanic ON mechanic_withdrawals(mechanic_id, created_at)");
 
+  // Comisión de Mecanifique (src/commissions.ts): 10 % de la visita y la mano
+  // de obra de cada servicio terminado, que el mecánico paga en un corte
+  // semanal. waived_reason: gratis (p. ej. sus primeros 30 días).
+  await run(`
+    CREATE TABLE IF NOT EXISTS commission_charges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mechanic_id INTEGER NOT NULL,
+      service_request_id INTEGER NOT NULL UNIQUE,
+      base_amount REAL NOT NULL,
+      commission REAL NOT NULL,
+      waived_reason TEXT,
+      statement_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id),
+      FOREIGN KEY(service_request_id) REFERENCES service_requests(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_commission_charges_mechanic ON commission_charges(mechanic_id, statement_id)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS commission_statements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mechanic_id INTEGER NOT NULL,
+      period_key TEXT NOT NULL,
+      total REAL NOT NULL,
+      services INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'paid')),
+      due_at TEXT NOT NULL,
+      paid_at TEXT,
+      paid_via TEXT,
+      checkout_session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(mechanic_id, period_key),
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+
   await run(`
     CREATE TABLE IF NOT EXISTS service_request_declines (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -41,6 +41,7 @@ type GuideRequest = {
   amountDue?: AmountDue;
   receipts?: PartsReceipt[];
   partsTripOpen?: boolean;
+  commission?: { commission: number; baseAmount: number; waivedReason: string | null } | null;
 };
 
 type RequestListItem = {
@@ -354,6 +355,22 @@ function usePaymentAction(api: ApiCall, requestId: number, onChanged: () => void
 
 type TipInfo = { clabe: string | null; holderName: string | null };
 
+/** Comisión de Mecanifique por este servicio (src/commissions.ts); solo la ve el mecánico. */
+function CommissionLine({ request }: { request: GuideRequest }) {
+  const charge = request.commission;
+  if (!charge) return null;
+  if (charge.waivedReason) {
+    return <InfoRow icon="gift-outline" text="Sin comisión de Mecanifique: estás en tus primeros 30 días." />;
+  }
+  if (charge.commission <= 0) return null;
+  return (
+    <InfoRow
+      icon="receipt-outline"
+      text={`Comisión de Mecanifique: ${formatPesos(charge.commission)} (10 % de visita y mano de obra). Va en tu corte semanal.`}
+    />
+  );
+}
+
 /** Por qué se cobra una cancelación (src/cancellations.ts). */
 function CancellationNote({ request, role }: { request: GuideRequest; role: Role }) {
   const name = firstName(request.mechanicName, 'Tu mecánico');
@@ -509,7 +526,7 @@ export function CustomerPaymentCard({
           />
         )}
         <AmountBreakdown request={request} />
-        <InfoRow icon="cash-outline" text="Directo a él, en efectivo o por transferencia. Mecanifique no cobra este monto." />
+        <InfoRow icon="cash-outline" text="Directo a él, en efectivo o por transferencia. No le pagas nada a Mecanifique." />
         {bank?.clabe ? (
           <View style={styles.publicProfileBox}>
             <Text style={styles.publicProfileTitle}>Para transferirle</Text>
@@ -550,7 +567,10 @@ export function MechanicCollectCard({ api, request, onChanged }: { api: ApiCall;
   if (request.paidAt) {
     return (
       <Card title="Cobrado">
-        <InfoRow icon="checkmark-circle-outline" text={`${client} te pagó ${formatPesos(total)}.`} />
+        <View style={styles.stack}>
+          <InfoRow icon="checkmark-circle-outline" text={`${client} te pagó ${formatPesos(total)}.`} />
+          <CommissionLine request={request} />
+        </View>
       </Card>
     );
   }
@@ -601,13 +621,14 @@ export function MechanicCollectCard({ api, request, onChanged }: { api: ApiCall;
       <View style={styles.stack}>
         <CancellationNote request={request} role="mechanic" />
         <AmountBreakdown request={request} />
+        <CommissionLine request={request} />
         {customerSaysPaid ? (
           <Text style={styles.itemText}>
             Dice que te pagó {request.paymentMethod ? METHOD_TEXT[request.paymentMethod] : ''}. Revisa tu efectivo o tu cuenta y confírmalo.
           </Text>
         ) : (
           <>
-            <InfoRow icon="cash-outline" text="En efectivo o por transferencia a tu cuenta. Mecanifique no se queda con nada de este monto." />
+            <InfoRow icon="cash-outline" text="En efectivo o por transferencia a tu cuenta." />
             <Text style={styles.smallText}>Confírmalo aquí en cuanto te pague, de preferencia frente al cliente.</Text>
           </>
         )}

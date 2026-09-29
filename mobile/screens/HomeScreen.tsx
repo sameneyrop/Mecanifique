@@ -31,6 +31,7 @@ import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
 import { MechanicPartsPanel, ReceiptsCard } from '../components/PartsReceipts';
 import { ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/ReturnVisit';
 import { CustomerAbsentAction, WithdrawButton } from '../components/CancellationActions';
+import { CommissionHomeCard } from '../components/Commissions';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -533,7 +534,7 @@ function MechanicOnboarding({
             number={2}
             done={rateDone}
             title="Pon el precio de tu visita y diagnóstico"
-            description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico."
+            description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico. Mecanifique cobra 10 % de la visita y la mano de obra; tus primeros 30 días, nada."
           >
             <Field label="Visita y diagnóstico (pesos)">
               <Input
@@ -645,6 +646,8 @@ function MechanicHome(props: HomeScreenProps) {
           onSaveLaborRate={props.onSaveLaborRate}
         />
       )}
+      {/* El corte de comisiones por pagar (o vencido: no puede conectarse). */}
+      {props.mechanicProfile?.status === 'active' && <CommissionHomeCard api={props.api} />}
       {activeId !== null && !detail && <LoadingServiceCard />}
       {detail && (
         <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>

@@ -1,4 +1,7 @@
 process.env.MECANIFIQUE_AUTO_START = "false";
+// Las pruebas de comisión cuentan los días gratis desde que se creó cada
+// mecánico; la del lanzamiento cambia esta fecha dentro de la prueba.
+process.env.COMMISSION_LAUNCH_DATE = "2020-01-01T00:00:00Z";
 
 const {
   startServer,
@@ -55,6 +58,13 @@ const {
 } = require("../src/partsReceipts.ts");
 const { ReturnVisitError, createReturnVisit, getReturnVisit } = require("../src/returnVisits.ts");
 const {
+  commissionFor,
+  generateWeeklyStatements,
+  markStatementPaid,
+  mechanicCommissionSummary,
+  recordCommission
+} = require("../src/commissions.ts");
+const {
   CancellationError,
   cancellationQuote,
   markCustomerAbsent,
@@ -100,6 +110,7 @@ async function cleanupCreatedRows() {
     await run("DELETE FROM disputes WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM parts_receipts WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM mechanic_withdrawals WHERE service_request_id = ?", [requestId]);
+    await run("DELETE FROM commission_charges WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_fees WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_declines WHERE service_request_id = ?", [requestId]);
     await run("DELETE FROM service_request_updates WHERE service_request_id = ?", [requestId]);
@@ -109,6 +120,8 @@ async function cleanupCreatedRows() {
     await run("DELETE FROM customers WHERE id = ?", [customerId]);
   }
   for (const mechanicId of createdRows.mechanics) {
+    await run("DELETE FROM commission_charges WHERE mechanic_id = ?", [mechanicId]);
+    await run("DELETE FROM commission_statements WHERE mechanic_id = ?", [mechanicId]);
     await run("DELETE FROM mechanics WHERE id = ?", [mechanicId]);
   }
 }
@@ -1088,6 +1101,94 @@ test("ya no puedo ir: antes de llegar la solicitud vuelve a buscar mecánico y q
   await assert.rejects(mechanicWithdraws({ requestId: arrived.requestId, mechanicId }), (error) => error.status === 409);
   await run("UPDATE service_requests SET status = 'assigned', parent_request_id = ? WHERE id = ?", [requestId, arrived.requestId]);
   await assert.rejects(mechanicWithdraws({ requestId: arrived.requestId, mechanicId }), (error) => /visita de regreso/.test(error.message));
+});
+
+test("comisión: 10 % de visita y mano de obra, entre $30 y $300, y nunca más de lo que cobró", () => {
+  assert.equal(commissionFor(0), 0);
+  assert.equal(commissionFor(25), 25, "no puede deber más de lo que cobró");
+  assert.equal(commissionFor(200), 30, "mínimo $30");
+  assert.equal(commissionFor(1500), 150);
+  assert.equal(commissionFor(5000), 300, "tope $300");
+});
+
+async function completedWithAmounts(mechanicId, visit = 400, labor = 600) {
+  const { requestId, customerId } = await createCompletedRequest(mechanicId);
+  await run("UPDATE service_requests SET visit_fee = ? WHERE id = ?", [visit, requestId]);
+  // Refacciones de $900: no cuentan para la comisión.
+  await run(
+    "INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description, status) VALUES (?, ?, ?, 900, 0, 'Trabajo', 'accepted')",
+    [requestId, mechanicId, labor]
+  );
+  return { requestId, customerId };
+}
+
+test("comisión: se registra al terminar, sin refacciones, y es gratis en los primeros 30 días del mecánico", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const first = await completedWithAmounts(mechanicId);
+  assert.deepEqual(await recordCommission(first.requestId), { commission: 100, waived: true });
+  assert.deepEqual(await recordCommission(first.requestId), { commission: 100, waived: true }, "una sola por servicio");
+
+  await run("UPDATE mechanics SET created_at = datetime('now', '-40 days') WHERE id = ?", [mechanicId]);
+  const second = await completedWithAmounts(mechanicId);
+  assert.deepEqual(await recordCommission(second.requestId), { commission: 100, waived: false });
+});
+
+test("comisión: el corte semanal junta lo pagado (o sin reporte en 48 h), una vez por semana; vencido bloquea conectarse", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await run("UPDATE mechanics SET created_at = datetime('now', '-60 days') WHERE id = ?", [mechanicId]);
+  const now = new Date();
+  const daysAgo = (days) => new Date(now.getTime() - days * 86_400_000);
+
+  const paid = await completedWithAmounts(mechanicId);
+  await recordCommission(paid.requestId, daysAgo(1));
+  await run("UPDATE service_requests SET paid_at = CURRENT_TIMESTAMP WHERE id = ?", [paid.requestId]);
+  const unpaid = await completedWithAmounts(mechanicId);
+  await recordCommission(unpaid.requestId, daysAgo(3));
+  await run("UPDATE service_requests SET unpaid_reported_at = CURRENT_TIMESTAMP WHERE id = ?", [unpaid.requestId]);
+  const quiet = await completedWithAmounts(mechanicId, 400, 1100);
+  await recordCommission(quiet.requestId, daysAgo(3));
+  const fresh = await completedWithAmounts(mechanicId);
+  await recordCommission(fresh.requestId, now);
+
+  const created = (await generateWeeklyStatements(now)).filter((statement) => statement.mechanicId === mechanicId);
+  assert.equal(created.length, 1);
+  assert.equal(created[0].services, 2, "el pagado y el que lleva 48 h sin reporte; no el reportado ni el recién terminado");
+  assert.equal(created[0].total, 100 + 150);
+  assert.equal((await generateWeeklyStatements(now)).filter((statement) => statement.mechanicId === mechanicId).length, 0, "una vez por semana");
+
+  // Vencido: no se puede conectar hasta pagarlo.
+  await run("UPDATE commission_statements SET due_at = datetime('now', '-1 day') WHERE id = ?", [created[0].id]);
+  const blocked = await applyMechanicConnection(mechanicId, true, true);
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /corte de comisiones vencido/);
+  await markStatementPaid(created[0].id, "manual");
+  assert.equal((await applyMechanicConnection(mechanicId, true, true)).ok, true);
+
+  const summary = await mechanicCommissionSummary(mechanicId);
+  assert.equal(summary.statements[0].status, "paid");
+  const states = Object.fromEntries(summary.charges.map((charge) => [charge.requestId, charge.state]));
+  assert.equal(states[unpaid.requestId], "on_hold", "no paga comisión de lo que no le pagaron");
+  assert.equal(states[fresh.requestId], "next");
+});
+
+test("comisión: quien ya era mecánico al lanzarla cuenta sus 30 días gratis desde el lanzamiento", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await run("UPDATE mechanics SET created_at = datetime('now', '-90 days') WHERE id = ?", [mechanicId]);
+  const previous = process.env.COMMISSION_LAUNCH_DATE;
+  process.env.COMMISSION_LAUNCH_DATE = new Date(Date.now() - 5 * 86_400_000).toISOString();
+  try {
+    const { requestId } = await completedWithAmounts(mechanicId);
+    assert.deepEqual(await recordCommission(requestId), { commission: 100, waived: true });
+    assert.ok((await mechanicCommissionSummary(mechanicId)).freeUntil, "le quedan días gratis");
+  } finally {
+    process.env.COMMISSION_LAUNCH_DATE = previous;
+  }
+});
+
+test("comisiones: las rutas piden sesión", async () => {
+  assert.equal((await request("/api/mechanics/me/commissions")).response.status, 401);
+  const { response } = await request("/api/mechanics/me/commission-statements/1/checkout", { method: "POST", body: "{}" });
+  assert.equal(response.status, 401);
 });
 
 test("cancelaciones: las rutas piden sesión", async () => {

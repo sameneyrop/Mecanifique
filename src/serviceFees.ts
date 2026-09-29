@@ -40,8 +40,13 @@ const ARRIVED_STATUSES = new Set(["on_site", "in_progress", "diagnosing", "repai
 // Solo se regresa a la app (Expo Go en desarrollo, o la app instalada).
 const ALLOWED_RETURN_PREFIXES = ["mecanifique://", "exp://", "exps://"];
 
+/**
+ * La cuota al cliente ya no es el modelo (ahora el mecánico paga comisión,
+ * src/commissions.ts): queda apagada aunque haya Stripe, salvo que se pida
+ * con SERVICE_FEE_ENABLED=true.
+ */
 export function isServiceFeeEnabled(): boolean {
-  return getStripeGateway() !== null;
+  return getStripeGateway() !== null && process.env.SERVICE_FEE_ENABLED === "true";
 }
 
 /** Monto de la cuota en pesos (SERVICE_FEE_MXN, por defecto 49; Stripe no cobra menos de $10). */

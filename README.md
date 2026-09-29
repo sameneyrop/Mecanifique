@@ -372,16 +372,46 @@ estar completas sin una cuenta, credenciales o decisión operativa:
 | Pagos | Cuenta de Stripe Connect u otro PSP compatible con México, requisitos fiscales y política de reembolsos. |
 | CLABE y liquidaciones | Onboarding bancario del proveedor de pagos y calendario comercial de dispersión. |
 
-## Modelo de pagos: cuota de servicio (vigente)
+## Modelo de pagos: comisión al mecánico (vigente)
 
-Mecanifique solo cobra una **cuota de servicio fija** al cliente
-(`SERVICE_FEE_MXN`, por defecto $49). El trabajo del mecánico se le paga
-directamente a él, en efectivo o transferencia, fuera de la app. Así
-Mecanifique no maneja dinero de terceros: no tiene que retener ISR/IVA como
-plataforma que cobra por cuenta de otros ni dar de alta a cada mecánico en
-Stripe (algo difícil para mecánicos mayores).
+El cliente **no le paga nada a Mecanifique**: le paga el servicio directo al
+mecánico, en efectivo o transferencia. Mecanifique cobra al **mecánico** una
+comisión por los servicios que termina (`src/commissions.ts`). Como el dinero
+del trabajo nunca pasa por la app, Mecanifique no cobra por cuenta de
+terceros: no tiene que retener ISR/IVA como plataforma que cobra por otros ni
+dar de alta a cada mecánico en Stripe. (Confirmar con un contador si hay
+obligación de informar al SAT como plataforma que intermedia.)
 
-Cómo funciona (`src/serviceFees.ts`, `src/stripe.ts`):
+- **10 % de la visita y la mano de obra**, sin las refacciones (siguen a
+  precio de ticket), con **mínimo $30** (nunca más de lo que cobró) y **tope
+  $300** por servicio (`commissionFor`). Se registra al terminar el servicio
+  (`commission_charges`). Las cancelaciones con cargo no pagan comisión.
+- **Primeros 30 días gratis** desde que el mecánico crea su cuenta
+  (`COMMISSION_FREE_DAYS`): el servicio queda con comisión $0. Quien ya era
+  mecánico al lanzar la comisión los cuenta desde el lanzamiento, el 29 de
+  septiembre de 2026 (`COMMISSION_LAUNCH_DATE`).
+- **Nunca paga comisión de lo que no le pagaron**: entra al corte cuando
+  confirma el pago, o 48 h después de terminar si no reportó que no le
+  pagaron; con un reporte abierto queda "en espera".
+- **Corte semanal** (`commission_statements`): cada lunes, hora de México
+  (`sweepCommissions`, cada 10 min), se junta lo pendiente; tiene 7 días para
+  pagarlo. Con Stripe paga con tarjeta u OXXO (`/commission-statements/:id/
+  checkout`, se confirma solo; OXXO tarda 1 a 3 días); sin Stripe, por
+  transferencia a `MECANIFIQUE_PAYMENT_CLABE` / `MECANIFIQUE_PAYMENT_HOLDER` y
+  un admin lo marca pagado (Acciones → Cortes de comisiones).
+- **Corte vencido**: no puede conectarse hasta pagarlo
+  (`applyMechanicConnection`).
+- La app se lo muestra en Inicio (corte por pagar), en Acciones → Comisiones
+  (cómo se calcula, cortes, comisión de cada servicio) y en la tarjeta de
+  cobro de cada servicio.
+
+### Cuota de servicio al cliente (apagada)
+
+Era el modelo anterior; el código sigue, pero **queda apagado** aunque haya
+Stripe, salvo `SERVICE_FEE_ENABLED=true`. Pedir tarjeta por adelantado frenaba
+a quien paga en efectivo o no tiene tarjeta.
+
+Cómo funcionaba (`src/serviceFees.ts`, `src/stripe.ts`):
 
 1. Al enviar la solicitud, la app valida el formulario y abre Stripe Checkout
    (`POST /api/payments/service-fee`) en un navegador dentro de la app. La
@@ -398,8 +428,9 @@ Cómo funciona (`src/serviceFees.ts`, `src/stripe.ts`):
 4. Un barrido cada 10 minutos libera cuotas pagadas que nunca llegaron a una
    solicitud (la app se cerró a medio camino).
 
-Configuración en Render: `STRIPE_SECRET_KEY` (sin ella, la cuota queda
-desactivada y la app funciona como antes) y, opcional, `SERVICE_FEE_MXN`.
+Configuración en Render: `STRIPE_SECRET_KEY` (también la usa el corte de
+comisiones), `SERVICE_FEE_ENABLED=true` para prenderla y, opcional,
+`SERVICE_FEE_MXN`.
 Una tarjeta apartada vence a los 7 días, así que los turnos de la agenda solo
 se pueden apartar dentro de los próximos 7 días, hoy incluido
 (`lastBookableSlotDate` en el servidor, `BOOKING_WINDOW_DAYS` en la app). Queda

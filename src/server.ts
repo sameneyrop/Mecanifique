@@ -73,6 +73,19 @@ import {
 } from "./quotes";
 import { ReturnVisitError, createReturnVisit, getReturnVisit } from "./returnVisits";
 import {
+  CommissionError,
+  createStatementCheckout,
+  generateWeeklyStatements,
+  markStatementPaid,
+  mechanicCommissionSummary,
+  openStatementsForAdmin,
+  openStatementsWithCheckout,
+  overdueStatement,
+  recordCommission,
+  refreshStatementPayment,
+  statementForMechanic
+} from "./commissions";
+import {
   ABSENCE_REMINDER_MINUTES,
   ABSENCE_WAIT_MINUTES,
   CancellationError,
@@ -1377,8 +1390,38 @@ function startServiceFeeSweep(): void {
   }
   serviceFeeSweepTimer = setInterval(() => {
     releaseOrphanServiceFees().catch((error) => console.error("Service fee sweep failed:", error));
+    sweepCommissions().catch((error) => console.error("Commission sweep failed:", error));
   }, SERVICE_FEE_SWEEP_INTERVAL_MS);
   serviceFeeSweepTimer.unref();
+}
+
+/**
+ * Comisiones (src/commissions.ts): arma el corte semanal de quien tenga
+ * comisiones por cobrar (una vez por semana) y revisa en Stripe los pagos en
+ * curso, que con OXXO se confirman días después.
+ */
+export async function sweepCommissions(now = new Date()): Promise<number> {
+  const created = await generateWeeklyStatements(now);
+  for (const statement of created) {
+    const mechanicUserId = await getUserIdByMechanicId(statement.mechanicId);
+    if (mechanicUserId) {
+      const due = new Date(`${statement.dueAt.replace(" ", "T")}Z`).toLocaleDateString("es-MX", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        timeZone: "America/Mexico_City"
+      });
+      await createNotification(
+        mechanicUserId,
+        "Tu corte semanal está listo",
+        `Comisión de ${formatMxn(statement.total)} por ${statement.services} servicio(s). Págala antes del ${due} para seguir recibiendo solicitudes.`
+      );
+    }
+  }
+  for (const statementId of await openStatementsWithCheckout()) {
+    await refreshStatementPayment(statementId).catch(() => undefined);
+  }
+  return created.length;
 }
 
 const ACTIVE_JOB_STATUSES_SQL = "('assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts')";
@@ -1457,6 +1500,18 @@ export async function applyMechanicConnection(
           ? "Tu cuenta está suspendida. Escríbenos a soporte para revisarla."
           : "Tu cuenta todavía no está activa. Verifica tu identidad para empezar a recibir solicitudes."
     };
+  }
+
+  // Con un corte de comisiones vencido no recibe solicitudes hasta pagarlo.
+  if (enforceActive) {
+    const overdue = await overdueStatement(mechanicId);
+    if (overdue) {
+      return {
+        ok: false,
+        status: 409,
+        error: `Tienes un corte de comisiones vencido de ${formatMxn(overdue.total)}. Págalo en Acciones → Comisiones para volver a conectarte.`
+      };
+    }
   }
 
   const activeJob = await get<{ id: number }>(
@@ -2569,6 +2624,101 @@ app.post("/api/payments/service-fee", requireAuth, requireRole("customer"), hand
     }
     throw error;
   }
+}));
+
+// --- Comisiones del mecánico (src/commissions.ts) ---
+
+function sendCommissionError(res: Response, error: unknown): boolean {
+  if (error instanceof CommissionError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+// Lo que el mecánico ve: cortes, comisión de cada servicio y cómo pagar.
+app.get("/api/mechanics/me/commissions", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const mechanicId = req.auth?.user.mechanicId;
+  if (!mechanicId) {
+    res.status(400).json({ error: "Mecánico autenticado inválido" });
+    return;
+  }
+  res.json(await mechanicCommissionSummary(mechanicId));
+}));
+
+// Pagar un corte con tarjeta u OXXO (Stripe). Regresa a la app al terminar.
+app.post(
+  "/api/mechanics/me/commission-statements/:id/checkout",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const statementId = parseRequestIdParam(req, res);
+    if (statementId === null) return;
+    if (applyRateLimit("commission-checkout", req, res, 10)) return;
+    const { returnUrl } = z.object({ returnUrl: z.string().min(8).max(300) }).parse(req.body);
+    if (!isAllowedAppReturnUrl(returnUrl)) {
+      res.status(400).json({ error: "Dirección de regreso inválida" });
+      return;
+    }
+    const back = `${publicBaseUrl(req).replace(/\/$/, "")}/pagos/regreso`;
+    const destino = encodeURIComponent(returnUrl);
+    try {
+      const checkout = await createStatementCheckout({
+        statementId,
+        mechanicId: req.auth!.user.mechanicId!,
+        successUrl: `${back}?estado=listo&session_id={CHECKOUT_SESSION_ID}&destino=${destino}`,
+        cancelUrl: `${back}?estado=cancelado&destino=${destino}`,
+        email: req.auth!.user.login?.includes("@") ? req.auth!.user.login : undefined
+      });
+      res.status(201).json(checkout);
+    } catch (error) {
+      if (!sendCommissionError(res, error)) throw error;
+    }
+  })
+);
+
+// Al volver de Stripe: revisa si el corte ya quedó pagado.
+app.post(
+  "/api/mechanics/me/commission-statements/:id/refresh",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const statementId = parseRequestIdParam(req, res);
+    if (statementId === null) return;
+    try {
+      await statementForMechanic(statementId, req.auth!.user.mechanicId!);
+      await refreshStatementPayment(statementId);
+      res.json(await mechanicCommissionSummary(req.auth!.user.mechanicId!));
+    } catch (error) {
+      if (!sendCommissionError(res, error)) throw error;
+    }
+  })
+);
+
+// Admin: cortes sin pagar y marcar como pagado uno pagado por transferencia.
+app.get("/api/admin/commission-statements", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
+  res.json({ statements: await openStatementsForAdmin() });
+}));
+
+app.post("/api/admin/commission-statements/:id/mark-paid", requireAuth, requireRole("admin"), handleAsync(async (req, res) => {
+  const statementId = parseRequestIdParam(req, res);
+  if (statementId === null) return;
+  const statement = await get<{ mechanicId: number; total: number }>(
+    "SELECT mechanic_id AS mechanicId, total FROM commission_statements WHERE id = ?",
+    [statementId]
+  );
+  if (!statement) {
+    res.status(404).json({ error: "Corte no encontrado" });
+    return;
+  }
+  const updated = await markStatementPaid(statementId, "manual");
+  if (updated) {
+    const mechanicUserId = await getUserIdByMechanicId(statement.mechanicId);
+    if (mechanicUserId) {
+      await createNotification(mechanicUserId, "Recibimos tu pago", `Tu corte de comisiones de ${formatMxn(statement.total)} quedó pagado. ¡Gracias!`);
+    }
+  }
+  res.json({ ok: true, updated });
 }));
 
 // Stripe regresa aquí (https) al terminar o cancelar el pago; de aquí se
@@ -4476,6 +4626,14 @@ app.get(
       isPartsTripOpen(requestId),
       getReturnVisit(requestId)
     ]);
+    // La comisión de este servicio solo la ven el mecánico y los admins.
+    const commission =
+      req.auth?.user.role === "customer"
+        ? null
+        : ((await get<{ commission: number; baseAmount: number; waivedReason: string | null }>(
+            "SELECT commission, base_amount AS baseAmount, waived_reason AS waivedReason FROM commission_charges WHERE service_request_id = ?",
+            [requestId]
+          )) ?? null);
     res.status(200).json({
       ...request,
       reviewed: Boolean(request.reviewed),
@@ -4487,6 +4645,7 @@ app.get(
       partsTripOpen,
       // Visita de regreso programada desde este servicio (src/returnVisits.ts).
       returnVisit,
+      commission,
       serviceFee: await getServiceFeeForRequest(requestId),
       quotes: await getQuotesForRequest(requestId)
     });
@@ -4840,6 +4999,8 @@ app.patch(
         `,
         [existing.mechanic_id]
       );
+      // Comisión de Mecanifique por este servicio (src/commissions.ts).
+      await recordCommission(requestId);
     }
 
     const statusRequest = await get<{ customer_id: number }>(
