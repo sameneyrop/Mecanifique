@@ -25,6 +25,7 @@ type GuideRequest = {
   status: string;
   preferredTime?: string;
   scheduleSlotId?: number | null;
+  parentRequestId?: number | null;
   mechanicName?: string | null;
   customerName?: string | null;
   visitFee?: number | null;
@@ -124,6 +125,13 @@ function customerGuide(request: GuideRequest): Guide | null {
 
   switch (request.status) {
     case 'assigned':
+      if (request.parentRequestId) {
+        return {
+          icon: 'calendar-outline',
+          title: `${name} regresa${request.preferredTime ? `: ${request.preferredTime}` : ''}`,
+          text: 'Viene a terminar el trabajo. No se cobra otra visita: solo lo que falta, con su cotización.',
+        };
+      }
       return {
         icon: request.scheduleSlotId ? 'calendar-outline' : 'person-outline',
         title: request.scheduleSlotId ? `${name} confirmó tu cita` : `${name} aceptó tu solicitud`,
@@ -201,6 +209,13 @@ function mechanicGuide(request: GuideRequest): Guide | null {
 
   switch (request.status) {
     case 'assigned':
+      if (request.parentRequestId) {
+        return {
+          icon: 'calendar-outline',
+          title: 'Visita de regreso',
+          text: `Con ${client}${request.preferredTime ? `: ${request.preferredTime}` : ''}. No se cobra visita: cotiza solo lo que falta. Sal desde «Próxima visita» en Inicio.`,
+        };
+      }
       return request.scheduleSlotId
         ? {
             icon: 'calendar-outline',

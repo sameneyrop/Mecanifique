@@ -52,6 +52,7 @@ const {
   respondToReceipt,
   startPartsTrip
 } = require("../src/partsReceipts.ts");
+const { ReturnVisitError, createReturnVisit, getReturnVisit } = require("../src/returnVisits.ts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
@@ -958,6 +959,45 @@ test("ticket: 'voy a otra tienda' solo mientras va por refacciones", async () =>
   await run("UPDATE service_requests SET status = 'awaiting_parts' WHERE id = ?", [requestId]);
   await assert.rejects(customerForPartsTrip(requestId, mechanicId + 100000), (error) => error.status === 403);
   assert.equal(await customerForPartsTrip(requestId, mechanicId), customerId);
+});
+
+test("visita de regreso: queda ligada, asignada al mismo mecánico y sin cobro de visita", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  await run("UPDATE mechanics SET labor_rate = 400 WHERE id = ?", [mechanicId]);
+  const { requestId, customerId } = await createRequestInStatus(mechanicId, "en_route");
+  const schedule = (id = mechanicId) =>
+    createReturnVisit({ requestId, mechanicId: id, when: "Jueves 10:00", pendingWork: "Instalar la bomba de gasolina pedida" });
+
+  // Todavía no ve el auto; y solo el mecánico del servicio.
+  await assert.rejects(schedule(), (error) => error instanceof ReturnVisitError && error.status === 409);
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+  await assert.rejects(schedule(mechanicId + 100000), (error) => error.status === 403);
+
+  const { returnRequestId } = await schedule();
+  createdRows.requests.push(returnRequestId);
+  const created = await get(
+    "SELECT customer_id, mechanic_id, status, visit_fee, parent_request_id, preferred_time, assignment_mode FROM service_requests WHERE id = ?",
+    [returnRequestId]
+  );
+  assert.deepEqual(
+    [created.customer_id, created.mechanic_id, created.status, created.visit_fee, created.parent_request_id, created.preferred_time, created.assignment_mode],
+    [customerId, mechanicId, "assigned", 0, requestId, "Jueves 10:00", "direct"]
+  );
+  assert.equal((await amountDueForRequest(returnRequestId)).visitFee, 0, "no se cobra otra visita");
+  assert.equal((await getReturnVisit(requestId))?.id, returnRequestId);
+  await assert.rejects(schedule(), (error) => error.status === 409, "una sola visita de regreso abierta");
+});
+
+test("ticket: la pieza pedida queda marcada y se cobra como cualquier ticket", async () => {
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  const { requestId, customerId } = await createRequestInStatus(mechanicId, "diagnosing");
+  const quote = await createQuote({ requestId, mechanicId, laborAmount: 300, partsAmount: 2000, description: "Cambio de bomba de gasolina" });
+  await respondToQuote({ requestId, quoteId: quote.id, customerId, accept: true });
+  await run("UPDATE service_requests SET status = 'repairing' WHERE id = ?", [requestId]);
+  const ordered = await createReceipt({ requestId, mechanicId, amount: 1800, hasTicket: true, ordered: true, savePhoto: fakePhoto });
+  assert.equal(ordered.receipt.ordered, true);
+  assert.equal(ordered.receipt.status, "accepted");
+  assert.equal((await amountDueForRequest(requestId)).partsBought, 1800);
 });
 
 test("ticket: las rutas piden sesión", async () => {

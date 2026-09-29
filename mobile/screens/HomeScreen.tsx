@@ -29,6 +29,7 @@ import {
 import { MechanicTracker } from '../components/MechanicTracker';
 import { CustomerQuoteCard, MechanicQuotePanel } from '../components/Quote';
 import { MechanicPartsPanel, ReceiptsCard } from '../components/PartsReceipts';
+import { ReturnVisitPanel, UpcomingVisitsCard, isUpcoming } from '../components/ReturnVisit';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -96,6 +97,9 @@ const TRUST_BADGES: Array<{ icon: keyof typeof Ionicons.glyphMap; label: string 
   { icon: 'navigate-outline', label: 'Síguelo en camino' },
 ];
 
+// Desde qué pasos se puede programar una visita de regreso (ya vio el auto).
+const RETURN_VISIT_STATUSES = new Set(['on_site', 'in_progress', 'diagnosing', 'repairing', 'awaiting_parts']);
+
 // Un solo botón grande por paso: el mecánico no tiene que elegir el estado
 // de una lista (con guantes o en la calle eso son demasiados toques).
 const NEXT_JOB_STEP: Record<string, { status: string; label: string }> = {
@@ -162,12 +166,18 @@ function useActiveRequest(
 
   // Para admin, /mine devuelve TODAS las solicitudes del sistema: no hay un
   // "servicio propio" que mostrar.
+  // Las citas y visitas de regreso que todavía no empiezan van aparte
+  // ("Próxima visita"): antes se veían "en curso" días antes.
   const activeId =
     user?.role === 'admin'
       ? null
       : (myRequests.find(
-          (request) => ACTIVE_REQUEST_STATUSES.has(request.status) && (user?.role !== 'mechanic' || request.status !== 'pending'),
+          (request) =>
+            ACTIVE_REQUEST_STATUSES.has(request.status) &&
+            !isUpcoming(request) &&
+            (user?.role !== 'mechanic' || request.status !== 'pending'),
         )?.id ?? null);
+  const upcoming = user?.role === 'admin' ? [] : myRequests.filter((request) => isUpcoming(request));
   const needsClosure = user?.role === 'mechanic' ? mechanicNeedsClosure : customerNeedsClosure;
   const closureId = user?.role === 'admin' ? null : (myRequests.find((request) => needsClosure(request))?.id ?? null);
   const { closure, reloadClosure } = useClosureDetail(api, closureId);
@@ -196,7 +206,7 @@ function useActiveRequest(
     }
   }, [closure?.paidAt, closure?.customerPaidAt, closure?.unpaidReportedAt, closure?.reviewed]);
 
-  return { activeId, detail, closure, reloadClosure };
+  return { activeId, detail, closure, reloadClosure, upcoming };
 }
 
 function LoadingServiceCard() {
@@ -320,11 +330,22 @@ function CustomerSearch({
 
 function CustomerHome(props: HomeScreenProps) {
   const { busy, setCurrentScreen, setRequestsView } = useAppContext();
-  const { activeId, detail, closure, reloadClosure } = useActiveRequest(
+  const { activeId, detail, closure, reloadClosure, upcoming } = useActiveRequest(
     props.api,
     props.onLoadRequestById,
     props.onRefreshRequests,
   );
+
+  const openDetail = (requestId: number) => {
+    props
+      .onLoadRequestById(requestId)
+      .then(() => {
+        setRequestsView('detail');
+        setCurrentScreen('requests');
+      })
+      .catch(() => undefined);
+  };
+  const upcomingCard = <UpcomingVisitsCard items={upcoming} role="customer" onOpen={openDetail} busy={busy} />;
 
   // Calificar vive en el detalle de la solicitud (pestaña Solicitudes).
   const closureCard = closure && (
@@ -333,15 +354,7 @@ function CustomerHome(props: HomeScreenProps) {
         api={props.api}
         request={closure}
         onChanged={reloadClosure}
-        onRate={() => {
-          props
-            .onLoadRequestById(closure.id)
-            .then(() => {
-              setRequestsView('detail');
-              setCurrentScreen('requests');
-            })
-            .catch(() => undefined);
-        }}
+        onRate={() => openDetail(closure.id)}
       />
     </Animated.View>
   );
@@ -350,6 +363,7 @@ function CustomerHome(props: HomeScreenProps) {
     return (
       <View style={styles.stack}>
         {closureCard}
+        {upcomingCard}
         <CustomerSearch
           requestForm={props.requestForm}
           setRequestForm={props.setRequestForm}
@@ -375,6 +389,12 @@ function CustomerHome(props: HomeScreenProps) {
           <NextStepGuide request={detail} role="customer" />
           <ServiceProgress status={detail.status} />
           {feeText && <InfoRow icon="card-outline" text={feeText} />}
+          {detail.returnVisit && (
+            <InfoRow
+              icon="calendar-outline"
+              text={`${detail.mechanicName?.split(' ')[0] || 'Tu mecánico'} regresa: ${detail.returnVisit.preferredTime}. No se cobra otra visita.`}
+            />
+          )}
         </View>
       </Card>
       <MechanicTracker api={props.api} requestId={detail.id} status={detail.status} mechanicName={detail.mechanicName} />
@@ -410,6 +430,7 @@ function CustomerHome(props: HomeScreenProps) {
       />
       <SecondaryButton title="Cancelar solicitud" busy={busy} onPress={() => props.onCancelRequest(detail.id)} />
       {closureCard}
+      {upcomingCard}
     </Animated.View>
   );
 }
@@ -549,17 +570,30 @@ function mechanicBadges(profile: MechanicProfile | null): Array<{ icon: keyof ty
 }
 
 function MechanicHome(props: HomeScreenProps) {
-  const { busy, myRequests, mechanicConnection } = useAppContext();
-  const { activeId, detail, closure, reloadClosure } = useActiveRequest(
+  const { busy, myRequests, mechanicConnection, setCurrentScreen, setRequestsView } = useAppContext();
+  const { activeId, detail, closure, reloadClosure, upcoming } = useActiveRequest(
     props.api,
     props.onLoadRequestById,
     props.onRefreshRequests,
   );
 
   const liveLocationRequest = useMemo(
-    () => myRequests.find((request) => request.status !== 'completed' && request.status !== 'cancelled'),
+    () =>
+      myRequests.find((request) => request.status !== 'completed' && request.status !== 'cancelled' && !isUpcoming(request)),
     [myRequests],
   );
+  const openDetail = (requestId: number) => {
+    props
+      .onLoadRequestById(requestId)
+      .then(() => {
+        setRequestsView('detail');
+        setCurrentScreen('requests');
+      })
+      .catch(() => undefined);
+  };
+  const reloadDetail = () => {
+    if (detail) void props.onLoadRequestById(detail.id).catch(() => undefined);
+  };
 
   const nextStep = detail ? NEXT_JOB_STEP[detail.status] : undefined;
   // Sin cotización aceptada no se repara ni se va por refacciones (el
@@ -668,6 +702,9 @@ function MechanicHome(props: HomeScreenProps) {
                   onPress={() => props.onAdvanceJob(detail.id, 'completed')}
                 />
               )}
+              {RETURN_VISIT_STATUSES.has(detail.status) && (
+                <ReturnVisitPanel api={props.api} request={detail} onChanged={reloadDetail} />
+              )}
             </View>
           </Card>
           <EmergencyButton onPress={props.onEmergencyCall} />
@@ -680,6 +717,15 @@ function MechanicHome(props: HomeScreenProps) {
           <MechanicCollectCard api={props.api} request={closure} onChanged={reloadClosure} />
         </Animated.View>
       )}
+
+      {/* Sale hacia una próxima visita solo si no tiene otro trabajo en curso. */}
+      <UpcomingVisitsCard
+        items={upcoming}
+        role="mechanic"
+        onOpen={openDetail}
+        onStart={activeId === null ? (requestId) => props.onAdvanceJob(requestId, 'en_route') : undefined}
+        busy={busy}
+      />
 
       {activeId === null && (
         <>

@@ -33,6 +33,7 @@ import {
   openServiceNavigation,
 } from './utils';
 import { serviceAmounts } from './components/ServiceGuide';
+import { isUpcoming } from './components/ReturnVisit';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
@@ -289,6 +290,9 @@ type ServiceRequest = {
   receipts?: PartsReceipt[];
   // Salió por refacciones y todavía no sube el ticket.
   partsTripOpen?: boolean;
+  // Visita de regreso: de qué servicio viene, o la programada desde este.
+  parentRequestId?: number | null;
+  returnVisit?: { id: number; preferredTime: string; status: string } | null;
 };
 
 type RequestSummary = {
@@ -317,6 +321,7 @@ type RequestSummary = {
   customerPaidAt?: string | null;
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
+  parentRequestId?: number | null;
 };
 
 type IdentityVerificationStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
@@ -684,10 +689,14 @@ export default function App() {
     }
     return bookableRequestSlots.filter((slot) => slot.slotDate === selectedRequestScheduleDate);
   }, [bookableRequestSlots, selectedRequestScheduleDate]);
+  // Una cita o visita de regreso que todavía no empieza no es el trabajo en
+  // curso: con ella no se comparte la ubicación.
   const liveLocationRequest = useMemo(
     () =>
       user?.role === 'mechanic'
-        ? myRequests.find((request) => request.status !== 'completed' && request.status !== 'cancelled')
+        ? myRequests.find(
+            (request) => request.status !== 'completed' && request.status !== 'cancelled' && !isUpcoming(request),
+          )
         : undefined,
     [myRequests, user?.role],
   );

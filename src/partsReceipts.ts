@@ -26,6 +26,8 @@ export type PartsReceipt = {
   /** Lo que se le cobra al cliente por este ticket (ver chargeReceipts). */
   chargedAmount: number;
   hasTicket: boolean;
+  /** Pieza pedida que llega otro día: se paga hoy y se instala en la visita de regreso. */
+  ordered: boolean;
   photoUrl: string;
   storeNote: string | null;
   status: ReceiptStatus;
@@ -39,7 +41,7 @@ export class ReceiptError extends Error {
   }
 }
 
-type ReceiptRow = Omit<PartsReceipt, "chargedAmount" | "hasTicket"> & { hasTicket: number };
+type ReceiptRow = Omit<PartsReceipt, "chargedAmount" | "hasTicket" | "ordered"> & { hasTicket: number; ordered: number };
 
 // En qué pasos se pueden subir tickets.
 const RECEIPT_STATUSES = new Set(["awaiting_parts", "repairing"]);
@@ -77,7 +79,7 @@ export async function partsToBuyEstimate(requestId: number): Promise<number> {
 
 async function receiptRows(requestId: number): Promise<ReceiptRow[]> {
   return all<ReceiptRow>(
-    `SELECT id, service_request_id AS serviceRequestId, amount, has_ticket AS hasTicket, photo_url AS photoUrl,
+    `SELECT id, service_request_id AS serviceRequestId, amount, has_ticket AS hasTicket, ordered, photo_url AS photoUrl,
             store_note AS storeNote, status, created_at AS createdAt, responded_at AS respondedAt
      FROM parts_receipts WHERE service_request_id = ? ORDER BY id ASC`,
     [requestId]
@@ -90,7 +92,12 @@ export async function getReceiptsForRequest(
   const [rows, estimate] = await Promise.all([receiptRows(requestId), partsToBuyEstimate(requestId)]);
   const { charges, total } = chargeReceipts(estimate, rows);
   return {
-    receipts: rows.map((row) => ({ ...row, hasTicket: Boolean(row.hasTicket), chargedAmount: charges.get(row.id) ?? 0 })),
+    receipts: rows.map((row) => ({
+      ...row,
+      hasTicket: Boolean(row.hasTicket),
+      ordered: Boolean(row.ordered),
+      chargedAmount: charges.get(row.id) ?? 0
+    })),
     estimate,
     chargedTotal: total
   };
@@ -116,6 +123,7 @@ export async function createReceipt(input: {
   mechanicId: number | null | undefined;
   amount: number;
   hasTicket: boolean;
+  ordered?: boolean;
   /** Guarda la foto y devuelve su dirección; se llama ya validado, para no dejar fotos sueltas. */
   savePhoto: () => Promise<string>;
   storeNote?: string | null;
@@ -132,9 +140,18 @@ export async function createReceipt(input: {
   const status: ReceiptStatus = input.hasTicket && !overEstimate ? "accepted" : "pending";
 
   const inserted = await run(
-    `INSERT INTO parts_receipts (service_request_id, mechanic_id, amount, has_ticket, photo_url, store_note, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [input.requestId, request.mechanicId, input.amount, input.hasTicket ? 1 : 0, photoUrl, input.storeNote?.trim() || null, status]
+    `INSERT INTO parts_receipts (service_request_id, mechanic_id, amount, has_ticket, ordered, photo_url, store_note, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.requestId,
+      request.mechanicId,
+      input.amount,
+      input.hasTicket ? 1 : 0,
+      input.ordered ? 1 : 0,
+      photoUrl,
+      input.storeNote?.trim() || null,
+      status
+    ]
   );
   // Ya hay ticket de esta salida: puede retomar la reparación.
   await run("UPDATE service_requests SET parts_trip_started_at = NULL WHERE id = ?", [input.requestId]);

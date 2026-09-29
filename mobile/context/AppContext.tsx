@@ -66,6 +66,7 @@ type RequestSummary = {
   customerPaidAt?: string | null;
   unpaidReportedAt?: string | null;
   reviewed?: boolean;
+  parentRequestId?: number | null;
 };
 
 /** Lo que el cliente le paga al mecánico (servidor: src/servicePayment.ts). */
@@ -85,6 +86,8 @@ export type PartsReceipt = {
   amount: number;
   chargedAmount: number;
   hasTicket: boolean;
+  // Pieza pedida que llega otro día: se paga hoy y se instala en la visita de regreso.
+  ordered?: boolean;
   photoUrl: string;
   storeNote: string | null;
   status: 'accepted' | 'pending' | 'rejected';
@@ -153,6 +156,9 @@ type ServiceRequest = {
   receipts?: PartsReceipt[];
   // Salió por refacciones y todavía no sube el ticket.
   partsTripOpen?: boolean;
+  // Visita de regreso: de qué servicio viene, o la programada desde este.
+  parentRequestId?: number | null;
+  returnVisit?: { id: number; preferredTime: string; status: string } | null;
   updates?: { id: number; source: string; message: string; createdAt: string }[];
 };
 

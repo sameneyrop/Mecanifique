@@ -261,6 +261,9 @@ export async function initDb(): Promise<void> {
   // Cuándo salió por refacciones sin haber subido todavía el ticket (o dicho
   // que no compró nada): mientras tenga valor, no puede retomar la reparación.
   await ensureColumn("service_requests", "parts_trip_started_at", "ALTER TABLE service_requests ADD COLUMN parts_trip_started_at TEXT");
+  // Visita de regreso (src/returnVisits.ts): la solicitud original de la que
+  // viene. Sin cobro de visita: el mecánico vuelve a terminar con la pieza.
+  await ensureColumn("service_requests", "parent_request_id", "ALTER TABLE service_requests ADD COLUMN parent_request_id INTEGER");
 
   await run(`
     CREATE TABLE IF NOT EXISTS service_request_declines (
@@ -647,6 +650,9 @@ export async function initDb(): Promise<void> {
     )
   `);
   await run("CREATE INDEX IF NOT EXISTS idx_parts_receipts_request ON parts_receipts(service_request_id)");
+  // Pieza pedida que llega otro día: el cliente la paga hoy (con el ticket
+  // del pedido) y se instala en la visita de regreso.
+  await ensureColumn("parts_receipts", "ordered", "ALTER TABLE parts_receipts ADD COLUMN ordered INTEGER NOT NULL DEFAULT 0");
 
   // Cuota de servicio (ver src/serviceFees.ts): una fila por pago en Stripe
   // Checkout. claimed_at marca que ya se usó para una solicitud.

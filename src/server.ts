@@ -71,6 +71,7 @@ import {
   hasPendingAdjustment,
   respondToQuote
 } from "./quotes";
+import { ReturnVisitError, createReturnVisit, getReturnVisit } from "./returnVisits";
 import {
   ReceiptError,
   createReceipt,
@@ -1259,7 +1260,7 @@ export async function sweepStaleMechanics(): Promise<number> {
   }>(
     `SELECT m.id AS mechanicId, u.id AS userId, m.last_seen_at AS lastSeenAt, m.stale_notice_at AS noticeAt,
             (SELECT sr.id FROM service_requests sr
-             WHERE sr.mechanic_id = m.id AND sr.status IN ${ACTIVE_JOB_STATUSES_SQL} LIMIT 1) AS activeJobId
+             WHERE sr.mechanic_id = m.id AND sr.status IN ${ACTIVE_JOB_STATUSES_SQL} AND NOT ${upcomingSql("sr")} LIMIT 1) AS activeJobId
      FROM mechanics m
      LEFT JOIN users u ON u.mechanic_id = m.id
      WHERE m.is_online = 1
@@ -1343,6 +1344,15 @@ const ACTIVE_JOB_STATUSES_SQL = "('assigned', 'in_progress', 'en_route', 'on_sit
 // Para el cliente también cuenta la que todavía busca mecánico.
 const OPEN_REQUEST_STATUSES_SQL = "('pending', 'assigned', 'in_progress', 'en_route', 'on_site', 'diagnosing', 'repairing', 'awaiting_parts')";
 
+/**
+ * Una cita de la agenda o una visita de regreso que todavía no empieza (sigue
+ * 'assigned') es "próxima", no un trabajo en curso: no debe impedir que el
+ * mecánico reciba trabajo hoy ni que el cliente pida otro servicio.
+ */
+function upcomingSql(alias: string): string {
+  return `(${alias}.status = 'assigned' AND (${alias}.schedule_slot_id IS NOT NULL OR ${alias}.parent_request_id IS NOT NULL))`;
+}
+
 async function isIdentityApproved(userId: number): Promise<boolean> {
   const verification = await get<{ status: string }>(
     "SELECT status FROM identity_verifications WHERE user_id = ?",
@@ -1409,7 +1419,8 @@ export async function applyMechanicConnection(
   }
 
   const activeJob = await get<{ id: number }>(
-    `SELECT id FROM service_requests WHERE mechanic_id = ? AND status IN ${ACTIVE_JOB_STATUSES_SQL} LIMIT 1`,
+    `SELECT id FROM service_requests
+     WHERE mechanic_id = ? AND status IN ${ACTIVE_JOB_STATUSES_SQL} AND NOT ${upcomingSql("service_requests")} LIMIT 1`,
     [mechanicId]
   );
   const isAvailable = !activeJob;
@@ -2689,7 +2700,8 @@ app.post(
     // muestra una. Se revisa antes de cobrar la cuota o avisar a un mecánico.
     if (req.auth?.user.role === "customer") {
       const openRequest = await get<{ id: number }>(
-        `SELECT id FROM service_requests WHERE customer_id = ? AND status IN ${OPEN_REQUEST_STATUSES_SQL} LIMIT 1`,
+        `SELECT id FROM service_requests
+         WHERE customer_id = ? AND status IN ${OPEN_REQUEST_STATUSES_SQL} AND NOT ${upcomingSql("service_requests")} LIMIT 1`,
         [customerId]
       );
       if (openRequest) {
@@ -3824,6 +3836,7 @@ app.get(
              m.full_name AS mechanicName, c.full_name AS customerName, c.phone AS customerPhone,
              sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt, sr.unpaid_reported_at AS unpaidReportedAt,
              EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
+             sr.parent_request_id AS parentRequestId,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
@@ -3974,13 +3987,16 @@ app.post(
         return;
       }
       await lockVisitFee(requestId, mechanicId);
+      // Una cita para otro día no lo ocupa desde ahora (upcomingSql): queda
+      // ocupado al salir hacia ella ("Voy en camino").
       await run(
         `
         UPDATE mechanics
         SET is_available = 0
         WHERE id = ?
+          AND NOT EXISTS (SELECT 1 FROM service_requests sr WHERE sr.id = ? AND ${upcomingSql("sr")})
         `,
-        [mechanicId]
+        [mechanicId, requestId]
       );
       const customerUserId = await getUserIdByCustomerId((await get<{ customer_id: number }>("SELECT customer_id FROM service_requests WHERE id = ?", [requestId]))?.customer_id ?? 0);
       const mechanicUserId = await getUserIdByMechanicId(mechanicId);
@@ -4233,7 +4249,8 @@ app.get(
              m.full_name AS mechanicName, m.phone AS mechanicPhone,
              ${VISIT_FEE_SQL} AS visitFee, sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt,
              sr.payment_method AS paymentMethod, sr.unpaid_reported_at AS unpaidReportedAt,
-             EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed
+             EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
+             sr.parent_request_id AS parentRequestId
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
       LEFT JOIN mechanics m ON m.id = sr.mechanic_id
@@ -4267,10 +4284,11 @@ app.get(
       [requestId]
     );
 
-    const [{ receipts }, amountDue, partsTripOpen] = await Promise.all([
+    const [{ receipts }, amountDue, partsTripOpen, returnVisit] = await Promise.all([
       getReceiptsForRequest(requestId),
       amountDueForRequest(requestId),
-      isPartsTripOpen(requestId)
+      isPartsTripOpen(requestId),
+      getReturnVisit(requestId)
     ]);
     res.status(200).json({
       ...request,
@@ -4281,6 +4299,8 @@ app.get(
       amountDue,
       receipts,
       partsTripOpen,
+      // Visita de regreso programada desde este servicio (src/returnVisits.ts).
+      returnVisit,
       serviceFee: await getServiceFeeForRequest(requestId),
       quotes: await getQuotesForRequest(requestId)
     });
@@ -4612,6 +4632,11 @@ app.patch(
       await run("UPDATE service_requests SET parts_trip_started_at = NULL WHERE id = ?", [requestId]);
     }
 
+    // Al salir hacia una cita o visita de regreso, deja de recibir solicitudes.
+    if (payload.status === "en_route" && existing.mechanic_id) {
+      await run("UPDATE mechanics SET is_available = 0 WHERE id = ?", [existing.mechanic_id]);
+    }
+
     if (payload.status === "completed" && existing.mechanic_id) {
       await run(
         `
@@ -4824,6 +4849,8 @@ const partsReceiptSchema = z.object({
   imageBase64: z.string().min(100),
   amount: z.number().positive().max(500_000),
   hasTicket: z.boolean(),
+  // Pieza pedida que llega otro día (se instala en la visita de regreso).
+  ordered: z.boolean().optional().default(false),
   storeNote: z.string().trim().max(120).optional()
 });
 
@@ -4865,6 +4892,7 @@ app.post(
         mechanicId: req.auth?.user.mechanicId,
         amount: payload.amount,
         hasTicket: payload.hasTicket,
+        ordered: payload.ordered,
         storeNote: payload.storeNote,
         savePhoto: async () => publicPhotoUrl(req, await savePhoto(photo, req.auth?.user.id ?? null))
       });
@@ -4875,7 +4903,16 @@ app.post(
         requestId,
         `${name} subió ${payload.hasTicket ? "el ticket" : "una compra sin ticket"} de refacciones: ${amountText}${where}.`
       );
-      if (result.receipt.status === "accepted") {
+      if (payload.ordered) {
+        await notifyRequestCustomer(
+          result.customerId,
+          `${name} pidió la refacción`,
+          `Ticket del pedido por ${amountText}${where}. Llega otro día y la instala en la visita de regreso.${
+            result.receipt.status === "pending" ? " Revísalo y apruébalo." : ""
+          }`,
+          requestId
+        );
+      } else if (result.receipt.status === "accepted") {
         await notifyRequestCustomer(result.customerId, `${name} compró las refacciones`, `Ticket por ${amountText}${where}. Puedes ver la foto en la app.`, requestId);
       } else if (!payload.hasTicket) {
         await notifyRequestCustomer(
@@ -4942,6 +4979,49 @@ app.post(
       res.json(receipt);
     } catch (error) {
       if (!sendReceiptError(res, error)) throw error;
+    }
+  })
+);
+
+// --- Visita de regreso (src/returnVisits.ts) ---
+
+const returnVisitSchema = z.object({
+  when: z.string().trim().min(3).max(80),
+  pendingWork: z.string().trim().min(5).max(500)
+});
+
+// El mecánico programa volver otro día (la pieza hay que pedirla).
+app.post(
+  "/api/service-requests/:id/return-visit",
+  requireAuth,
+  requireRole("mechanic"),
+  handleAsync(async (req, res) => {
+    const requestId = parseRequestIdParam(req, res);
+    if (requestId === null) return;
+    const payload = returnVisitSchema.parse(req.body);
+    try {
+      const { returnRequestId, customerId } = await createReturnVisit({
+        requestId,
+        mechanicId: req.auth?.user.mechanicId,
+        when: payload.when,
+        pendingWork: payload.pendingWork
+      });
+      const name = req.auth?.user.fullName || "Tu mecánico";
+      await logPaymentUpdate(requestId, `${name} programó una visita de regreso (#${returnRequestId}): ${payload.when}.`);
+      await logPaymentUpdate(returnRequestId, `Visita de regreso del servicio #${requestId}. No se cobra otra visita.`);
+      await notifyRequestCustomer(
+        customerId,
+        `${name} regresará: ${payload.when}`,
+        `Para terminar: ${payload.pendingWork}. No se cobra otra visita. Hoy pagas solo lo que hizo y las refacciones con ticket.`,
+        requestId
+      );
+      res.status(201).json({ returnRequestId });
+    } catch (error) {
+      if (error instanceof ReturnVisitError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
     }
   })
 );

@@ -462,6 +462,26 @@ las **refacciones que ya trae** (`parts_on_hand_amount`, precio fijo) de las
   refacciones a comprar cotizadas y sin ningún ticket, la app pregunta "¿Hiciste
   la reparación completa?". No se puede terminar con un ajuste pendiente
   (`ADJUSTMENT_PENDING`).
+- **Pieza pedida** (`parts_receipts.ordered`): si la pieza llega otro día, el
+  mecánico sube el ticket del pedido como "Pedida" y el cliente la paga hoy,
+  con la misma doble confirmación del cobro (así el mecánico no arriesga su
+  dinero en una pieza que nadie recoja).
+- **Visita de regreso** (`src/returnVisits.ts`, `parent_request_id`): el
+  mecánico la programa desde el servicio de hoy ("La pieza llega otro día:
+  programar regreso", con cuándo y qué falta). Queda como una solicitud nueva
+  con el mismo cliente, auto y dirección, asignada a él y **sin cobro de
+  visita** (`visit_fee = 0`); ahí cotiza lo que falta. Hoy se cobra solo lo que
+  hizo (ajuste) y las refacciones con ticket.
+
+### Citas y visitas de regreso "próximas"
+
+Una cita de la agenda o una visita de regreso que todavía no empieza (sigue
+`assigned`) es **próxima**, no un trabajo en curso (`upcomingSql` en el
+servidor, `isUpcoming` en la app): no le impide al mecánico recibir trabajo
+hoy (antes, aceptar una cita para otro día lo dejaba ocupado desde ese
+momento), no bloquea al cliente para pedir otro servicio y no activa el
+seguimiento de ubicación. En Inicio aparece en "Próxima visita"; el mecánico
+sale hacia ella con "Salir hacia esta visita" y ahí queda ocupado.
 
 Las cotizaciones anteriores a los tickets (`parts_on_hand_amount` NULL)
 cobran `parts_amount` fijo, como antes. El detalle de la solicitud trae

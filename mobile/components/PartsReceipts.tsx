@@ -68,7 +68,7 @@ function ReceiptRow({ receipt, children }: { receipt: PartsReceipt; children?: R
       <View style={[styles.flex, styles.stack]}>
         <Text style={styles.itemTitle}>{formatPesos(receipt.amount)}</Text>
         <Text style={styles.smallText}>
-          {receipt.hasTicket ? 'Con ticket' : 'Sin ticket'}
+          {receipt.ordered ? 'Pedida: se instala en la visita de regreso' : receipt.hasTicket ? 'Con ticket' : 'Sin ticket'}
           {receipt.storeNote ? ` · ${receipt.storeNote}` : ''}
         </Text>
         <Text style={[styles.smallText, receipt.status === 'pending' && styles.receiptPendingText]}>
@@ -192,7 +192,13 @@ export function MechanicPartsPanel({ api, request, onChanged }: { api: ApiCall; 
     try {
       const receipt = await api<PartsReceipt>(`/api/service-requests/${request.id}/parts-receipts`, {
         method: 'POST',
-        body: { imageBase64, amount, hasTicket: form.withTicket === 'yes', storeNote: form.store.trim() || undefined },
+        body: {
+          imageBase64,
+          amount,
+          hasTicket: form.withTicket !== 'no',
+          ordered: form.withTicket === 'ordered',
+          storeNote: form.store.trim() || undefined,
+        },
       });
       setForm({ amount: '', store: '', withTicket: 'yes' });
       setOpen(false);
@@ -263,7 +269,8 @@ export function MechanicPartsPanel({ api, request, onChanged }: { api: ApiCall; 
               value={form.withTicket}
               options={[
                 { key: 'yes', label: 'Con ticket', icon: 'receipt-outline' },
-                { key: 'no', label: 'No me dieron ticket', icon: 'document-outline' },
+                { key: 'no', label: 'Sin ticket', icon: 'document-outline' },
+                { key: 'ordered', label: 'Pedida', icon: 'time-outline' },
               ]}
               onChange={(value) => setForm({ ...form, withTicket: value })}
             />
@@ -281,8 +288,20 @@ export function MechanicPartsPanel({ api, request, onChanged }: { api: ApiCall; 
             {form.withTicket === 'no' && (
               <Text style={styles.smallText}>Tómale foto a la nota o a las piezas con su precio. El cliente tendrá que aprobarlo.</Text>
             )}
+            {form.withTicket === 'ordered' && (
+              <Text style={styles.smallText}>
+                La pieza llega otro día: tómale foto al ticket del pedido. El cliente la paga hoy y la instalas en la visita de regreso
+                (prográmala en «Avance»).
+              </Text>
+            )}
             <PrimaryButton
-              title={form.withTicket === 'yes' ? 'Tomar foto del ticket' : 'Tomar foto de la nota o las piezas'}
+              title={
+                form.withTicket === 'yes'
+                  ? 'Tomar foto del ticket'
+                  : form.withTicket === 'ordered'
+                    ? 'Tomar foto del ticket del pedido'
+                    : 'Tomar foto de la nota o las piezas'
+              }
               busy={busy}
               onPress={() => void upload()}
             />
