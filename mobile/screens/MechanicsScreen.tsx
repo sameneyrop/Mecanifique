@@ -47,6 +47,9 @@ type RequestFormShape = {
   scheduleSlotId: string;
   latitude: string;
   longitude: string;
+  carPhotoUrl: string;
+  spotPhotoUrl: string;
+  carLocation: string;
 };
 
 

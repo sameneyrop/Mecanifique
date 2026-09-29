@@ -38,6 +38,7 @@ import { TourTarget } from '../components/AppTour';
 import { CustomerReviewCard } from '../components/CustomerReview';
 import { ProfileChecklist } from '../components/ProfileChecklist';
 import { RateSuggestion } from '../components/MarketInsights';
+import { RequestPhotos } from '../components/RequestPlace';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -62,6 +63,9 @@ type RequestFormShape = {
   scheduleSlotId: string;
   latitude: string;
   longitude: string;
+  carPhotoUrl: string;
+  spotPhotoUrl: string;
+  carLocation: string;
 };
 
 /** Perfil propio del mecánico (GET /api/mechanics/me), en cualquier estado. */
@@ -715,6 +719,11 @@ function MechanicHome(props: HomeScreenProps) {
             <View style={styles.stack}>
               <ContactRow label="Cliente" name={detail.customerName || 'Cliente'} phone={detail.customerPhone} />
               <Text style={styles.itemText}>{address}</Text>
+              <RequestPhotos
+                carPhotoUrl={detail.carPhotoUrl}
+                spotPhotoUrl={detail.spotPhotoUrl}
+                locationSource={detail.locationSource}
+              />
               <SecondaryButton title="Cómo llegar" onPress={() => void openServiceNavigation(detail)} />
               <WithdrawButton api={props.api} request={detail} onDone={() => void props.onRefreshRequests().catch(() => undefined)} />
             </View>

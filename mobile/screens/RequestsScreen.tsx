@@ -32,6 +32,7 @@ import { TipCard } from '../components/TipCard';
 import { CustomerQuoteCard } from '../components/Quote';
 import { CustomerPaymentCard, MechanicCollectCard, NextStepGuide, isPayable } from '../components/ServiceGuide';
 import { CustomerReviewCard } from '../components/CustomerReview';
+import { RequestPhotos, RequestPlace } from '../components/RequestPlace';
 import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
 import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
@@ -67,6 +68,9 @@ type RequestFormShape = {
   scheduleSlotId: string;
   latitude: string;
   longitude: string;
+  carPhotoUrl: string;
+  spotPhotoUrl: string;
+  carLocation: string;
 };
 
 type DisputeFormShape = {
@@ -462,30 +466,13 @@ export function RequestsScreen({
                       />
                     </Field>
                   )}
-                  <View style={styles.publicProfileBox}>
-                    <Text style={styles.publicProfileTitle}>¿Dónde está tu auto?</Text>
-                    <Text style={styles.smallText}>
-                      {hasGpsLocation
-                        ? 'Usamos tu ubicación actual para encontrarte al mecánico más cercano.'
-                        : 'Sin ubicación GPS: buscaremos por ciudad y zona.'}
-                    </Text>
-                    <Field label="Dirección">
-                      <Input
-                        value={requestForm.serviceAddress}
-                        onChangeText={(value) => setRequestForm({ ...requestForm, serviceAddress: value })}
-                        placeholder="Calle, número, colonia y referencias"
-                      />
-                    </Field>
-                    <View style={styles.row}>
-                      <Field label="Ciudad" style={styles.flex}>
-                        <Input value={requestForm.city} onChangeText={(value) => setRequestForm({ ...requestForm, city: value })} />
-                      </Field>
-                      <Field label="Zona" style={styles.flex}>
-                        <Input value={requestForm.zone} onChangeText={(value) => setRequestForm({ ...requestForm, zone: value })} />
-                      </Field>
-                    </View>
-                    <SecondaryButton title="Usar mi ubicación actual" compact busy={busy} onPress={onUseMyLocation} />
-                  </View>
+                  <RequestPlace
+                    api={api}
+                    form={requestForm}
+                    setForm={setRequestForm}
+                    hasGpsLocation={hasGpsLocation}
+                    onUseMyLocation={onUseMyLocation}
+                  />
                   {feeApplies && (
                     <View style={styles.publicProfileBox}>
                       <Text style={styles.publicProfileTitle}>Cuota de servicio: ${serviceFee.amount}</Text>
@@ -547,6 +534,11 @@ export function RequestsScreen({
               <Card title="Detalle de la solicitud">
                 <View style={styles.stack}>
                   <RequestCard request={selectedRequest} viewerRole={user.role} />
+                  <RequestPhotos
+                    carPhotoUrl={selectedRequest.carPhotoUrl}
+                    spotPhotoUrl={selectedRequest.spotPhotoUrl}
+                    locationSource={selectedRequest.locationSource}
+                  />
                   {detailFeeText && user.role !== 'mechanic' && <InfoRow icon="card-outline" text={detailFeeText} />}
                   {detailIsActive && user.role !== 'admin' && (
                     <NextStepGuide request={selectedRequest} role={user.role === 'mechanic' ? 'mechanic' : 'customer'} />

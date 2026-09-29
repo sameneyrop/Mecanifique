@@ -144,6 +144,10 @@ type ServiceRequest = {
   unpaidNearby?: boolean;
   // Si el mecánico ya calificó al cliente (no llega al cliente).
   customerReviewed?: boolean;
+  // Fotos del auto y del lugar al pedir; 'address' = el auto no estaba donde el cliente.
+  carPhotoUrl?: string | null;
+  spotPhotoUrl?: string | null;
+  locationSource?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;

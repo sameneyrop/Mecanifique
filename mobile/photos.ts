@@ -24,13 +24,28 @@ export async function takeProfilePhoto(): Promise<string | null> {
   );
 }
 
+/**
+ * Foto que manda el cliente al pedir (su auto y el lugar donde está): con la
+ * cámara o de la galería, porque puede no estar junto al auto.
+ */
+export async function pickRequestPhoto(source: 'camera' | 'library'): Promise<string | null> {
+  if (source === 'camera') {
+    return takeCameraPhoto({ allowsEditing: false, quality: 1 }, 1600);
+  }
+  const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
+  return resizeToBase64(picked.canceled ? null : picked.assets[0], 1600);
+}
+
 async function takeCameraPhoto(options: ImagePicker.ImagePickerOptions, maxSide: number): Promise<string | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
     throw new Error('Necesitamos permiso para usar la cámara. Puedes darlo en los ajustes del teléfono.');
   }
   const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], ...options });
-  const asset = picked.canceled ? null : picked.assets[0];
+  return resizeToBase64(picked.canceled ? null : picked.assets[0], maxSide);
+}
+
+async function resizeToBase64(asset: ImagePicker.ImagePickerAsset | null | undefined, maxSide: number): Promise<string | null> {
   if (!asset) {
     return null;
   }

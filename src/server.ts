@@ -466,12 +466,22 @@ const loginSchema = z.object({
   password: z.string().min(8)
 });
 
+// Una foto subida a este servidor (PHOTO_UPLOAD_PATH), no cualquier dirección.
+const uploadedPhotoUrlSchema = z
+  .string()
+  .max(300)
+  .regex(/^https?:\/\/[^\s]+\/uploads\/[0-9a-f-]{36}\.(jpg|png)$/, "Foto inválida");
+
 const apiServiceRequestSchema = serviceRequestSchema.omit({ customerId: true }).extend({
   customerId: z.number().int().positive().optional(),
   requestedMechanicId: z.number().int().positive().optional(),
   scheduleSlotId: z.number().int().positive().optional(),
   // Id del pago de la cuota en Stripe Checkout (cuando los pagos están activos).
-  serviceFeeSessionId: z.string().min(10).max(255).optional()
+  serviceFeeSessionId: z.string().min(10).max(255).optional(),
+  // Foto del auto y del lugar donde está estacionado (la app las pide).
+  carPhotoUrl: uploadedPhotoUrlSchema.optional(),
+  spotPhotoUrl: uploadedPhotoUrlSchema.optional(),
+  locationSource: z.enum(["gps", "address"]).optional()
 });
 
 // Dirección pública de este servidor. Detrás del proxy de Render
@@ -3167,9 +3177,9 @@ app.post(
       INSERT INTO service_requests (
         customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
         preferred_time, city, zone, service_address, latitude, longitude, mechanic_id, status, schedule_slot_id,
-        deposit_amount, assignment_mode
+        deposit_amount, assignment_mode, car_photo_url, spot_photo_url, location_source
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         customerId,
@@ -3189,7 +3199,10 @@ app.post(
         "pending",
         scheduleSlotId ?? null,
         calculateDepositAmount(requestedMechanicLaborRate),
-        assignmentMode
+        assignmentMode,
+        payload.carPhotoUrl ?? null,
+        payload.spotPhotoUrl ?? null,
+        payload.locationSource ?? null
       ]
     );
 
@@ -3618,12 +3631,13 @@ app.patch(
   })
 );
 
-// Sube una foto (del perfil público del mecánico) y devuelve su dirección
-// pública. El perfil guarda esa dirección con PATCH .../public-profile.
+// Sube una foto y devuelve su dirección pública: del perfil público del
+// mecánico (se guarda con PATCH .../public-profile) o, del cliente, la de su
+// auto y del lugar donde está al pedir un servicio.
 app.post(
   PHOTO_UPLOAD_PATH,
   requireAuth,
-  requireRole("mechanic", "admin"),
+  requireRole("mechanic", "customer", "admin"),
   handleAsync(async (req, res) => {
     if (applyRateLimit("photo-upload", req, res, 30)) {
       return;
@@ -4284,7 +4298,8 @@ app.get(
              sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId,
               sr.service_address AS serviceAddress,
              sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName, c.phone AS customerPhone,
-             ${VISIT_FEE_SQL} AS visitFee
+             ${VISIT_FEE_SQL} AS visitFee,
+             sr.car_photo_url AS carPhotoUrl, sr.spot_photo_url AS spotPhotoUrl, sr.location_source AS locationSource
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
       LEFT JOIN mechanics m ON m.id = sr.mechanic_id
@@ -4788,7 +4803,8 @@ app.get(
              EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
              sr.parent_request_id AS parentRequestId,
              sr.en_route_at AS enRouteAt, sr.arrived_at AS arrivedAt, sr.cancelled_by AS cancelledBy,
-             sr.cancel_reason AS cancelReason, sr.cancellation_fee AS cancellationFee, sr.absence_photo_url AS absencePhotoUrl
+             sr.cancel_reason AS cancelReason, sr.cancellation_fee AS cancellationFee, sr.absence_photo_url AS absencePhotoUrl,
+             sr.car_photo_url AS carPhotoUrl, sr.spot_photo_url AS spotPhotoUrl, sr.location_source AS locationSource
       FROM service_requests sr
       JOIN customers c ON c.id = sr.customer_id
       LEFT JOIN mechanics m ON m.id = sr.mechanic_id

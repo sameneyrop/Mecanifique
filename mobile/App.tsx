@@ -290,6 +290,10 @@ type ServiceRequest = {
   unpaidNearby?: boolean;
   // Si el mecánico ya calificó al cliente (no llega al cliente).
   customerReviewed?: boolean;
+  // Fotos del auto y del lugar al pedir; 'address' = el auto no estaba donde el cliente.
+  carPhotoUrl?: string | null;
+  spotPhotoUrl?: string | null;
+  locationSource?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   diagnosisNotes?: string | null;
@@ -604,6 +608,10 @@ export default function App() {
     scheduleSlotId: '',
     latitude: '',
     longitude: '',
+    // Foto del auto y del lugar, y si el auto está donde está el cliente ('here') o en otro lado ('elsewhere').
+    carPhotoUrl: '',
+    spotPhotoUrl: '',
+    carLocation: '',
   });
 
   const [mechanicsFilter, setMechanicsFilter] = useState({
@@ -2727,6 +2735,23 @@ export default function App() {
       setMessage(formProblem);
       return;
     }
+    // Dónde está el auto y sus fotos (components/RequestPlace.tsx): así el
+    // mecánico llega al lugar correcto.
+    const carElsewhere = requestForm.carLocation === 'elsewhere';
+    if (user.role === 'customer') {
+      if (!requestForm.carLocation) {
+        setMessage('Dinos dónde está tu auto: aquí donde estás o en otro lugar.');
+        return;
+      }
+      if (carElsewhere && requestForm.serviceAddress.trim().length < 8) {
+        setMessage('Escribe la dirección donde está el auto: calle, número y colonia.');
+        return;
+      }
+      if (!requestForm.carPhotoUrl || !requestForm.spotPhotoUrl) {
+        setMessage('Agrega la foto de tu auto y la del lugar donde está estacionado.');
+        return;
+      }
+    }
 
     setBusy(true);
     setMessage('Creando solicitud...');
@@ -2753,9 +2778,21 @@ export default function App() {
 
       // Respaldo: si el formulario todavía no tiene coordenadas, se usa la
       // ubicación actual (sin coordenadas no hay búsqueda por distancia ni
-      // "Cómo llegar" para el mecánico).
-      const latitude = requestForm.latitude ? Number(requestForm.latitude) : currentLocation?.latitude;
-      const longitude = requestForm.longitude ? Number(requestForm.longitude) : currentLocation?.longitude;
+      // "Cómo llegar" para el mecánico). Si el auto está en otro lugar, nunca:
+      // las coordenadas salen de la dirección escrita.
+      let latitude = requestForm.latitude ? Number(requestForm.latitude) : currentLocation?.latitude;
+      let longitude = requestForm.longitude ? Number(requestForm.longitude) : currentLocation?.longitude;
+      if (carElsewhere) {
+        latitude = undefined;
+        longitude = undefined;
+        const found = await Location.geocodeAsync(
+          `${requestForm.serviceAddress.trim()}, ${requestForm.zone.trim()}, ${requestForm.city.trim()}, México`,
+        ).catch(() => []);
+        if (found[0]) {
+          latitude = found[0].latitude;
+          longitude = found[0].longitude;
+        }
+      }
       const payload = {
         vehicleMake: requestForm.vehicleMake,
         vehicleModel: requestForm.vehicleModel,
@@ -2773,6 +2810,9 @@ export default function App() {
         ...(latitude !== undefined && Number.isFinite(latitude) ? { latitude } : {}),
         ...(longitude !== undefined && Number.isFinite(longitude) ? { longitude } : {}),
         ...(serviceFeeSessionId ? { serviceFeeSessionId } : {}),
+        ...(requestForm.carPhotoUrl ? { carPhotoUrl: requestForm.carPhotoUrl } : {}),
+        ...(requestForm.spotPhotoUrl ? { spotPhotoUrl: requestForm.spotPhotoUrl } : {}),
+        ...(requestForm.carLocation ? { locationSource: carElsewhere ? 'address' : 'gps' } : {}),
       };
 
       const request = await apiRequest<ServiceRequest>('/api/service-requests', {
@@ -2781,6 +2821,8 @@ export default function App() {
         token,
       });
       paidFeeSession.current = null;
+      // Las fotos y el lugar son de esta solicitud; la siguiente pide los suyos.
+      setRequestForm((current) => ({ ...current, carPhotoUrl: '', spotPhotoUrl: '', carLocation: '' }));
 
       setSelectedRequest(request);
       setRequestLookupId(String(request.id));

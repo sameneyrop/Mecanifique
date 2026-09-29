@@ -762,6 +762,46 @@ function buildStyles(colors: Palette) {
   avatarImage: {
     backgroundColor: colors.primaryLight,
   },
+  // Fotos del auto y del lugar al pedir (components/RequestPlace.tsx).
+  requestPhotoSlot: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.primaryLighter,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    overflow: 'hidden',
+  },
+  requestPhotoThumb: {
+    flex: 1,
+    aspectRatio: 4 / 3,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: colors.primaryLighter,
+  },
+  requestPhotoImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  requestPhotoLabel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(11,15,34,0.6)',
+    color: colors.white,
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+  },
   // Tendencias de solicitudes (components/MarketInsights.tsx).
   trendTiles: {
     flexDirection: 'row',

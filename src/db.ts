@@ -280,6 +280,17 @@ export async function initDb(): Promise<void> {
   await ensureColumn("service_requests", "cancel_reason", "ALTER TABLE service_requests ADD COLUMN cancel_reason TEXT");
   await ensureColumn("service_requests", "cancellation_fee", "ALTER TABLE service_requests ADD COLUMN cancellation_fee REAL");
   await ensureColumn("service_requests", "absence_photo_url", "ALTER TABLE service_requests ADD COLUMN absence_photo_url TEXT");
+  // Al pedir: foto del auto y del lugar donde está (con el número de la casa
+  // si se ve), para que el mecánico llegue al lugar correcto. location_source:
+  // 'gps' (el auto está donde está el cliente) o 'address' (en otro lugar: las
+  // coordenadas salen de la dirección escrita).
+  await ensureColumn("service_requests", "car_photo_url", "ALTER TABLE service_requests ADD COLUMN car_photo_url TEXT");
+  await ensureColumn("service_requests", "spot_photo_url", "ALTER TABLE service_requests ADD COLUMN spot_photo_url TEXT");
+  await ensureColumn(
+    "service_requests",
+    "location_source",
+    "ALTER TABLE service_requests ADD COLUMN location_source TEXT CHECK(location_source IN ('gps', 'address'))"
+  );
   await ensureColumn("service_requests", "absence_reminder_at", "ALTER TABLE service_requests ADD COLUMN absence_reminder_at TEXT");
   // "Ya no puedo ir": queda en el historial del mecánico (se suspende a quien
   // lo hace seguido).

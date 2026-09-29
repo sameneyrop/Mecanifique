@@ -543,6 +543,17 @@ Como el dinero no pasa por la app, **nadie decide solo si se pagó**:
   una disputa `unpaid` y el cliente **no puede pedir otro servicio**
   (`UNPAID_SERVICE`) hasta que el mecánico confirme el pago o el cliente diga,
   dejando constancia, que ya pagó.
+- **Dónde está el auto y sus fotos al pedir** (`mobile/components/RequestPlace.tsx`):
+  el cliente elige "Aquí, donde estoy" (GPS) o "En otro lugar". En otro
+  lugar, la dirección es obligatoria y las coordenadas salen de ella con
+  `Location.geocodeAsync`, nunca de la ubicación del teléfono. Además manda
+  dos fotos obligatorias, del auto y de dónde está estacionado (con el
+  número de la casa si se ve), con la cámara o de la galería. Se suben a
+  `PHOTO_UPLOAD_PATH` (ahora también para clientes) y viajan en la solicitud
+  (`car_photo_url`, `spot_photo_url` y `location_source`; el servidor solo
+  acepta direcciones de sus propias fotos). El mecánico las ve en "Nueva
+  solicitud", en el trabajo en curso y en el detail (`RequestPhotos`), con un
+  aviso si la ubicación salió de una dirección escrita.
 - **Calificación del cliente** (`src/customerReviews.ts`, tabla
   `customer_reviews`): la pone el mecánico del servicio, una vez, al terminar
   o si se canceló con cargo (`POST /api/service-requests/:id/customer-review`,

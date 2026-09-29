@@ -8,6 +8,7 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, SecondaryButton } from './ui';
 import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
+import { RequestPhotos } from './RequestPlace';
 
 const HOLD_TOTAL_SECONDS_FALLBACK = 120;
 
@@ -171,6 +172,11 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
                 </View>
               ) : null}
               <UnpaidNearbyWarning show={incomingRequest.unpaidNearby} />
+              <RequestPhotos
+                carPhotoUrl={incomingRequest.carPhotoUrl}
+                spotPhotoUrl={incomingRequest.spotPhotoUrl}
+                locationSource={incomingRequest.locationSource}
+              />
               {/* Lo que cobra antes de decidir: el precio queda fijo al aceptar. */}
               {incomingRequest.visitFee ? (
                 <View style={styles.incomingInfoRow}>
