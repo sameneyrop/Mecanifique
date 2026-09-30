@@ -47,8 +47,10 @@ import {
   isWithinBookingWindow,
   formatPesos,
   openServiceNavigation,
+  parseServerTimestamp,
 } from './utils';
 import { serviceAmounts } from './components/ServiceGuide';
+import { CelebrationOverlay, celebrateServiceOnce } from './components/Celebration';
 import { isUpcoming } from './components/ReturnVisit';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Constants from 'expo-constants';
@@ -1400,6 +1402,35 @@ export default function App() {
 
     return () => clearInterval(intervalId);
   }, [currentLocation, selectedRequest?.id, user?.role, mechanicConnection, user, token]);
+
+  // Festejo al terminar el servicio (components/Celebration.tsx): cuando se ve
+  // pasar a "terminado", o al abrir la app poco después (llegó por push).
+  const seenRequestStatus = useRef<{ id: number; status: string } | null>(null);
+  useEffect(() => {
+    const previous = seenRequestStatus.current;
+    seenRequestStatus.current = selectedRequest ? { id: selectedRequest.id, status: selectedRequest.status } : null;
+    if (!selectedRequest || selectedRequest.status !== 'completed' || !user || user.role === 'admin') {
+      return;
+    }
+    const justFinished =
+      previous?.id === selectedRequest.id && previous.status !== 'completed' && previous.status !== 'cancelled';
+    const completedAt = parseServerTimestamp(selectedRequest.completedAt);
+    const recent = completedAt !== null && Date.now() - completedAt < 20 * 60 * 1000;
+    if (!justFinished && !recent) {
+      return;
+    }
+    if (user.role === 'mechanic') {
+      const client = selectedRequest.customerName?.split(' ')[0] || 'el cliente';
+      void celebrateServiceOnce(selectedRequest.id, '¡Servicio terminado!', `Buen trabajo. Ahora cóbrale a ${client}.`);
+    } else {
+      const mechanic = selectedRequest.mechanicName?.split(' ')[0] || 'Tu mecánico';
+      void celebrateServiceOnce(
+        selectedRequest.id,
+        '¡Tu auto quedó listo!',
+        `${mechanic} terminó el servicio. Revisa el comprobante y califícalo.`,
+      );
+    }
+  }, [selectedRequest?.id, selectedRequest?.status, user?.role]);
 
   // Tocar un push en el teléfono abre lo que avisa (antes solo abría la app
   // donde se había quedado, y había que buscar la solicitud a mano). Sirve
@@ -3172,8 +3203,11 @@ export default function App() {
       });
       const job = await fetchRequestDetail(requestId);
       await loadMyRequests();
-      setMessage(status === 'completed' ? 'Servicio terminado. Ahora cóbrale al cliente.' : `Estado: ${getServiceRequestStatusLabel(status)}`);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      // Al terminar, el festejo (components/Celebration.tsx) ya lo dice y vibra.
+      if (status !== 'completed') {
+        setMessage(`Estado: ${getServiceRequestStatusLabel(status)}`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+      }
       // Al salir hacia el cliente, la ruta se abre sola.
       if (status === 'en_route' && job) {
         openServiceNavigation(job).catch(() => setMessage('No se pudo abrir la navegación. Usa «Cómo llegar».'));
@@ -3893,6 +3927,7 @@ export default function App() {
           onFinish={finishTour}
         />
       )}
+      <CelebrationOverlay />
     </View>
   );
 }

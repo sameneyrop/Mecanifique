@@ -475,22 +475,6 @@ function buildStyles(colors: Palette) {
     fontFamily: fonts.extrabold,
     color: colors.textDark,
   },
-  incomingCountdown: {
-    fontSize: 18,
-    fontFamily: fonts.bold,
-    color: colors.primaryDark,
-  },
-  incomingTimerTrack: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.primaryLight,
-    overflow: 'hidden',
-  },
-  incomingTimerFill: {
-    height: '100%',
-    borderRadius: 4,
-    backgroundColor: colors.primary,
-  },
   incomingInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -21,6 +21,7 @@ import {
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeAccountSection } from '../navigationRequests';
 import { ThemeSetting } from '../components/ThemeSetting';
+import { MotionPreview } from '../components/MotionPreview';
 import { PASSWORD_RULE_TEXT, formatError, isValidPassword, normalizeSpecialties, openPrivacyNotice, openTerms, parseServerTimestamp } from '../utils';
 import type { ApiCall, FavoriteMechanic } from '../App';
 import { pickRequestPhoto } from '../photos';
@@ -555,6 +556,7 @@ export function AccountScreen({
           <ThemeSetting />
         </Card>
       </Animated.View>
+      <MotionPreview />
 
       <Animated.View entering={FadeInDown.delay(300).duration(300)} needsOffscreenAlphaCompositing>
         <Card title="Sesión">

@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
+import { Linking, Pressable, Text, View } from 'react-native';
 
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { ILLUSTRATIONS } from '../illustrations';
 import { Avatar, Card, CharCounter, Field, Illustration, Input, PrimaryButton } from './ui';
+import { SearchingRadar } from './SearchingRadar';
 
 export const ACTIVE_REQUEST_STATUSES = new Set([
   'pending',
@@ -80,9 +81,9 @@ export function SearchingStatus({
   if (request.mechanicId) {
     return (
       <View style={styles.stack}>
-        <Illustration source={ILLUSTRATIONS.waiting} compact fit="contain" />
+        <SearchingRadar label={`Esperando la respuesta de ${request.mechanicName || 'un mecánico'}`} />
         <View style={styles.searchingCard}>
-          <ActivityIndicator color={colors.primary} />
+          <Ionicons name="time-outline" size={22} color={colors.primary} />
           <View style={styles.flex}>
             <Text style={styles.itemTitle}>Esperando respuesta</Text>
             <Text style={styles.smallText}>

@@ -440,6 +440,16 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
   recuadro con degradado), "Iniciar sesión / Crear cuenta" arriba y, al crear
   cuenta, "Soy cliente / Soy mecánico" como opciones con ícono. Los campos de
   correo ya no ponen mayúscula inicial ni autocorrigen.
+- **Animaciones en los momentos de espera y de logro** (Reanimated + SVG, ya
+  instalados: llegan por EAS Update sin APK nuevo). "Esperando respuesta" del
+  cliente es un radar con el auto al centro (`components/SearchingRadar.tsx`);
+  la solicitud entrante del mecánico tiene un anillo que se vacía con el tiempo
+  para responder y una campana (`components/CountdownRing.tsx`); al terminar un
+  servicio, cliente y mecánico ven una palomita que se dibuja y confeti
+  (`components/Celebration.tsx`, una vez por servicio y por teléfono). Todas
+  respetan "reducir movimiento" del teléfono. En desarrollo (`__DEV__`) hay una
+  "Vista previa de animaciones" al final de Cuenta/Acciones para verlas sin
+  armar el flujo real (`components/MotionPreview.tsx`); no sale en el APK.
 
 Validación local realizada: `npm run build`, `npm test`, `npx tsc --noEmit` en
 `mobile` y `npx expo-doctor` (18/18).

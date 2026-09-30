@@ -9,6 +9,7 @@ import { useAppContext } from '../context/AppContext';
 import { Avatar, Card, SecondaryButton } from './ui';
 import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
 import { RequestPhotos } from './RequestPlace';
+import { CountdownRing, RingingBell } from './CountdownRing';
 
 const HOLD_TOTAL_SECONDS_FALLBACK = 120;
 
@@ -49,12 +50,6 @@ export function UnpaidNearbyWarning({ show }: { show?: boolean }) {
       </Text>
     </View>
   );
-}
-
-function formatCountdown(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 /**
@@ -124,25 +119,21 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
     currentLocation && incomingRequest.latitude != null && incomingRequest.longitude != null
       ? distanceKm(currentLocation, { latitude: incomingRequest.latitude, longitude: incomingRequest.longitude })
       : null;
-  const progress = secondsLeft !== null ? Math.min(1, secondsLeft / holdTotalSeconds.current) : 1;
   const minimize = () => setMinimizedRequestId(incomingRequest.id);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={minimize} statusBarTranslucent>
       <SafeAreaProvider>
         <SafeAreaView style={styles.incomingScreen}>
-          <View style={styles.stack}>
-            <View style={styles.incomingHeader}>
-              <Ionicons name="notifications" size={28} color={colors.primary} />
+          <View style={styles.incomingHeader}>
+            <View style={[styles.flex, styles.stack]}>
+              <RingingBell>
+                <Ionicons name="notifications" size={30} color={colors.primary} />
+              </RingingBell>
               <Text style={styles.incomingTitle}>Nueva solicitud</Text>
             </View>
-            {secondsLeft !== null && (
-              <View style={styles.stack}>
-                <Text style={styles.incomingCountdown}>Responde en {formatCountdown(secondsLeft)}</Text>
-                <View style={styles.incomingTimerTrack}>
-                  <View style={[styles.incomingTimerFill, { width: `${Math.round(progress * 100)}%` }]} />
-                </View>
-              </View>
+            {secondsLeft !== null && expiresAt !== null && (
+              <CountdownRing expiresAt={expiresAt} totalSeconds={holdTotalSeconds.current} secondsLeft={secondsLeft} />
             )}
           </View>
 

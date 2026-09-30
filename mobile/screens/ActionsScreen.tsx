@@ -27,6 +27,7 @@ import { TipInfoCard } from '../components/TipInfoCard';
 import { AdminCommissionsCard, CommissionsPanel } from '../components/Commissions';
 import { AdminWaitlistCard } from '../components/Waitlist';
 import { AdminPartsStoresCard } from '../components/PartsStoreFinder';
+import { MotionPreview } from '../components/MotionPreview';
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeMechanicTab, type MechanicTab } from '../navigationRequests';
 import { RateSuggestion } from '../components/MarketInsights';
@@ -710,6 +711,7 @@ export function ActionsScreen({
           </View>
         </Card>
       </Animated.View>
+      <MotionPreview />
     </>
   );
 }
