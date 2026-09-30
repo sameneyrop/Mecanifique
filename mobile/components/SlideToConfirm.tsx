@@ -10,7 +10,6 @@ import Animated, {
   withDelay,
   withRepeat,
   withSequence,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -31,6 +30,7 @@ const PAD = 6;
 const THUMB = HEIGHT - PAD * 2;
 // Qué tanto hay que llevarla para que cuente.
 const CONFIRM_AT = 0.85;
+const RETURN = { duration: 280, easing: Easing.out(Easing.cubic) };
 
 export function SlideToConfirm({
   label,
@@ -53,17 +53,23 @@ export function SlideToConfirm({
   const confirmRef = useRef(onConfirm);
   confirmRef.current = onConfirm;
 
-  // La flecha se asoma cada pocos segundos mientras nadie la toca.
+  // La flecha se asoma un poco cada pocos segundos mientras nadie la toca.
   function startNudge() {
     if (reduceMotion) return;
     nudge.value = withRepeat(
       withSequence(
-        withDelay(2200, withTiming(14, { duration: 260, easing: Easing.out(Easing.quad) })),
-        withSpring(0, { damping: 8, stiffness: 160 }),
+        withDelay(2800, withTiming(8, { duration: 320, easing: Easing.inOut(Easing.quad) })),
+        withTiming(0, { duration: 380, easing: Easing.inOut(Easing.quad) }),
       ),
       -1,
       false,
     );
+  }
+
+  // De regreso a su lugar: directo y suave, sin rebote.
+  function returnHome() {
+    x.value = withTiming(0, RETURN);
+    startNudge();
   }
 
   useEffect(() => {
@@ -96,19 +102,12 @@ export function SlideToConfirm({
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
             confirmRef.current();
             // Si se canceló (p. ej. "cobrar menos"), vuelve a su lugar.
-            resetTimer.current = setTimeout(() => {
-              x.value = withSpring(0, { damping: 18 });
-              startNudge();
-            }, 1200);
+            resetTimer.current = setTimeout(returnHome, 1200);
           } else {
-            x.value = withSpring(0, { damping: 16, stiffness: 180 });
-            startNudge();
+            returnHome();
           }
         },
-        onPanResponderTerminate: () => {
-          x.value = withSpring(0, { damping: 16 });
-          startNudge();
-        },
+        onPanResponderTerminate: returnHome,
       }),
     [maxX, busy, reduceMotion],
   );

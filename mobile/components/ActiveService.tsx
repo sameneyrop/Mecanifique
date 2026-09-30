@@ -6,7 +6,7 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { ILLUSTRATIONS } from '../illustrations';
 import { Avatar, Card, CharCounter, Field, Illustration, Input, PrimaryButton } from './ui';
-import { SearchingRadar } from './SearchingRadar';
+import { WaitingSignal } from './WaitingSignal';
 
 export const ACTIVE_REQUEST_STATUSES = new Set([
   'pending',
@@ -63,6 +63,7 @@ type SearchableRequest = {
   id: number;
   mechanicId: number | null;
   mechanicName?: string | null;
+  mechanicPhotoUrl?: string | null;
   assignmentMode?: 'auto' | 'direct' | null;
 };
 
@@ -81,7 +82,7 @@ export function SearchingStatus({
   if (request.mechanicId) {
     return (
       <View style={styles.stack}>
-        <SearchingRadar label={`Esperando la respuesta de ${request.mechanicName || 'un mecánico'}`} />
+        <WaitingSignal mechanicName={request.mechanicName} mechanicPhotoUrl={request.mechanicPhotoUrl} />
         <View style={styles.searchingCard}>
           <Ionicons name="time-outline" size={22} color={colors.primary} />
           <View style={styles.flex}>

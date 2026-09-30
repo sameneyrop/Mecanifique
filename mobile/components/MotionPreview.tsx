@@ -5,7 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { Card, PrimaryButton, SecondaryButton, Segmented, StatusPulseDot } from './ui';
-import { SearchingRadar } from './SearchingRadar';
+import { WaitingSignal } from './WaitingSignal';
 import { CountdownRing, RingingBell } from './CountdownRing';
 import { previewCelebration } from './Celebration';
 import { MechanicRadar } from './MechanicRadar';
@@ -138,7 +138,7 @@ export function MotionPreview() {
           ]}
           onChange={(value) => setDemo(value as Demo)}
         />
-        {demo === 'radar' && <SearchingRadar label="Vista previa del radar" />}
+        {demo === 'radar' && <WaitingSignal mechanicName="Juan Gallegos" />}
         {demo === 'ring' && <RingDemo />}
         {demo === 'finish' && (
           <View style={styles.stack}>

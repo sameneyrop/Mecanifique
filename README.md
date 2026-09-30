@@ -442,7 +442,9 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
   correo ya no ponen mayúscula inicial ni autocorrigen.
 - **Animaciones en los momentos de espera y de logro** (Reanimated + SVG, ya
   instalados: llegan por EAS Update sin APK nuevo). "Esperando respuesta" del
-  cliente es un radar con el auto al centro (`components/SearchingRadar.tsx`);
+  cliente muestra su auto y al mecánico (con su foto) y una señal que viaja
+  del uno al otro (`components/WaitingSignal.tsx`); a propósito no es un
+  radar, para no confundirse con el seguimiento "en camino";
   la solicitud entrante del mecánico tiene un anillo que se vacía con el tiempo
   para responder y una campana (`components/CountdownRing.tsx`); al terminar un
   servicio, cliente y mecánico ven una palomita que se dibuja y confeti
