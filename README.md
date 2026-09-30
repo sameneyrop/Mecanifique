@@ -885,6 +885,18 @@ decididas y el cálculo del apartado ya funcionando**, pero el cobro real
 3. Consultar y administrar estados, disponibilidad y agenda.
 4. Con las mejoras locales publicadas, revisar y dictaminar verificaciones de
    identidad.
+5. Marcar como pagadas las comisiones, resolver disputas, contactar la lista
+   de espera y aprobar refaccionarias sugeridas (tarjetas en Acciones).
+
+No hay forma de volverse admin desde la app ni desde la API, a propósito. Se
+crea una cuenta aparte (cliente) y se promueve directo en Turso:
+
+```sql
+UPDATE users SET role = 'admin', mechanic_id = NULL, customer_id = NULL WHERE login = 'correo@ejemplo.com';
+```
+
+Un admin no cambia de modo: no usar la cuenta con la que se prueba como
+cliente o mecánico.
 
 ## Ejecutar y validar
 
