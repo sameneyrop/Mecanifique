@@ -3,7 +3,7 @@
  * azules marino de la misma marca. `colors` siempre devuelve la del tema
  * activo, así que hay que leerla al pintar, nunca guardarla en una constante
  * al cargar un módulo. styles.ts arma una hoja de estilos por tema. El tema
- * se cambia con applyColorScheme (theme.ts).
+ * se cambia con applyThemePreference (theme.ts).
  */
 
 const light = {

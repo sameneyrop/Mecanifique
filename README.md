@@ -145,8 +145,10 @@ mantener informadas a ambas partes.
   cambiarlo, las vistas raíz de App llevan `key={colorScheme}` y todo se
   vuelve a pintar sin perder la sesión. Colores con papel propio: `surface`
   (fondos que antes eran `white`), `inverseSurface` (fondo oscuro con texto
-  blanco), `success*` y `dangerBorder`. "Igual que el teléfono" necesitaría
-  `userInterfaceStyle: automatic` en app.json, y eso es un APK nuevo.
+  blanco), `success*` y `dangerBorder`. Desde el APK 1.0.2 hay "Automático"
+  (lo de fábrica): sigue el modo del teléfono con `Appearance` y
+  `userInterfaceStyle: automatic` en app.json. El botón junto a la campana
+  fija claro u oscuro.
 - **Datos del mercado para el mecánico** (`src/marketInsights.ts`,
   `mobile/components/MarketInsights.tsx`), siempre agregados:
   - Precio sugerido de visita (`GET /api/mechanics/me/rate-suggestion`):
