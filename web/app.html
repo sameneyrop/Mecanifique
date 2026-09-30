@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Descarga Mecanifique</title>
+  <meta name="description" content="Descarga la app de Mecanifique para Android.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/mecanifique-logo-blue.png">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .download { max-width: 620px; margin: 0 auto; display: grid; gap: 22px; }
+    .download h1 { font-size: clamp(34px, 9vw, 52px); margin-bottom: 0; }
+    .download .button { width: 100%; padding: 20px 24px; font-size: 18px; }
+    .download-note { margin: 0; font-size: 14px; color: var(--muted); }
+    .steps { margin: 0; padding-left: 22px; display: grid; gap: 12px; font-size: 16px; }
+    .steps b { color: var(--ink); }
+    .box { padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; background: var(--pale); display: grid; gap: 10px; }
+    .box h2 { font-size: 20px; letter-spacing: -.01em; margin: 0; }
+    .box p, .box ul { margin: 0; }
+    .box ul { padding-left: 20px; display: grid; gap: 6px; }
+    .section.download-section { padding: 48px 0 64px; }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a class="brand" href="/" aria-label="Mecanifique, inicio">
+        <img src="assets/mecanifique-logo-blue.png" alt="Mecanifique">
+      </a>
+    </div>
+  </header>
+
+  <!-- Página corta para instalar el APK sin Play Store (mecanifique.vercel.app/app):
+       fácil de dictar o mandar por WhatsApp en los talleres, sin códigos QR.
+       Al compilar un APK nuevo, cambiar el enlace del botón (APK_URL). -->
+  <main class="section download-section">
+    <div class="container download">
+      <p class="eyebrow">MECANIFIQUE PARA ANDROID</p>
+      <h1>Descarga la app</h1>
+      <p class="lead">Recibe solicitudes de clientes cerca de ti, o pide un mecánico que vaya hasta tu auto.</p>
+
+      <a class="button primary" id="download" href="https://expo.dev/artifacts/eas/A-Ozp8lkzqRD45p_2RktOLpS3psRDjD5lhSa8zWhaZw.apk">
+        Descargar Mecanifique
+      </a>
+      <p class="download-note">Versión 1.0.2 · Para Android 7 o más reciente · Todavía no está en Play Store ni para iPhone.</p>
+
+      <div class="box">
+        <h2>Cómo instalarla</h2>
+        <ol class="steps">
+          <li>Toca <b>Descargar Mecanifique</b>. Si el teléfono dice que el archivo puede ser dañino, toca <b>Descargar de todos modos</b>: sale porque la app todavía no está en Play Store.</li>
+          <li>Abre el archivo descargado desde la notificación o desde <b>Descargas</b>.</li>
+          <li>Si te pide permiso para instalar apps, toca <b>Configuración</b>, activa <b>Permitir de esta fuente</b> y regresa.</li>
+          <li>Toca <b>Instalar</b>. Si aparece un aviso de Play Protect, toca <b>Más detalles</b> y luego <b>Instalar de todos modos</b>.</li>
+          <li>Abre Mecanifique y crea tu cuenta.</li>
+        </ol>
+      </div>
+
+      <div class="box">
+        <h2>Si eres mecánico</h2>
+        <ul>
+          <li>Al crear tu cuenta, elige <b>Soy mecánico</b>.</li>
+          <li>Verifica tu identidad con tu INE y una selfie, tómate tu foto de perfil y pon el precio de tu visita.</li>
+          <li>Toca <b>Conectarme</b> para recibir solicitudes de clientes cerca de ti.</li>
+          <li>El cliente te paga directo a ti. Tus primeros 30 días sin comisión empiezan con tu primer servicio terminado.</li>
+        </ul>
+      </div>
+
+      <p class="download-note">¿Problemas para instalarla? Escríbenos a <a href="mailto:ameneyro.design@gmail.com">ameneyro.design@gmail.com</a>.</p>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <img src="assets/mecanifique-logo-blue.png" alt="Mecanifique">
+      <nav class="footer-links">
+        <a href="/">Inicio</a>
+        <a href="/terminos">Términos y condiciones</a>
+        <a href="/privacidad">Aviso de privacidad</a>
+        <a href="/eliminar-cuenta">Eliminar cuenta</a>
+      </nav>
+      <span>Mecanifique · Aguascalientes, México</span>
+    </div>
+  </footer>
+</body>
+</html>
