@@ -2196,6 +2196,67 @@ test("visita de regreso: la reprograman el mecánico o el cliente, nadie más, y
   await assert.rejects(rescheduleReturnVisit({ visitId: visit, mechanicId, customerId: null, when: "Lunes" }), (error) => error.status === 409);
 });
 
+test("refaccionarias: lista oficial, las más cercanas primero, sugerencias y 'sí tenían la pieza'", async () => {
+  const {
+    PartsStoreError,
+    listPartsStores,
+    markStoreHadPart,
+    pendingPartsStores,
+    reviewPartsStore,
+    seedPartsStores,
+    suggestPartsStore
+  } = require("../src/partsStores.ts");
+  const tag = crypto.randomUUID().slice(0, 8);
+  const near = { latitude: -43.5, longitude: -170.5 };
+  const keys = [`prueba-cerca-${tag}`, `prueba-lejos-${tag}`, `prueba-sin-ubicacion-${tag}`];
+  await seedPartsStores([
+    { key: keys[1], name: `Lejos ${tag}`, phone: "449 111 2222", latitude: -43.6, longitude: -170.5 },
+    { key: keys[0], name: `Cerca ${tag}`, phone: "(449) 333-4444", latitude: -43.501, longitude: -170.5 },
+    { key: keys[2], name: `Sin ubicación ${tag}`, phone: "4495556666" }
+  ]);
+  const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+  const user = await run(
+    "INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id) VALUES ('mechanic', ?, ?, 'Mecánico', 'x', 'x', ?)",
+    [`${tag}@example.test`, crypto.randomUUID(), mechanicId]
+  );
+
+  try {
+    const mine = (await listPartsStores(near)).filter((store) => store.name.endsWith(tag));
+    assert.deepEqual(mine.map((store) => store.name), [`Cerca ${tag}`, `Lejos ${tag}`, `Sin ubicación ${tag}`]);
+    assert.equal(mine[0].phone, "4493334444", "teléfono solo con dígitos");
+    assert.equal(mine[2].distanceKm, null);
+
+    // Volver a cargar la lista actualiza, no duplica.
+    await seedPartsStores([{ key: keys[0], name: `Cerca ${tag}`, phone: "4493334444", hours: "9 a 19", latitude: -43.501, longitude: -170.5 }]);
+    const updated = (await listPartsStores(near)).filter((store) => store.name === `Cerca ${tag}`);
+    assert.equal(updated.length, 1);
+    assert.equal(updated[0].hours, "9 a 19");
+
+    // "Sí tenían la pieza": cuenta una vez por servicio.
+    await markStoreHadPart({ storeId: updated[0].id, mechanicId, part: "Bomba de gasolina", vehicle: "Tsuru 2010" });
+    await markStoreHadPart({ storeId: updated[0].id, mechanicId, part: "Bomba de gasolina", vehicle: "Tsuru 2010" });
+    assert.equal((await listPartsStores(near)).find((store) => store.id === updated[0].id).recentHits, 1);
+
+    // Sugerencia: pendiente hasta que un admin la aprueba; no se repite un teléfono.
+    await assert.rejects(
+      suggestPartsStore({ userId: user.lastID, name: "Repetida", phone: "449-333-4444" }),
+      (error) => error instanceof PartsStoreError && error.status === 409
+    );
+    const suggested = await suggestPartsStore({ userId: user.lastID, name: `Sugerida ${tag}`, phone: "4497778888" });
+    assert.ok((await pendingPartsStores()).some((store) => store.id === suggested.id));
+    assert.equal((await listPartsStores(near)).some((store) => store.id === suggested.id), false, "no sale hasta aprobarla");
+    await reviewPartsStore(suggested.id, true);
+    assert.equal((await listPartsStores(near)).some((store) => store.id === suggested.id), true);
+  } finally {
+    await run(
+      `DELETE FROM parts_store_hits WHERE store_id IN (SELECT id FROM parts_stores WHERE name LIKE ?)`,
+      [`%${tag}`]
+    );
+    await run("DELETE FROM parts_stores WHERE name LIKE ?", [`%${tag}`]);
+    await run("DELETE FROM users WHERE id = ?", [user.lastID]);
+  }
+});
+
 test("mecánico con un trabajo en curso: al reconectarse sigue ocupado", async () => {
   const mechanicId = await createRegisteredMechanic("active");
   const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Prueba", uniquePhone()]);

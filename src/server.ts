@@ -138,6 +138,15 @@ import {
 } from "./serviceEvidence";
 import { requestTrends, visitRateSuggestion } from "./marketInsights";
 import {
+  PartsStoreError,
+  listPartsStores,
+  markStoreHadPart,
+  pendingPartsStores,
+  reviewPartsStore,
+  seedPartsStores,
+  suggestPartsStore
+} from "./partsStores";
+import {
   customerCompletedServices,
   linkedUnpaidService,
   recordUnpaidFingerprints,
@@ -5762,6 +5771,99 @@ app.post(
   })
 );
 
+// Refaccionarias (src/partsStores.ts): el mecánico busca la pieza cerca del auto.
+function sendPartsStoreError(res: Response, error: unknown): boolean {
+  if (error instanceof PartsStoreError) {
+    res.status(error.status).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+app.get("/api/parts-stores", requireAuth, requireRole("mechanic", "admin"), handleAsync(async (req, res) => {
+  const query = z
+    .object({
+      requestId: z.coerce.number().int().positive().optional(),
+      latitude: z.coerce.number().min(-90).max(90).optional(),
+      longitude: z.coerce.number().min(-180).max(180).optional()
+    })
+    .parse(req.query);
+  let near: { latitude: number; longitude: number } | null =
+    query.latitude !== undefined && query.longitude !== undefined ? { latitude: query.latitude, longitude: query.longitude } : null;
+  // Cerca del auto del servicio (si es el mecánico de ese servicio).
+  if (query.requestId) {
+    const request = await get<{ mechanicId: number | null; latitude: number | null; longitude: number | null }>(
+      "SELECT mechanic_id AS mechanicId, latitude, longitude FROM service_requests WHERE id = ?",
+      [query.requestId]
+    );
+    const allowed = req.auth?.user.role === "admin" || request?.mechanicId === req.auth?.user.mechanicId;
+    if (request && allowed && request.latitude != null && request.longitude != null) {
+      near = { latitude: request.latitude, longitude: request.longitude };
+    }
+  }
+  res.json({ stores: await listPartsStores(near) });
+}));
+
+app.post("/api/parts-stores", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  if (applyRateLimit("parts-store-suggest", req, res, 10)) return;
+  const payload = z
+    .object({
+      name: z.string().trim().min(3).max(120),
+      phone: z.string().trim().max(30).optional(),
+      address: z.string().trim().max(200).optional(),
+      zone: z.string().trim().max(80).optional(),
+      latitude: z.number().min(-90).max(90).optional(),
+      longitude: z.number().min(-180).max(180).optional()
+    })
+    .parse(req.body);
+  try {
+    const created = await suggestPartsStore({ userId: req.auth!.user.id, ...payload });
+    const adminUserIds = await getAdminUserIds();
+    await Promise.all(
+      adminUserIds.map((adminUserId) =>
+        createNotification(adminUserId, "Refaccionaria sugerida", `${req.auth!.user.fullName} sugirió: ${payload.name}. Revísala en Acciones.`)
+      )
+    );
+    res.status(201).json(created);
+  } catch (error) {
+    if (!sendPartsStoreError(res, error)) throw error;
+  }
+}));
+
+app.post("/api/parts-stores/:id/had-part", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const storeId = parseRequestIdParam(req, res);
+  if (storeId === null) return;
+  const payload = z
+    .object({
+      requestId: z.number().int().positive().optional(),
+      part: z.string().trim().max(120).optional(),
+      vehicle: z.string().trim().max(120).optional()
+    })
+    .parse(req.body ?? {});
+  try {
+    await markStoreHadPart({ storeId, mechanicId: req.auth!.user.mechanicId!, ...payload });
+    res.json({ ok: true });
+  } catch (error) {
+    if (!sendPartsStoreError(res, error)) throw error;
+  }
+}));
+
+app.get("/api/admin/parts-stores/pending", requireAuth, requireRole("admin"), handleAsync(async (_req, res) => {
+  res.json({ stores: await pendingPartsStores() });
+}));
+
+app.post("/api/admin/parts-stores/:id/review", requireAuth, requireRole("admin"), handleAsync(async (req, res) => {
+  const storeId = parseRequestIdParam(req, res);
+  if (storeId === null) return;
+  const { approve } = z.object({ approve: z.boolean() }).parse(req.body);
+  try {
+    await reviewPartsStore(storeId, approve);
+    res.json({ ok: true });
+  } catch (error) {
+    if (!sendPartsStoreError(res, error)) throw error;
+  }
+}));
+
 // Cambiar la fecha de una visita de regreso (mecánico o cliente); se le avisa al otro.
 app.post(
   "/api/service-requests/:id/reschedule",
@@ -5991,6 +6093,8 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 export async function startServer(): Promise<typeof httpServer> {
   await initDb();
+  // La lista oficial de refaccionarias (src/partsStoresSeed.ts).
+  await seedPartsStores();
 
   return new Promise((resolve, reject) => {
     const onError = (error: Error) => {

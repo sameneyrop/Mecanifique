@@ -8,6 +8,7 @@ import { useAppContext } from '../context/AppContext';
 import { Card, EmptyState, InfoRow, PrimaryButton, SecondaryButton } from '../components/ui';
 import { UnpaidNearbyWarning, customerHistoryText } from '../components/IncomingRequestOverlay';
 import { TrendsCard } from '../components/MarketInsights';
+import { PartsStoreFinder } from '../components/PartsStoreFinder';
 import type { ApiCall } from '../App';
 import { ILLUSTRATIONS } from '../illustrations';
 import { openExternalNavigation, parseServerTimestamp } from '../utils';
@@ -25,6 +26,7 @@ export function MapScreen({
     mechanicConnection,
     incomingRequest,
     selectedRequest,
+    currentLocation,
     setCurrentScreen,
   } = useAppContext();
 
@@ -136,6 +138,9 @@ export function MapScreen({
     </Animated.View>
     <Animated.View entering={FadeInDown.delay(80).duration(300)} needsOffscreenAlphaCompositing>
       <TrendsCard api={api} />
+    </Animated.View>
+    <Animated.View entering={FadeInDown.delay(160).duration(300)} needsOffscreenAlphaCompositing>
+      <PartsStoreFinder api={api} near={currentLocation} />
     </Animated.View>
     </>
   );

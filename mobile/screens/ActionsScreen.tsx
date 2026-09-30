@@ -26,6 +26,7 @@ import { MechanicPromotions } from '../components/MechanicPromotions';
 import { TipInfoCard } from '../components/TipInfoCard';
 import { AdminCommissionsCard, CommissionsPanel } from '../components/Commissions';
 import { AdminWaitlistCard } from '../components/Waitlist';
+import { AdminPartsStoresCard } from '../components/PartsStoreFinder';
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeMechanicTab, type MechanicTab } from '../navigationRequests';
 import { RateSuggestion } from '../components/MarketInsights';
@@ -544,6 +545,10 @@ export function ActionsScreen({
 
           <Animated.View entering={FadeInDown.delay(85).duration(300)} needsOffscreenAlphaCompositing>
             <AdminWaitlistCard api={api} />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.delay(88).duration(300)} needsOffscreenAlphaCompositing>
+            <AdminPartsStoresCard api={api} />
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>

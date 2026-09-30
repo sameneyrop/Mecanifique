@@ -790,6 +790,42 @@ export async function initDb(): Promise<void> {
   // Cuándo se terminó (la fecha del comprobante y desde cuándo corre la garantía).
   await ensureColumn("service_requests", "completed_at", "ALTER TABLE service_requests ADD COLUMN completed_at TEXT");
 
+  // Refaccionarias (src/partsStores.ts): directorio para que el mecánico busque
+  // una pieza cerca del auto. Las de la lista oficial llegan con seed_key (se
+  // cargan de src/partsStoresSeed.ts al arrancar); las que sugieren los
+  // mecánicos entran como 'pending' hasta que un admin las aprueba.
+  await run(`
+    CREATE TABLE IF NOT EXISTS parts_stores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      seed_key TEXT UNIQUE,
+      name TEXT NOT NULL,
+      phone TEXT,
+      whatsapp TEXT,
+      address TEXT,
+      zone TEXT,
+      city TEXT NOT NULL DEFAULT 'Aguascalientes',
+      latitude REAL,
+      longitude REAL,
+      hours TEXT,
+      specialties TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'pending', 'rejected')),
+      suggested_by_user_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // "Sí tenían la pieza": lo marca el mecánico; así se sabe qué tienda surte qué.
+  await run(`
+    CREATE TABLE IF NOT EXISTS parts_store_hits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      store_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      service_request_id INTEGER,
+      part TEXT,
+      vehicle TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
   await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");
 

@@ -659,6 +659,34 @@ las **refacciones que ya trae** (`parts_on_hand_amount`, precio fijo) de las
   visita** (`visit_fee = 0`); ahí cotiza lo que falta. Hoy se cobra solo lo que
   hizo (ajuste) y las refacciones con ticket.
 
+### Refaccionarias (`src/partsStores.ts`, fase 1)
+
+Directorio para que el mecánico encuentre la pieza sin llamar a ciegas
+sucursal por sucursal (tablas `parts_stores` y `parts_store_hits`):
+
+- **Lista oficial** en `src/partsStoresSeed.ts`: la compila Mecanifique y se
+  carga al arrancar el servidor (se agregan las nuevas y se actualizan las que
+  cambian, por `key`; para quitar una, `active: false`). Solo datos públicos
+  del negocio, nunca copiados de Google Maps. Hoy está vacía.
+- En el trabajo en curso (diagnóstico, reparación, "voy por refacciones") y en
+  Mapa: "¿Te falta una pieza?" lista las tiendas **más cercanas al auto** (o
+  al mecánico, en Mapa; las que no tienen ubicación van al final). Escribe la
+  pieza y "WhatsApp" abre el chat de la tienda con el mensaje listo ("Hola,
+  ¿tienen X para Nissan Versa 2018? Soy mecánico de Mecanifique."); también
+  "Llamar" y "Cómo llegar".
+- **"Sí tenían la pieza"** (`POST /api/parts-stores/:id/had-part`): uno por
+  tienda y servicio. Las tiendas muestran cuántas veces surtieron en los
+  últimos 90 días. Guarda la pieza y el auto: es la base de la fase 2 (saber
+  qué tienda surte qué).
+- **Sugerencias**: el mecánico agrega una tienda que falta (`POST
+  /api/parts-stores`, nombre y teléfono); queda pendiente, se avisa a los
+  admins y se aprueba en Acciones → "Refaccionarias sugeridas", después de
+  llamar para confirmar el número. No se aceptan teléfonos repetidos ni más de
+  10 pendientes por mecánico.
+- Siguientes fases (no hechas): usar los tickets para saber precios y qué
+  surte cada tienda; tiendas dentro de la app contestando "sí/no + precio" y,
+  con eso, convenios.
+
 ### Cancelaciones (`src/cancellations.ts`)
 
 El cargo por cancelar depende de cuándo aceptó, salió y llegó el mecánico

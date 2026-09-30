@@ -40,6 +40,7 @@ import { ProfileChecklist } from '../components/ProfileChecklist';
 import { RateSuggestion } from '../components/MarketInsights';
 import { RequestPhotos } from '../components/RequestPlace';
 import { MechanicEvidencePanel, ServiceEvidenceView } from '../components/ServiceEvidence';
+import { PartsStoreFinder } from '../components/PartsStoreFinder';
 import {
   CustomerPaymentCard,
   MechanicCollectCard,
@@ -755,6 +756,10 @@ function MechanicHome(props: HomeScreenProps) {
             request={detail}
             onChanged={() => void props.onLoadRequestById(detail.id).catch(() => undefined)}
           />
+          {/* Ya sabe qué le falta al auto: dónde conseguir la pieza. */}
+          {(detail.status === 'diagnosing' || detail.status === 'repairing' || detail.status === 'awaiting_parts') && (
+            <PartsStoreFinder api={props.api} request={detail} />
+          )}
           <Card title="Avance">
             <View style={styles.stack}>
               <NextStepGuide request={detail} role="mechanic" />
