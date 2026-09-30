@@ -47,9 +47,11 @@ import {
   NextStepGuide,
   customerNeedsClosure,
   mechanicNeedsClosure,
+  serviceAmounts,
 } from '../components/ServiceGuide';
+import { SlideToConfirm } from '../components/SlideToConfirm';
 import type { ApiCall } from '../App';
-import { openServiceNavigation, serviceFeeStatusText } from '../utils';
+import { formatPesos, openServiceNavigation, serviceFeeStatusText } from '../utils';
 
 type RequestFormShape = {
   vehicleMake: string;
@@ -100,7 +102,8 @@ type HomeScreenProps = {
   onSearchAgain: (requestId: number) => void;
   onEmergencyCall: () => void;
   onSendMessage: () => void;
-  onAdvanceJob: (requestId: number, status: string) => void;
+  /** confirmed: ya lo confirmó (deslizando para terminar); no se le pregunta otra vez. */
+  onAdvanceJob: (requestId: number, status: string, confirmed?: boolean) => void;
   onUseMyLocation: () => void;
 };
 
@@ -129,6 +132,13 @@ const NEXT_JOB_STEP: Record<string, { status: string; label: string }> = {
 };
 
 type RequestDetail = NonNullable<ReturnType<typeof useAppContext>['selectedRequest']>;
+
+/** Segunda línea de "Desliza para terminar": lo que antes decía la confirmación. */
+function finishHint(request: RequestDetail): string {
+  const total = serviceAmounts(request).total;
+  const client = request.customerName?.split(' ')[0] || 'el cliente';
+  return total > 0 ? `Le cobrarás ${formatPesos(total)} a ${client}` : 'Solo cuando el trabajo esté listo';
+}
 
 /**
  * Servicio terminado que falta cerrar (pagar, calificar o confirmar el
@@ -683,7 +693,8 @@ function MechanicHome(props: HomeScreenProps) {
   // hizo todo antes de terminar: si no, cobra menos (ajuste) en vez de la
   // mano de obra completa de algo que no hizo.
   const [adjusting, setAdjusting] = useState(false);
-  function advance(requestId: number, status: string) {
+  // confirmed: ya lo confirmó deslizando, no se le vuelve a preguntar.
+  function advance(requestId: number, status: string, confirmed = false) {
     const amounts = detail?.amountDue;
     if (status === 'completed' && amounts && amounts.partsToBuyEstimate > 0 && amounts.partsBought === 0) {
       Alert.alert(
@@ -691,12 +702,12 @@ function MechanicHome(props: HomeScreenProps) {
         'Cotizaste refacciones a comprar y no subiste ningún ticket. Si no se hizo todo, cobra solo lo que sí hiciste.',
         [
           { text: 'No, cobrar menos', onPress: () => setAdjusting(true) },
-          { text: 'Sí, terminar', onPress: () => props.onAdvanceJob(requestId, status) },
+          { text: 'Sí, terminar', onPress: () => props.onAdvanceJob(requestId, status, confirmed) },
         ],
       );
       return;
     }
-    props.onAdvanceJob(requestId, status);
+    props.onAdvanceJob(requestId, status, confirmed);
   }
   const address = detail ? detail.serviceAddress || `${detail.city}, ${detail.zone}` : '';
   // Una cuenta pendiente o suspendida no puede conectarse (el servidor lo
@@ -775,7 +786,15 @@ function MechanicHome(props: HomeScreenProps) {
                   onAdjustingChange={setAdjusting}
                 />
               )}
-              {nextStep && !needsQuote(nextStep.status) && !blockedByReceipt(nextStep.status) && (
+              {nextStep && !needsQuote(nextStep.status) && !blockedByReceipt(nextStep.status) && nextStep.status === 'completed' && (
+                <SlideToConfirm
+                  label="Desliza para terminar"
+                  hint={finishHint(detail)}
+                  busy={busy}
+                  onConfirm={() => advance(detail.id, 'completed', true)}
+                />
+              )}
+              {nextStep && !needsQuote(nextStep.status) && !blockedByReceipt(nextStep.status) && nextStep.status !== 'completed' && (
                 <Pressable
                   style={({ pressed }) => [styles.nextStepButton, (pressed || busy) && styles.buttonPressed]}
                   onPress={() => advance(detail.id, nextStep.status)}

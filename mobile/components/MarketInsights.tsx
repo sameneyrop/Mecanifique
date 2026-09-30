@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { styles } from '../styles';
 import { Card, SecondaryButton } from './ui';
+import { CountUp, GrowIn } from './CountUp';
 import { formatPesos } from '../utils';
 import type { ApiCall } from '../App';
 
@@ -122,11 +123,11 @@ export function TrendsCard({ api }: { api: ApiCall }) {
       <View style={styles.stack}>
         <View style={styles.trendTiles}>
           <View style={styles.trendTile}>
-            <Text style={styles.trendValue}>{trends.lastHour}</Text>
+            <CountUp value={trends.lastHour} style={styles.trendValue} />
             <Text style={styles.trendLabel}>solicitudes en la última hora</Text>
           </View>
           <View style={styles.trendTile}>
-            <Text style={styles.trendValue}>{trends.waiting}</Text>
+            <CountUp value={trends.waiting} style={styles.trendValue} />
             <Text style={styles.trendLabel}>buscando mecánico ahora</Text>
           </View>
         </View>
@@ -155,7 +156,9 @@ export function TrendsCard({ api }: { api: ApiCall }) {
                   hitSlop={{ top: 8, bottom: 8 }}
                 >
                   {hour === nowHour && <Text style={styles.trendNowLabel}>Ahora</Text>}
-                  <View
+                  <GrowIn
+                    direction="up"
+                    delay={hour * 18}
                     style={[
                       styles.trendBar,
                       hour === nowHour && styles.trendBarNow,
@@ -177,7 +180,7 @@ export function TrendsCard({ api }: { api: ApiCall }) {
             {trends.byZone.length > 0 && (
               <>
                 <Text style={styles.itemTitle}>¿En qué zonas piden más?</Text>
-                {trends.byZone.map((zone) => (
+                {trends.byZone.map((zone, index) => (
                   <View key={zone.zone} style={styles.trendZoneRow}>
                     <View style={styles.trendZoneHeader}>
                       <Text style={[styles.itemText, styles.flex]} numberOfLines={1}>
@@ -186,7 +189,11 @@ export function TrendsCard({ api }: { api: ApiCall }) {
                       <Text style={styles.smallText}>{zone.count}</Text>
                     </View>
                     <View style={styles.trendZoneTrack}>
-                      <View style={[styles.trendZoneFill, { width: `${(zone.count / maxZone) * 100}%` }]} />
+                      <GrowIn
+                        direction="right"
+                        delay={300 + index * 80}
+                        style={[styles.trendZoneFill, { width: `${(zone.count / maxZone) * 100}%` }]}
+                      />
                     </View>
                   </View>
                 ))}

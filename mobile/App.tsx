@@ -3162,7 +3162,7 @@ export default function App() {
     }
   }
 
-  function handleAdvanceJob(requestId: number, status: string) {
+  function handleAdvanceJob(requestId: number, status: string, confirmed = false) {
     // La regla del ticket, justo antes de salir a comprar (src/partsReceipts.ts).
     if (status === 'awaiting_parts') {
       Alert.alert(
@@ -3175,7 +3175,8 @@ export default function App() {
       );
       return;
     }
-    if (status === 'completed') {
+    // Deslizando para terminar ya lo confirmó (con el monto a la vista).
+    if (status === 'completed' && !confirmed) {
       const job = selectedRequest?.id === requestId ? selectedRequest : null;
       const total = job ? serviceAmounts(job).total : 0;
       Alert.alert(

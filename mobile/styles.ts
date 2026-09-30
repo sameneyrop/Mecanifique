@@ -1029,6 +1029,8 @@ function buildStyles(colors: Palette) {
     gap: 10,
     padding: 14,
     borderRadius: 16,
+    // Las ondas al conectarse recorren el recuadro sin salirse.
+    overflow: 'hidden',
     backgroundColor: colors.primaryLighter,
     borderWidth: 1,
     borderColor: colors.primaryLight,
@@ -1054,6 +1056,13 @@ function buildStyles(colors: Palette) {
     height: 14,
     borderRadius: 7,
     backgroundColor: '#16a34a',
+  },
+  // Al conectarse (StatusPulseDot en components/ui.tsx).
+  connectBurstRing: {
+    position: 'absolute',
+    borderWidth: 2.5,
+    borderColor: '#16a34a',
+    backgroundColor: 'rgba(22, 163, 74, 0.08)',
   },
   connectionStatusText: {
     fontFamily: fonts.bold,

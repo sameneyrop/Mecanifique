@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentProps, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -15,6 +15,7 @@ import Animated, {
   FadeInUp,
   FadeOutUp,
   cancelAnimation,
+  useReducedMotion,
   useSharedValue,
   useAnimatedStyle,
   withDelay,
@@ -443,12 +444,54 @@ function PulseRing({ delay }: { delay: number }) {
   return <Animated.View style={[styles.pulseRing, style]} />;
 }
 
-/** Punto de estado; encendido, irradia ondas suaves (como un indicador "en vivo"). */
+// Lo bastante grande para cruzar el recuadro de estado de lado a lado.
+const BURST_SIZE = 640;
+
+/** Al conectarse: una onda delgada que sale del punto y se desvanece (se usan 3, escalonadas). */
+function BurstRing({ delay }: { delay: number }) {
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withDelay(delay, withTiming(1, { duration: 1100, easing: Easing.out(Easing.quad) }));
+  }, []);
+  // Crece el tamaño (no la escala) para que el borde siga delgado.
+  const style = useAnimatedStyle(() => {
+    const size = 14 + progress.value * (BURST_SIZE - 14);
+    return {
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      opacity: progress.value === 0 ? 0 : 0.85 * (1 - progress.value * progress.value),
+    };
+  });
+  return <Animated.View style={[styles.connectBurstRing, style]} pointerEvents="none" />;
+}
+
+/**
+ * Punto de estado; encendido, irradia ondas suaves (como un indicador "en
+ * vivo"). Justo al conectarse, además, "se enciende": el punto rebota y
+ * salen tres ondas.
+ */
 export function StatusPulseDot({ active }: { active: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const [burstKey, setBurstKey] = useState(0);
+  const wasActive = useRef(active);
+  const pop = useSharedValue(1);
+
+  useEffect(() => {
+    if (active && !wasActive.current && !reduceMotion) {
+      setBurstKey(Date.now());
+      pop.value = withSequence(withTiming(1.7, { duration: 160, easing: Easing.out(Easing.quad) }), withSpring(1, { damping: 9 }));
+    }
+    wasActive.current = active;
+  }, [active]);
+
+  const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
+
   return (
     <View style={styles.pulseDotWrap}>
+      {burstKey > 0 && [0, 140, 280].map((delay) => <BurstRing key={`${burstKey}-${delay}`} delay={delay} />)}
       {active && [0, 1].map((ring) => <PulseRing key={ring} delay={ring * 1000} />)}
-      <View style={[styles.connectionDot, active && styles.connectionDotOn]} />
+      <Animated.View style={[styles.connectionDot, active && styles.connectionDotOn, popStyle]} />
     </View>
   );
 }

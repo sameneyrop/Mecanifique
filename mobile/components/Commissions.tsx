@@ -9,6 +9,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, InfoRow, PrimaryButton, SecondaryButton } from './ui';
+import { CountUp } from './CountUp';
 import { formatClabe, formatError, formatPesos, parseServerTimestamp } from '../utils';
 import type { ApiCall } from '../App';
 
@@ -173,7 +174,8 @@ export function CommissionHomeCard({ api }: { api: ApiCall }) {
       <View style={[styles.flex, styles.stack]}>
         <Text style={styles.guideLabel}>{overdue ? 'Corte vencido' : 'Corte semanal'}</Text>
         <Text style={styles.itemTitle}>
-          {formatPesos(current.total)} de comisión · {current.services} servicio{current.services === 1 ? '' : 's'}
+          <CountUp value={current.total} format={formatPesos} /> de comisión · {current.services} servicio
+          {current.services === 1 ? '' : 's'}
         </Text>
         <Text style={styles.itemText}>
           {overdue
@@ -281,7 +283,8 @@ export function CommissionsPanel({ api }: { api: ApiCall }) {
               .map((statement) => (
                 <View key={statement.id} style={styles.stack}>
                   <Text style={styles.itemTitle}>
-                    {formatPesos(statement.total)} · {statement.services} servicio{statement.services === 1 ? '' : 's'}
+                    <CountUp value={statement.total} format={formatPesos} /> · {statement.services} servicio
+                    {statement.services === 1 ? '' : 's'}
                   </Text>
                   <Text style={styles.smallText}>
                     {statement.overdue ? 'Vencido: no puedes conectarte hasta pagarlo.' : `Vence el ${longDate(statement.dueAt)}.`}

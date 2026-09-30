@@ -120,6 +120,7 @@ export function MechanicTracker({
                 { id: requestId, fullName: name, latitude: mechanic.latitude, longitude: mechanic.longitude, distanceKm },
               ]}
               maxDistanceKm={radarScaleKm(distanceKm)}
+              live
             />
             <Text style={styles.smallText}>El punto oscuro es tu auto; el azul, tu mecánico. Se actualiza solo.</Text>
           </>

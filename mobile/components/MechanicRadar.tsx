@@ -1,4 +1,15 @@
+import { useEffect } from 'react';
 import { View } from 'react-native';
+import Animated, {
+  Easing,
+  cancelAnimation,
+  useAnimatedProps,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle, Line, Text as SvgText } from 'react-native-svg';
 
 import { colors } from '../colors';
@@ -33,15 +44,71 @@ const SIZE = 250;
 const CENTER = SIZE / 2;
 const MAX_RADIUS = CENTER - 26;
 const RINGS = [1 / 3, 2 / 3, 1];
+const DOT_RADIUS = 7;
+// Al llegar una ubicación nueva, el punto se desliza hasta ahí en vez de saltar.
+const MOVE_MS = 2500;
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+/**
+ * Un mecánico en el radar. Aparece con un pequeño rebote y, cuando cambia su
+ * ubicación (o la escala del radar), se desliza. `live`: late como "en vivo"
+ * (el seguimiento del mecánico que va en camino).
+ */
+function RadarDot({ x, y, live }: { x: number; y: number; live: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const cx = useSharedValue(x);
+  const cy = useSharedValue(y);
+  const appear = useSharedValue(reduceMotion ? 1 : 0);
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    if (!reduceMotion) appear.value = withSpring(1, { damping: 11, stiffness: 180 });
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      cx.value = x;
+      cy.value = y;
+      return;
+    }
+    const move = { duration: MOVE_MS, easing: Easing.inOut(Easing.cubic) };
+    cx.value = withTiming(x, move);
+    cy.value = withTiming(y, move);
+  }, [x, y]);
+
+  useEffect(() => {
+    if (!live || reduceMotion) return;
+    pulse.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.out(Easing.quad) }), -1, false);
+    return () => cancelAnimation(pulse);
+  }, [live, reduceMotion]);
+
+  const dotProps = useAnimatedProps(() => ({ cx: cx.value, cy: cy.value, r: DOT_RADIUS * appear.value }));
+  const haloProps = useAnimatedProps(() => ({
+    cx: cx.value,
+    cy: cy.value,
+    r: DOT_RADIUS + pulse.value * 16,
+    opacity: 0.4 * (1 - pulse.value),
+  }));
+
+  return (
+    <>
+      {live && !reduceMotion && <AnimatedCircle animatedProps={haloProps} fill={colors.primary} />}
+      <AnimatedCircle animatedProps={dotProps} fill={colors.primary} stroke={colors.white} strokeWidth={2} />
+    </>
+  );
+}
 
 export function MechanicRadar({
   userLocation,
   mechanics,
   maxDistanceKm = 25,
+  live = false,
 }: {
   userLocation: { latitude: number; longitude: number };
   mechanics: RadarMechanic[];
   maxDistanceKm?: number;
+  live?: boolean;
 }) {
   return (
     <View style={{ alignItems: 'center' }}>
@@ -71,11 +138,9 @@ export function MechanicRadar({
           const bearing = getBearingDeg(userLocation.latitude, userLocation.longitude, mechanic.latitude, mechanic.longitude);
           const ratio = Math.min(1, (mechanic.distanceKm ?? 0) / maxDistanceKm);
           const angleRad = toRad(bearing);
-          const dx = Math.sin(angleRad);
-          const dy = -Math.cos(angleRad);
-          const cx = CENTER + dx * MAX_RADIUS * ratio;
-          const cy = CENTER + dy * MAX_RADIUS * ratio;
-          return <Circle key={mechanic.id} cx={cx} cy={cy} r={7} fill={colors.primary} stroke={colors.white} strokeWidth={2} />;
+          const x = CENTER + Math.sin(angleRad) * MAX_RADIUS * ratio;
+          const y = CENTER - Math.cos(angleRad) * MAX_RADIUS * ratio;
+          return <RadarDot key={mechanic.id} x={x} y={y} live={live} />;
         })}
         <Circle cx={CENTER} cy={CENTER} r={8} fill={colors.textDark} stroke={colors.white} strokeWidth={2} />
       </Svg>

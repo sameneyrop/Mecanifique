@@ -446,8 +446,16 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
   la solicitud entrante del mecánico tiene un anillo que se vacía con el tiempo
   para responder y una campana (`components/CountdownRing.tsx`); al terminar un
   servicio, cliente y mecánico ven una palomita que se dibuja y confeti
-  (`components/Celebration.tsx`, una vez por servicio y por teléfono). Todas
-  respetan "reducir movimiento" del teléfono. En desarrollo (`__DEV__`) hay una
+  (`components/Celebration.tsx`, una vez por servicio y por teléfono). En el
+  seguimiento, el mecánico se desliza en el radar entre una ubicación y otra y
+  late "en vivo" (`MechanicRadar`, `live`). Al conectarse, el punto de estado
+  rebota y una onda verde cruza el recuadro (`StatusPulseDot`). Las cifras de
+  comisiones y tendencias suben contando y las barras crecen
+  (`components/CountUp.tsx`). "Terminar servicio" es **deslizar para
+  terminar** (`components/SlideToConfirm.tsx`) con el monto a cobrar a la
+  vista: evita terminar por un toque accidental y reemplaza la ventana de
+  confirmación (con lector de pantalla, doble toque). Todas respetan "reducir
+  movimiento" del teléfono. En desarrollo (`__DEV__`) hay una
   "Vista previa de animaciones" al final de Cuenta/Acciones para verlas sin
   armar el flujo real (`components/MotionPreview.tsx`); no sale en el APK.
 
