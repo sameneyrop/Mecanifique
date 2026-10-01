@@ -20,3 +20,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
+
+# Folletos exportados (se generan desde marketing/*.html)
+marketing/*.pdf
