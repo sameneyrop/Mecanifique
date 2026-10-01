@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react';
-import { BackHandler, Pressable, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
+import { BackHandler, Pressable, ScrollView, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { colors } from '../colors';
@@ -195,6 +196,7 @@ export function AppTour({
 }) {
   const steps = role === 'mechanic' ? MECHANIC_STEPS : CUSTOMER_STEPS;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
   const [ready, setReady] = useState(false);
@@ -275,14 +277,21 @@ export function AppTour({
         height: rect.height + HIGHLIGHT_PADDING * 2,
       }
     : null;
-  // La tarjeta va del lado donde hay más espacio, sin salirse de la pantalla.
+  // La tarjeta va del lado donde hay más espacio, sin salirse de la pantalla:
+  // entre la barra de estado y la de navegación de cada teléfono. Con la letra
+  // del teléfono en grande puede no caber; entonces su texto se desplaza por
+  // dentro y los botones siguen a la vista.
   const cardWidth = Math.min(windowWidth - 32, 420);
+  const topLimit = insets.top + 12;
+  const bottomLimit = overlayHeight - insets.bottom - 12;
+  const maxCardHeight = Math.max(200, bottomLimit - topLimit);
+  const shownCardHeight = Math.min(cardHeight, maxCardHeight);
   let cardTop = overlayHeight * 0.26;
   if (highlight) {
     const below = highlight.y + highlight.height / 2 < overlayHeight / 2;
-    cardTop = below ? highlight.y + highlight.height + 14 : highlight.y - 14 - cardHeight;
-    cardTop = Math.min(Math.max(cardTop, 48), overlayHeight - cardHeight - 24);
+    cardTop = below ? highlight.y + highlight.height + 14 : highlight.y - 14 - shownCardHeight;
   }
+  cardTop = Math.max(topLimit, Math.min(cardTop, bottomLimit - shownCardHeight));
 
   return (
     <Animated.View entering={FadeIn.duration(200)} style={styles.tourLayer}>
@@ -322,24 +331,32 @@ export function AppTour({
             entering={FadeIn.duration(200)}
             style={[
               styles.tourCard,
-              { width: cardWidth, left: (windowWidth - cardWidth) / 2, top: cardTop },
+              { width: cardWidth, left: (windowWidth - cardWidth) / 2, top: cardTop, maxHeight: maxCardHeight },
             ]}
             onLayout={(event) => setCardHeight(event.nativeEvent.layout.height)}
           >
-            {!highlight && step.icon ? (
-              <View style={styles.tourIcon}>
-                <Ionicons name={step.icon} size={28} color={colors.primary} />
-              </View>
-            ) : null}
-            <Text style={styles.tourCounter}>
-              {index + 1} de {steps.length}
-            </Text>
-            <Text style={styles.tourTitle}>{step.title}</Text>
-            <Text style={styles.tourText}>{step.text}</Text>
+            <ScrollView style={styles.tourBody} contentContainerStyle={styles.tourBodyContent} bounces={false}>
+              {!highlight && step.icon ? (
+                <View style={styles.tourIcon}>
+                  <Ionicons name={step.icon} size={28} color={colors.primary} />
+                </View>
+              ) : null}
+              <Text style={styles.tourCounter} maxFontSizeMultiplier={1.6}>
+                {index + 1} de {steps.length}
+              </Text>
+              <Text style={styles.tourTitle} maxFontSizeMultiplier={1.6}>
+                {step.title}
+              </Text>
+              <Text style={styles.tourText} maxFontSizeMultiplier={1.6}>
+                {step.text}
+              </Text>
+            </ScrollView>
             <View style={styles.tourActions}>
               {!isLast ? (
                 <Pressable onPress={onFinish} hitSlop={10} accessibilityRole="button">
-                  <Text style={styles.tourSkip}>Saltar</Text>
+                  <Text style={styles.tourSkip} maxFontSizeMultiplier={1.6}>
+                    Saltar
+                  </Text>
                 </Pressable>
               ) : (
                 <View />
@@ -347,7 +364,9 @@ export function AppTour({
               <View style={styles.tourButtons}>
                 {index > 0 && (
                   <Pressable onPress={back} hitSlop={10} accessibilityRole="button">
-                    <Text style={styles.tourBack}>Atrás</Text>
+                    <Text style={styles.tourBack} maxFontSizeMultiplier={1.6}>
+                      Atrás
+                    </Text>
                   </Pressable>
                 )}
                 <View style={styles.tourNext}>

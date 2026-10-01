@@ -946,16 +946,32 @@ function buildStyles(colors: Palette) {
     fontSize: 15,
     lineHeight: 22,
   },
+  // El texto del paso: crece con su contenido y, si no cabe (letra grande en
+  // el teléfono), se desplaza por dentro sin empujar los botones.
+  tourBody: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  tourBodyContent: {
+    gap: 8,
+  },
+  // Si no caben en una línea (letra grande), los botones bajan a la siguiente.
   tourActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
+    rowGap: 10,
+    columnGap: 12,
     marginTop: 6,
   },
   tourButtons: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 16,
+    marginLeft: 'auto',
   },
   tourNext: {
     minWidth: 140,
