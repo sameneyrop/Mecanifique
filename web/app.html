@@ -20,6 +20,22 @@
     .box p, .box ul { margin: 0; }
     .box ul { padding-left: 20px; display: grid; gap: 6px; }
     .section.download-section { padding: 48px 0 64px; }
+    /* Preguntas frecuentes de mecánicos (#preguntas). */
+    .faq { display: grid; gap: 10px; scroll-margin-top: 90px; }
+    .faq > h2 { font-size: 26px; letter-spacing: -.02em; margin: 6px 0 2px; }
+    .faq details { border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+    .faq summary { cursor: pointer; list-style: none; padding: 16px 18px; font-weight: 700; font-size: 17px; color: var(--ink); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: "+"; font-size: 24px; font-weight: 500; color: var(--blue); line-height: 1; }
+    .faq details[open] summary::after { content: "−"; }
+    .faq summary:focus-visible { outline: 3px solid var(--blue2); outline-offset: 2px; border-radius: 16px; }
+    .faq .answer { padding: 0 18px 18px; display: grid; gap: 10px; font-size: 16px; }
+    .faq .answer p, .faq .answer ul { margin: 0; }
+    .faq .answer ul { padding-left: 20px; display: grid; gap: 6px; }
+    .faq table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    .faq th, .faq td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .faq th { color: var(--muted); font-weight: 600; font-size: 13px; }
+    .faq td:last-child { white-space: nowrap; font-weight: 700; color: var(--ink); }
   </style>
 </head>
 <body>
@@ -62,10 +78,80 @@
         <ul>
           <li>Al crear tu cuenta, elige <b>Soy mecánico</b>.</li>
           <li>Verifica tu identidad con tu INE y una selfie, tómate tu foto de perfil y pon el precio de tu visita.</li>
+          <li>En <b>Acciones → Mi perfil → Dónde das servicio</b>, marca los municipios donde trabajas y hasta dónde vas.</li>
           <li>Toca <b>Conectarme</b> para recibir solicitudes de clientes cerca de ti.</li>
           <li>El cliente te paga directo a ti. Tus primeros 30 días sin comisión empiezan con tu primer servicio terminado.</li>
         </ul>
       </div>
+
+      <!-- Lo que más preguntan los mecánicos en los talleres. Se puede mandar
+           directo: mecanifique.vercel.app/app#preguntas -->
+      <section class="faq" id="preguntas" aria-labelledby="faq-title">
+        <h2 id="faq-title">Preguntas de mecánicos</h2>
+
+        <details>
+          <summary>¿Cuánto cuesta?</summary>
+          <div class="answer">
+            <p>Descargarla y usarla es gratis, sin mensualidad. <b>Tus primeros 30 días no pagas nada</b>, y empiezan a contar con tu primer servicio terminado, no al crear tu cuenta.</p>
+            <p>Después, Mecanifique cobra el <b>10 % de la visita y la mano de obra</b> de cada servicio terminado. Las refacciones no cuentan. Es mínimo $30 (nunca más de lo que cobraste) y máximo $300 por servicio.</p>
+            <table>
+              <thead><tr><th>Servicio</th><th>Comisión</th></tr></thead>
+              <tbody>
+                <tr><td>Solo la visita, de $200</td><td>$30</td></tr>
+                <tr><td>Visita $200 + mano de obra $800 + refacciones $1,500</td><td>$100</td></tr>
+                <tr><td>Visita $250 + mano de obra $4,000</td><td>$300</td></tr>
+              </tbody>
+            </table>
+            <p>Cada lunes te llega tu corte de la semana y tienes 7 días para pagarlo desde la app. Si un cliente no te pagó y lo reportas, ese servicio no te cobra comisión.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>¿Cómo me pagan?</summary>
+          <div class="answer">
+            <p>El cliente te paga <b>directo a ti</b>, en efectivo o por transferencia. Ese dinero no pasa por Mecanifique.</p>
+            <p>Si quieres, pon tu CLABE en la app para que tus clientes te dejen propina al terminar. Mecanifique no cobra nada de ella.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>¿Es seguro?</summary>
+          <div class="answer">
+            <ul>
+              <li><b>Antes de aceptar</b> ves la calificación que le dieron otros mecánicos al cliente y cuántos servicios ha terminado (o si es nuevo), fotos del auto y de dónde está, la distancia y cuánto vas a cobrar. Si no te convence, la rechazas.</li>
+              <li><b>Nada se repara sin que el cliente apruebe tu cotización</b> en la app, y quedan las fotos de antes y después y los tickets de refacciones.</li>
+              <li>Si el cliente cancela cuando ya vas en camino (después de los primeros 5 minutos), paga la mitad de tu visita; si ya llegaste, la visita completa. Si no sale en 15 minutos, marcas «No estaba» con una foto y se cobra la visita.</li>
+              <li><b>Si no te paga, no puede volver a pedir servicio</b> hasta pagarte, tampoco abriendo otra cuenta con el mismo teléfono, correo o celular.</li>
+              <li>Tienes un botón de emergencia que llama al 911 durante el servicio.</li>
+              <li>La app no te pide tarjeta ni cuenta bancaria. El cliente ve tu teléfono hasta que aceptas su solicitud, y a quien busca mecánicos solo le mostramos tu ubicación aproximada, y solo mientras estás conectado.</li>
+            </ul>
+          </div>
+        </details>
+
+        <details>
+          <summary>Trabajo en varias zonas, ¿qué pongo en «Zona»?</summary>
+          <div class="answer">
+            <p>Pon la de tu taller o donde estás más seguido; es la que se ve en tu perfil.</p>
+            <p>Después, en <b>Acciones → Mi perfil → Dónde das servicio</b>, marca los municipios donde también trabajas (o <b>Todo el estado</b>) y elige hasta dónde vas por un servicio de «Ahora mismo»: 10, 25 o 50 km, o todo el estado.</p>
+            <p>Las solicitudes de «Ahora mismo» te llegan por tu ubicación real mientras estás conectado: si te conectas en Calvillo, te llegan las de Calvillo.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>¿Tengo que estar conectado todo el día?</summary>
+          <div class="answer">
+            <p>No. Toca <b>Conectarme</b> cuando quieras recibir trabajo y <b>Desconectarme</b> al terminar tu día. Si cierras la app por completo, te desconecta sola.</p>
+            <p>Cuando te llega una solicitud tienes 2 minutos para aceptarla; si no contestas, pasa al siguiente mecánico.</p>
+          </div>
+        </details>
+
+        <details>
+          <summary>¿Funciona en iPhone?</summary>
+          <div class="answer">
+            <p>Todavía no: por ahora solo está para Android. Si tienes iPhone, déjanos tu WhatsApp en <a href="/">mecanifique.vercel.app</a> y te avisamos cuando esté lista.</p>
+          </div>
+        </details>
+      </section>
 
       <p class="download-note">¿Problemas para instalarla? Escríbenos a <a href="mailto:ameneyro.design@gmail.com">ameneyro.design@gmail.com</a>.</p>
     </div>
