@@ -1,0 +1,796 @@
+<title>Mecanifique Mostrador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+  /* Mostrador de una refaccionaria: barra de arriba con el interruptor de recibir
+     solicitudes, navegación a la izquierda y, al centro, las solicitudes que
+     suenan y se contestan dentro de su propia tarjeta. Colores de la app Mecanifique. */
+  :root {
+    --bg: #E3ECF8;
+    --surface: #FFFFFF;
+    --soft: #EEF3FA;
+    --line: #D6E4F5;
+    --ink: #0B0F22;
+    --muted: #4A5568;
+    --primary: #2F8FEA;
+    --primary-ink: #1C6DC4;
+    --on-primary: #FFFFFF;
+    --accent: #F2B84B;
+    --accent-bg: rgba(242, 184, 75, 0.18);
+    --accent-ink: #8A5A00;
+    --ok: #15803D;
+    --ok-bg: #D9F3E4;
+    --danger: #C0392B;
+    --danger-bg: #FBE3E0;
+    --shadow: 0 1px 2px rgba(11, 31, 51, 0.06), 0 8px 24px rgba(11, 31, 51, 0.07);
+    --demo-btn: rgba(255, 255, 255, 0.14);
+    --font: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0B1F33; --surface: #132A44; --soft: #1A3552; --line: #28486B; --ink: #E8EFF7; --muted: #A7B6C8;
+      --primary: #2F8FEA; --primary-ink: #7DB8F2; --on-primary: #FFFFFF;
+      --accent: #F2B84B; --accent-bg: rgba(242, 184, 75, 0.16); --accent-ink: #F2C46B;
+      --ok: #7EE2A8; --ok-bg: #143D2A; --danger: #FF8A80; --danger-bg: #3D1F22;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      --demo-btn: rgba(11, 31, 51, 0.10);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1F33; --surface: #132A44; --soft: #1A3552; --line: #28486B; --ink: #E8EFF7; --muted: #A7B6C8;
+    --primary: #2F8FEA; --primary-ink: #7DB8F2; --on-primary: #FFFFFF;
+    --accent: #F2B84B; --accent-bg: rgba(242, 184, 75, 0.16); --accent-ink: #F2C46B;
+    --ok: #7EE2A8; --ok-bg: #143D2A; --danger: #FF8A80; --danger-bg: #3D1F22;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --demo-btn: rgba(11, 31, 51, 0.10);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+  svg { flex-shrink: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Barra de arriba */
+  .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; padding: 10px 20px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .brand strong { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: var(--primary-ink); }
+  .brand span { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .store { font-weight: 700; font-size: 14px; color: var(--muted); }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .switch { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 8px 6px 14px; background: var(--soft); font-weight: 700; font-size: 14px; }
+  .switch .knob { width: 44px; height: 26px; border-radius: 99px; background: var(--line); position: relative; transition: background .2s; border: 0; padding: 0; }
+  .switch .knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .switch[data-on="true"] .knob { background: var(--ok); }
+  .switch[data-on="true"] .knob::after { transform: translateX(18px); }
+  .icon-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 12px; font-weight: 700; font-size: 13px; }
+  .icon-btn[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-ink); }
+  .clock { font-weight: 700; color: var(--muted); font-size: 14px; }
+
+  /* Esqueleto */
+  .shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; max-width: 1240px; margin: 0 auto; padding: 20px 20px 120px; }
+  nav.side { display: grid; gap: 4px; align-content: start; position: sticky; top: 76px; }
+  nav.side button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; padding: 11px 12px; border-radius: 12px; font-weight: 700; color: var(--muted); }
+  nav.side button[aria-current="page"] { background: var(--surface); color: var(--primary-ink); box-shadow: var(--shadow); }
+  nav.side .badge { margin-left: auto; min-width: 24px; height: 24px; border-radius: 99px; background: var(--primary); color: var(--on-primary); font-size: 12px; display: grid; place-items: center; padding: 0 7px; }
+  nav.side .badge.accent { background: var(--accent); color: #3B2A00; }
+  .side-note { margin-top: 14px; padding: 12px; border-radius: 12px; background: var(--accent-bg); font-size: 13px; color: var(--ink); }
+  main { min-width: 0; display: grid; gap: 16px; align-content: start; }
+
+  h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  .strip { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip-stat { background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--muted); box-shadow: var(--shadow); }
+  .chip-stat b { color: var(--ink); }
+
+  .banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; }
+  .banner.warn { background: var(--accent-bg); box-shadow: none; }
+  .banner button { margin-left: auto; }
+
+  /* Tarjetas */
+  .card { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); padding: 16px 18px; display: grid; gap: 12px; }
+  .req.new { border: 2px solid var(--primary); }
+  .req.done { opacity: .72; }
+  @keyframes arrive { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes ring { 0%,100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 6px rgba(47,143,234,.25); } }
+  .req.ringing { animation: arrive .5s ease, ring 1s ease 3; }
+  .req-top { display: flex; gap: 12px; align-items: flex-start; }
+  .req-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--soft); display: grid; place-items: center; color: var(--primary-ink); }
+  .req-title { min-width: 0; flex: 1; }
+  .req-title h3 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .req-title .car { font-weight: 600; color: var(--ink); }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 14px; }
+  .meta span { display: inline-flex; align-items: center; gap: 5px; }
+  .timer { text-align: right; flex-shrink: 0; }
+  .timer b { display: block; font-size: 20px; font-weight: 800; }
+  .timer small { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .timer.urgent b { color: var(--danger); }
+  .note { background: var(--soft); border-radius: 12px; padding: 9px 12px; font-size: 14px; }
+  .compete { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+  .pill.new { background: var(--primary); color: var(--on-primary); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.wait { background: var(--accent-bg); color: var(--accent-ink); }
+  .pill.off { background: var(--soft); color: var(--muted); }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { border: 0; border-radius: 12px; padding: 11px 16px; font-weight: 800; min-height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+  .btn.primary { background: var(--primary); color: var(--on-primary); }
+  .btn.ok { background: var(--ok); color: #fff; }
+  .btn.soft { background: var(--soft); color: var(--ink); }
+  .btn.ghost { background: transparent; color: var(--primary-ink); padding-inline: 10px; }
+  .btn.big { flex: 1 1 150px; font-size: 16px; min-height: 52px; }
+  .btn:disabled { opacity: .55; cursor: default; }
+
+  /* Formulario de respuesta */
+  .answer { border-top: 1px dashed var(--line); padding-top: 12px; display: grid; gap: 12px; }
+  .option { background: var(--soft); border-radius: 14px; padding: 12px; display: grid; gap: 10px; }
+  .option-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 14px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  label.f { display: grid; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  label.f input, label.f select { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 11px; font-size: 16px; color: var(--ink); width: 100%; min-width: 0; }
+  .price-wrap { position: relative; }
+  .price-wrap span { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; }
+  .price-wrap input { padding-left: 24px !important; font-weight: 800; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { border: 1.5px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 11px; font-weight: 700; font-size: 14px; }
+  .seg button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-ink); background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
+  .reasons { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .empty { text-align: center; padding: 34px 18px; color: var(--muted); display: grid; gap: 6px; justify-items: center; }
+  .empty strong { color: var(--ink); font-size: 17px; }
+
+  /* Apartados */
+  .items { display: grid; gap: 6px; }
+  .item-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; background: var(--soft); border-radius: 10px; padding: 8px 12px; }
+  .item-row b { white-space: nowrap; }
+  .method { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+  .pay-form { display: grid; gap: 10px; background: var(--soft); border-radius: 14px; padding: 12px; }
+
+  /* Tabla de entregadas */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 560px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  td.money { font-weight: 800; white-space: nowrap; }
+
+  /* Estadísticas */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .tile small { color: var(--muted); font-weight: 700; font-size: 13px; }
+  .tile b { display: block; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }
+  .tile span { font-size: 13px; color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; align-items: end; height: 150px; }
+  .bar { display: grid; gap: 4px; justify-items: center; align-content: end; height: 100%; }
+  .bar i { width: 100%; border-radius: 6px 6px 2px 2px; background: var(--primary); min-height: 3px; transition: height .4s; }
+  .bar.now i { background: var(--accent); }
+  .bar span { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .rank { display: grid; gap: 8px; }
+  .rank-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
+  .rank-row .track { grid-column: 1 / -1; height: 7px; border-radius: 99px; background: var(--soft); overflow: hidden; }
+  .rank-row .track i { display: block; height: 100%; background: var(--primary); border-radius: 99px; }
+  .missing-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--accent-bg); font-size: 14px; }
+  h2 { margin: 0; font-size: 17px; font-weight: 800; }
+  .hint { margin: 0; color: var(--muted); font-size: 13px; }
+
+  /* Mi tienda */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips button { border: 1.5px solid var(--line); background: var(--surface); border-radius: 99px; padding: 7px 13px; font-weight: 700; font-size: 14px; }
+  .chips button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-ink); background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
+
+  /* Demostración */
+  .demo { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--ink); color: var(--bg);
+    border-radius: 16px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; box-shadow: 0 10px 30px rgba(0,0,0,.25); max-width: calc(100% - 32px); }
+  .demo small { font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; opacity: .75; margin-right: 4px; }
+  .demo button { border: 0; border-radius: 10px; padding: 8px 11px; font-weight: 700; font-size: 13px; background: var(--demo-btn); color: inherit; }
+  .demo button.main { background: var(--primary); color: #fff; }
+
+  .toasts { position: fixed; left: 50%; top: calc(76px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 40; display: grid; gap: 8px; width: min(440px, calc(100% - 32px)); pointer-events: none; }
+  .toast { background: var(--ink); color: var(--bg); border-radius: 14px; padding: 12px 14px; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.25); animation: arrive .3s ease; display: flex; gap: 10px; align-items: center; }
+  .toast.win { background: var(--ok); color: #fff; }
+
+  @media (max-width: 860px) {
+    .top { padding: 10px 16px; }
+    .shell { grid-template-columns: 1fr; padding: 12px 16px 150px; gap: 12px; }
+    nav.side { position: static; display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+    nav.side button { white-space: nowrap; width: auto; flex-shrink: 0; padding: 9px 12px; }
+    .side-note { display: none; }
+    .store { display: none; }
+    .clock { display: none; }
+    .timer b { font-size: 17px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .req.ringing, .toast { animation: none; } }
+</style>
+
+<header class="top">
+  <div class="brand"><strong>Mecanifique</strong><span>Mostrador</span></div>
+  <div class="store">Refaccionaria Ejemplo · Sucursal Sur</div>
+  <div class="top-right">
+    <div class="switch" id="switch" data-on="true">
+      <span id="switch-label">Recibiendo solicitudes</span>
+      <button class="knob" id="switch-btn" role="switch" aria-checked="true" aria-label="Recibir solicitudes"></button>
+    </div>
+    <button class="icon-btn" id="sound-btn" aria-pressed="false" type="button"></button>
+    <span class="clock num" id="clock"></span>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="side" aria-label="Secciones">
+    <button data-view="solicitudes" aria-current="page"></button>
+    <button data-view="apartados"></button>
+    <button data-view="entregadas"></button>
+    <button data-view="estadisticas"></button>
+    <button data-view="tienda"></button>
+    <div class="side-note"><b>Demostración.</b> Las solicitudes, los mecánicos y las ventas son de ejemplo, para que veas cómo funciona.</div>
+  </nav>
+  <main id="main" aria-live="polite"></main>
+</div>
+
+<div class="demo" role="region" aria-label="Controles de la demostración">
+  <small>Demo</small>
+  <button class="main" id="demo-new" type="button">Llega una solicitud</button>
+  <button id="demo-auto" type="button" aria-pressed="true">Automáticas: sí</button>
+  <button id="demo-reset" type="button">Reiniciar</button>
+</div>
+<div class="toasts" id="toasts" aria-live="assertive"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Íconos ---------- */
+  const I = {
+    bell: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+    mute: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0 1 18 8c0 2.7.6 4.6 1.3 6"/><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/></svg>',
+    inbox: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+    box: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+    check: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    chart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
+    store: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M2 7h20v3a3 3 0 0 1-6 0 3 3 0 0 1-4 0 3 3 0 0 1-4 0 3 3 0 0 1-6 0Z"/></svg>',
+    gear: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+    pin: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>',
+    star: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+    wrench: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    car: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>',
+    truck: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+    walk: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/></svg>',
+    users: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+  };
+
+  /* ---------- Datos de ejemplo ---------- */
+  const QUEUE = [
+    { part: "Bobina de encendido", car: "Volkswagen Jetta A4 2007", engine: "2.0 L", mech: "Ricardo M.", shop: "Taller Mecánico Ramos", rating: 4.9, km: 1.8, note: "Me falla el cilindro 3. ¿La tienen original?", cat: "Encendido" },
+    { part: "Amortiguadores traseros (par)", car: "Toyota Corolla 2016", engine: "1.8 L", mech: "Luis G.", shop: "Servicio Automotriz G.", rating: 4.6, km: 3.4, note: "", cat: "Suspensión" },
+    { part: "Bomba de agua", car: "Ford Fiesta 2012", engine: "1.6 L", mech: "Don Chuy", shop: "Mecánica Don Chuy", rating: 4.8, km: 0.9, note: "El cliente está esperando, es para hoy.", cat: "Enfriamiento" },
+    { part: "Sensor de oxígeno", car: "Honda Civic 2014", engine: "1.8 L", mech: "Alejandro P.", shop: "Taller AP", rating: 4.7, km: 4.2, note: "", cat: "Eléctrico" },
+    { part: "Kit de clutch", car: "Nissan NP300 2017", engine: "2.4 L · Estándar", mech: "Juan H.", shop: "Taller Hernández", rating: 4.8, km: 2.3, note: "¿Con volante o sin volante?", cat: "Clutch" },
+    { part: "Balatas traseras", car: "Chevrolet Spark 2018", engine: "1.2 L", mech: "Marco T.", shop: "Frenos y Suspensión T.", rating: 4.5, km: 5.1, note: "", cat: "Frenos" },
+    { part: "Termostato con toma de agua", car: "Nissan Tsuru 2015", engine: "1.6 L", mech: "Ricardo M.", shop: "Taller Mecánico Ramos", rating: 4.9, km: 1.8, note: "", cat: "Enfriamiento" },
+    { part: "Bujías (juego de 4)", car: "Nissan Sentra 2019", engine: "1.8 L", mech: "Luis G.", shop: "Servicio Automotriz G.", rating: 4.6, km: 3.4, note: "Iridio si hay.", cat: "Encendido" }
+  ];
+  const FIRST = [
+    { part: "Bomba de gasolina", car: "Nissan Versa 2018", engine: "1.6 L · Automático", mech: "Juan H.", shop: "Taller Hernández", rating: 4.8, km: 2.3, note: "Es para hoy, el cliente está esperando.", cat: "Combustible", ago: 40 },
+    { part: "Balatas delanteras", car: "Chevrolet Aveo 2015", engine: "1.6 L", mech: "Marco T.", shop: "Frenos y Suspensión T.", rating: 4.5, km: 5.1, note: "", cat: "Frenos", ago: 95 }
+  ];
+  const STORE = { name: "Refaccionaria Ejemplo", branch: "Sucursal Sur" };
+  const RESPONSE_SECONDS = 5 * 60;
+  const HOLD_MINUTES = 30;
+  const OTHER_STORES = [3, 4, 5, 2, 6];
+
+  let state;
+  let ids = 1;
+  let ticket = 140;
+
+  function fresh() {
+    const now = Date.now();
+    ids = 1; ticket = 140;
+    state = {
+      view: "solicitudes",
+      receiving: true,
+      auto: true,
+      sound: false,
+      nextAutoAt: now + 15000,
+      queueIndex: 0,
+      answeredCount: 0,
+      requests: FIRST.map((r) => makeRequest(r, now - r.ago * 1000)),
+      holds: [
+        {
+          id: ids++, part: "Termostato", car: "Nissan Tsuru 2010", engine: "1.6 L", mech: "Ricardo M.", shop: "Taller Mecánico Ramos", km: 1.8,
+          method: "pickup", items: [{ kind: "Genérica", brand: "", price: 420, stock: "En mostrador", warranty: "3 meses" }],
+          expiresAt: now + 22 * 60000, stage: "waiting", paying: false
+        }
+      ],
+      sales: [
+        { time: atToday(9, 12), part: "Balatas delanteras · Aveo 2014", mech: "Marco T.", total: 650, pay: "Efectivo", ticket: "T-0137" },
+        { time: atToday(10, 48), part: "Banda de distribución · Jetta 2009", mech: "Juan H.", total: 1290, pay: "Transferencia", ticket: "T-0138" },
+        { time: atToday(12, 5), part: "Filtro de aceite y aire · Versa 2017", mech: "Luis G.", total: 380, pay: "Efectivo", ticket: "T-0139" }
+      ],
+      stats: { received: 7, answered: 6, won: 4, lost: 1, times: [42, 65, 38, 51, 90, 47] },
+      hourly: { 8: 1, 9: 2, 10: 1, 11: 3, 12: 2, 13: 1 },
+      cats: { Frenos: 9, Suspensión: 6, Encendido: 5, Enfriamiento: 4, Combustible: 3, Clutch: 2, Eléctrico: 2 },
+      missing: [
+        { part: "Módulo ABS · Jetta 2012", count: 2 },
+        { part: "Bomba de inyección · NP300 diésel 2016", count: 1 },
+        { part: "Faro derecho · Kia Rio 2019", count: 1 }
+      ],
+      settings: {
+        cats: ["Frenos", "Suspensión", "Encendido", "Enfriamiento", "Clutch", "Eléctrico", "Combustible"],
+        radius: 5, delivery: true, hours: "Lun a sáb · 8:30 a 19:00"
+      }
+    };
+  }
+
+  function atToday(h, m) { const d = new Date(); d.setHours(h, m, 0, 0); return d.getTime(); }
+
+  function makeRequest(r, receivedAt) {
+    return Object.assign({}, r, {
+      id: ids++, receivedAt, deadline: receivedAt + RESPONSE_SECONDS * 1000,
+      stores: OTHER_STORES[(ids) % OTHER_STORES.length],
+      status: "new", mode: null, draft: null, outcome: null, isNew: true
+    });
+  }
+
+  /* ---------- Utilidades ---------- */
+  const money = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
+  const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const hhmm = (t) => new Date(t).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" });
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const $ = (sel, root = document) => root.querySelector(sel);
+
+  /* ---------- Sonido (solo después de que el usuario lo activa) ---------- */
+  let audio = null;
+  function tone(freq, start, dur, gain = 0.22) {
+    const osc = audio.createOscillator();
+    const g = audio.createGain();
+    osc.type = "sine"; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, audio.currentTime + start);
+    g.gain.exponentialRampToValueAtTime(gain, audio.currentTime + start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + start + dur);
+    osc.connect(g).connect(audio.destination);
+    osc.start(audio.currentTime + start); osc.stop(audio.currentTime + start + dur + 0.05);
+  }
+  function play(kind) {
+    if (!state.sound || !audio) return;
+    try {
+      if (kind === "new") { tone(988, 0, 0.22); tone(784, 0.24, 0.32); tone(988, 0.62, 0.22); tone(784, 0.86, 0.32); }
+      else if (kind === "win") { tone(659, 0, 0.14); tone(880, 0.14, 0.14); tone(1175, 0.28, 0.3); }
+    } catch (e) { /* sin sonido */ }
+  }
+
+  /* ---------- Toasts ---------- */
+  function toast(text, win) {
+    const box = $("#toasts");
+    const el = document.createElement("div");
+    el.className = "toast" + (win ? " win" : "");
+    el.innerHTML = (win ? I.check : I.bell) + "<span>" + esc(text) + "</span>";
+    box.appendChild(el);
+    setTimeout(() => el.remove(), 4200);
+  }
+
+  /* ---------- Acciones ---------- */
+  function arrive() {
+    if (!state.receiving) { toast("Estás en pausa: activa «Recibiendo solicitudes»."); return; }
+    const pending = state.requests.filter((r) => r.status === "new" || r.status === "answering").length;
+    if (pending >= 6) { toast("Ya tienes 6 solicitudes sin contestar."); return; }
+    const base = QUEUE[state.queueIndex % QUEUE.length];
+    state.queueIndex++;
+    const req = makeRequest(base, Date.now());
+    req.ringing = true;
+    state.requests.unshift(req);
+    state.stats.received++;
+    const h = Math.min(19, Math.max(8, new Date().getHours()));
+    state.hourly[h] = (state.hourly[h] || 0) + 1;
+    state.cats[req.cat] = (state.cats[req.cat] || 0) + 1;
+    play("new");
+    if (state.view !== "solicitudes") toast("Nueva solicitud: " + req.part + " · " + req.car);
+    render();
+  }
+
+  function startAnswer(id, mode) {
+    const r = state.requests.find((x) => x.id === id);
+    if (!r) return;
+    r.status = "answering"; r.mode = mode; r.isNew = false; r.ringing = false;
+    if (mode === "no") { r.draft = null; }
+    else {
+      r.draft = r.draft || { options: [newOption(mode)] };
+    }
+    render();
+    if (mode !== "no") setTimeout(() => { const el = document.getElementById("price-" + id + "-0"); if (el) el.focus(); }, 30);
+  }
+  function newOption(mode) {
+    return { kind: "Genérica", brand: "", price: "", stock: mode === "consigo" ? "Llega hoy" : "En mostrador", warranty: "3 meses" };
+  }
+
+  function sendAnswer(id) {
+    const r = state.requests.find((x) => x.id === id);
+    if (!r || !r.draft) return;
+    const valid = r.draft.options.filter((o) => Number(o.price) > 0);
+    if (!valid.length) { toast("Escribe el precio para contestar."); return; }
+    r.draft.options = valid;
+    r.status = "sent";
+    r.answeredAt = Date.now();
+    state.stats.answered++;
+    state.stats.times.push(Math.round((r.answeredAt - r.receivedAt) / 1000));
+    state.answeredCount++;
+    const n = state.answeredCount;
+    // Las primeras dos siempre las aparta (una para recoger, otra a domicilio); la tercera la pierde.
+    const outcome = n === 1 ? "pickup" : n === 2 ? (state.settings.delivery ? "delivery" : "pickup") : n === 3 ? "lost" : Math.random() < 0.65 ? (Math.random() < 0.5 || !state.settings.delivery ? "pickup" : "delivery") : "lost";
+    setTimeout(() => decide(id, outcome), 3500 + Math.random() * 2500);
+    render();
+  }
+
+  function decide(id, outcome) {
+    const r = state.requests.find((x) => x.id === id);
+    if (!r || r.status !== "sent") return;
+    if (outcome === "lost") {
+      r.status = "lost";
+      r.outcome = r.km > 3 ? "eligió una tienda más cerca de su taller" : "eligió otra opción más barata";
+      state.stats.lost++;
+      render();
+      return;
+    }
+    r.status = "won";
+    state.stats.won++;
+    const item = r.draft.options.reduce((a, b) => (Number(a.price) <= Number(b.price) ? a : b));
+    state.holds.unshift({
+      id: ids++, part: r.part, car: r.car, engine: r.engine, mech: r.mech, shop: r.shop, km: r.km,
+      method: outcome, items: [Object.assign({}, item, { price: Number(item.price) })],
+      expiresAt: Date.now() + HOLD_MINUTES * 60000, stage: "waiting", paying: false, isNew: true
+    });
+    play("win");
+    toast(r.mech + " apartó tu " + r.part.toLowerCase() + (outcome === "delivery" ? " y pidió que se la mandes" : ": pasa por ella"), true);
+    render();
+  }
+
+  function decline(id, reason) {
+    const r = state.requests.find((x) => x.id === id);
+    if (!r) return;
+    r.status = "declined"; r.outcome = reason; r.isNew = false;
+    state.stats.answered++;
+    state.stats.times.push(Math.round((Date.now() - r.receivedAt) / 1000));
+    if (reason !== "No es para ese auto") {
+      const key = r.part + " · " + r.car.replace(/^(\S+\s)/, "");
+      const found = state.missing.find((m) => m.part === key);
+      if (found) found.count++; else state.missing.unshift({ part: key, count: 1 });
+    }
+    render();
+  }
+
+  function deliver(holdId, pay) {
+    const h = state.holds.find((x) => x.id === holdId);
+    if (!h) return;
+    ticket++;
+    const code = "T-" + String(ticket).padStart(4, "0");
+    state.sales.unshift({ time: Date.now(), part: h.part + " · " + h.car.replace(/^(\S+\s)/, ""), mech: h.mech, total: h.items.reduce((s, i) => s + i.price, 0), pay, ticket: code });
+    state.holds = state.holds.filter((x) => x.id !== holdId);
+    toast("Venta registrada. El ticket " + code + " se agregó al servicio del cliente de " + h.mech + ".", true);
+    render();
+  }
+
+  /* ---------- Pintar ---------- */
+  function navLabel(view) {
+    const newCount = state.requests.filter((r) => r.status === "new" || r.status === "answering").length;
+    const holdCount = state.holds.length;
+    const map = {
+      solicitudes: [I.inbox, "Solicitudes", newCount ? '<span class="badge num">' + newCount + "</span>" : ""],
+      apartados: [I.box, "Apartados", holdCount ? '<span class="badge accent num">' + holdCount + "</span>" : ""],
+      entregadas: [I.check, "Entregadas hoy", ""],
+      estadisticas: [I.chart, "Estadísticas", ""],
+      tienda: [I.store, "Mi tienda", ""]
+    };
+    return map[view][0] + "<span>" + map[view][1] + "</span>" + map[view][2];
+  }
+
+  function renderChrome() {
+    document.querySelectorAll("nav.side button").forEach((b) => {
+      b.innerHTML = navLabel(b.dataset.view);
+      if (b.dataset.view === state.view) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    });
+    const sw = $("#switch");
+    sw.dataset.on = String(state.receiving);
+    $("#switch-btn").setAttribute("aria-checked", String(state.receiving));
+    $("#switch-label").textContent = state.receiving ? "Recibiendo solicitudes" : "En pausa";
+    const sb = $("#sound-btn");
+    sb.setAttribute("aria-pressed", String(state.sound));
+    sb.innerHTML = (state.sound ? I.bell : I.mute) + "<span>" + (state.sound ? "Sonido" : "Sin sonido") + "</span>";
+    const da = $("#demo-auto");
+    da.setAttribute("aria-pressed", String(state.auto));
+    da.textContent = "Automáticas: " + (state.auto ? "sí" : "no");
+    const pending = state.requests.filter((r) => r.status === "new").length;
+    document.title = (pending ? "(" + pending + ") " : "") + "Mecanifique Mostrador";
+  }
+
+  function avgSeconds() { const t = state.stats.times; return t.length ? Math.round(t.reduce((a, b) => a + b, 0) / t.length) : 0; }
+  function salesTotal() { return state.sales.reduce((s, x) => s + x.total, 0); }
+
+  function viewSolicitudes() {
+    const open = state.requests.filter((r) => ["new", "answering", "sent"].includes(r.status));
+    const closed = state.requests.filter((r) => ["won", "lost", "declined", "expired"].includes(r.status)).slice(0, 6);
+    let html = '<div class="head"><div><h1>Solicitudes</h1><p class="sub">Mecánicos cerca de ti preguntando por una pieza. Contesta con precio y existencia.</p></div>' +
+      '<div class="strip"><span class="chip-stat">Contestadas <b class="num">' + state.stats.answered + " de " + state.stats.received + '</b></span>' +
+      '<span class="chip-stat">Respondes en <b class="num">' + avgSeconds() + ' s</b></span>' +
+      '<span class="chip-stat">Ventas hoy <b class="num">' + money(salesTotal()) + "</b></span></div></div>";
+    if (!state.sound) html += '<div class="banner">' + I.bell + '<span>Activa el sonido para escuchar cuando llega una solicitud, como en el mostrador.</span><button class="btn primary" data-act="sound-on" type="button">Activar sonido</button></div>';
+    if (!state.receiving) html += '<div class="banner warn"><span>Estás en pausa: no te llegan solicitudes nuevas.</span><button class="btn soft" data-act="resume" type="button">Reanudar</button></div>';
+    if (!open.length) html += '<div class="card empty">' + I.inbox + "<strong>Sin solicitudes por contestar</strong><span>Cuando un mecánico cerca de ti busque una pieza que surtes, te va a sonar aquí.</span></div>";
+    html += open.map(requestCard).join("");
+    if (closed.length) html += '<h2 style="margin-top:6px">Contestadas hace poco</h2>' + closed.map(requestCard).join("");
+    return html;
+  }
+
+  function requestCard(r) {
+    const left = r.deadline - Date.now();
+    const done = ["won", "lost", "declined", "expired"].includes(r.status);
+    let cls = "card req";
+    if (r.status === "new") cls += " new";
+    if (r.ringing) cls += " ringing";
+    if (done) cls += " done";
+    let status = "";
+    if (r.status === "new") status = '<span class="pill new">Nueva</span>';
+    if (r.status === "sent") status = '<span class="pill wait">Esperando al mecánico…</span>';
+    if (r.status === "won") status = '<span class="pill ok">' + I.check + " La apartó</span>";
+    if (r.status === "lost") status = '<span class="pill off">No te eligió</span>';
+    if (r.status === "declined") status = '<span class="pill off">No la tenías · ' + esc(r.outcome) + "</span>";
+    if (r.status === "expired") status = '<span class="pill off">Se venció sin contestar</span>';
+    const timer = (r.status === "new" || r.status === "answering")
+      ? '<div class="timer' + (left < 60000 ? " urgent" : "") + '"><b class="num" data-deadline="' + r.deadline + '">' + mmss(left) + "</b><small>para contestar</small></div>"
+      : '<div class="timer"><small class="num">' + hhmm(r.receivedAt) + "</small></div>";
+    let html = '<article class="' + cls + '" id="req-' + r.id + '">' +
+      '<div class="req-top"><div class="req-icon">' + I.car + '</div><div class="req-title">' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><h3>' + esc(r.part) + "</h3>" + status + "</div>" +
+      '<div class="car">' + esc(r.car) + " · " + esc(r.engine) + "</div>" +
+      '<div class="meta"><span>' + I.wrench + esc(r.mech) + " · " + esc(r.shop) + "</span><span>" + I.star + r.rating.toFixed(1) + "</span><span>" + I.pin + "a " + r.km.toFixed(1) + " km</span></div>" +
+      "</div>" + timer + "</div>";
+    if (r.note && !done) html += '<div class="note">«' + esc(r.note) + "»</div>";
+    if (r.status === "new") {
+      html += '<div class="compete">' + I.users + "Les llegó a " + r.stores + " tiendas cerca. Las que contestan primero aparecen arriba.</div>" +
+        '<div class="actions"><button class="btn primary big" data-act="yes" data-id="' + r.id + '" type="button">Sí la tengo</button>' +
+        '<button class="btn soft big" data-act="consigo" data-id="' + r.id + '" type="button">La consigo</button>' +
+        '<button class="btn soft big" data-act="no" data-id="' + r.id + '" type="button">No la tengo</button></div>';
+    }
+    if (r.status === "answering" && r.mode === "no") {
+      html += '<div class="answer"><b>¿Por qué no?</b><div class="reasons">' +
+        ["No la manejo", "Se me acabó", "No es para ese auto"].map((x) => '<button class="btn soft" data-act="decline" data-id="' + r.id + '" data-reason="' + x + '" type="button">' + x + "</button>").join("") +
+        '<button class="btn ghost" data-act="cancel" data-id="' + r.id + '" type="button">Regresar</button></div>' +
+        '<p class="hint">Lo que te piden y no tienes aparece en Estadísticas, para que decidas qué comprar.</p></div>';
+    }
+    if (r.status === "answering" && r.mode !== "no") {
+      html += '<div class="answer">' + r.draft.options.map((o, i) => optionForm(r, o, i)).join("") +
+        '<div class="actions">' +
+        (r.draft.options.length < 2 ? '<button class="btn ghost" data-act="add-option" data-id="' + r.id + '" type="button">+ Agregar otra opción (por ejemplo, original y genérica)</button>' : "") +
+        "</div>" +
+        '<div class="actions"><button class="btn primary big" data-act="send" data-id="' + r.id + '" type="button">Enviar respuesta</button>' +
+        '<button class="btn soft" data-act="cancel" data-id="' + r.id + '" type="button">Cancelar</button></div>' +
+        '<p class="hint">El mecánico ve tu precio, la marca, si la tienes y la distancia. Si la aparta, se la guardas ' + HOLD_MINUTES + " minutos.</p></div>";
+    }
+    if (r.status === "sent") {
+      html += '<div class="items">' + r.draft.options.map((o) => '<div class="item-row"><span>' + esc(o.kind + (o.brand ? " · " + o.brand : "") + " · " + o.stock + " · Garantía " + o.warranty.toLowerCase()) + "</span><b class=\"num\">" + money(Number(o.price)) + "</b></div>").join("") + "</div>";
+    }
+    if (r.status === "lost") html += '<p class="hint">' + esc(r.mech) + " " + esc(r.outcome) + ". Contestar rápido y con buen precio te ayuda a ganar las siguientes.</p>";
+    if (r.status === "won") html += '<p class="hint">Está en Apartados, lista para entregar.</p>';
+    html += "</article>";
+    return html;
+  }
+
+  function optionForm(r, o, i) {
+    const seg = (field, values) => '<div class="seg" role="group">' + values.map((v) =>
+      '<button type="button" data-act="opt" data-id="' + r.id + '" data-i="' + i + '" data-field="' + field + '" data-value="' + v + '" aria-pressed="' + (o[field] === v) + '">' + v + "</button>").join("") + "</div>";
+    return '<div class="option"><div class="option-head"><span>Opción ' + (i + 1) + "</span>" +
+      (i > 0 ? '<button class="btn ghost" data-act="remove-option" data-id="' + r.id + '" data-i="' + i + '" type="button">Quitar</button>' : "") + "</div>" +
+      seg("kind", ["Original", "Genérica", "Remanufacturada"]) +
+      '<div class="fields">' +
+      '<label class="f">Precio<div class="price-wrap"><span>$</span><input id="price-' + r.id + "-" + i + '" inputmode="numeric" data-input="price" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.price) + '" placeholder="850"></div></label>' +
+      '<label class="f">Marca (opcional)<input id="brand-' + r.id + "-" + i + '" data-input="brand" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.brand) + '" placeholder="Ej. Bosch"></label>' +
+      '<label class="f">Garantía<select id="warranty-' + r.id + "-" + i + '" data-input="warranty" data-id="' + r.id + '" data-i="' + i + '">' +
+      ["Sin garantía", "30 días", "3 meses", "6 meses", "1 año"].map((w) => "<option" + (o.warranty === w ? " selected" : "") + ">" + w + "</option>").join("") + "</select></label>" +
+      "</div>" + seg("stock", ["En mostrador", "Llega hoy", "Llega mañana"]) + "</div>";
+  }
+
+  function viewApartados() {
+    let html = '<div class="head"><div><h1>Apartados</h1><p class="sub">Piezas que un mecánico ya apartó. Se liberan solas si no pasa por ellas.</p></div></div>';
+    if (!state.holds.length) return html + '<div class="card empty">' + I.box + "<strong>Sin apartados</strong><span>Cuando un mecánico elija tu respuesta, la pieza aparece aquí.</span></div>";
+    return html + state.holds.map((h) => {
+      const total = h.items.reduce((s, i) => s + i.price, 0);
+      const method = h.method === "delivery"
+        ? '<div class="method">' + I.truck + "Mándamela · " + esc(h.shop) + " · a " + h.km.toFixed(1) + " km</div>"
+        : '<div class="method">' + I.walk + "Pasa por ella al mostrador</div>";
+      let actions;
+      if (h.paying) {
+        actions = '<div class="pay-form"><b>¿Cómo pagó?</b><div class="actions">' +
+          ["Efectivo", "Transferencia", "Tarjeta"].map((p) => '<button class="btn soft" data-act="pay" data-id="' + h.id + '" data-pay="' + p + '" type="button">' + p + "</button>").join("") +
+          '<button class="btn ghost" data-act="pay-cancel" data-id="' + h.id + '" type="button">Regresar</button></div>' +
+          '<p class="hint">Con esto se genera el ticket y le llega solo al servicio del cliente: ve el precio real de tu tienda.</p></div>';
+      } else if (h.method === "delivery" && h.stage === "waiting") {
+        actions = '<div class="actions"><button class="btn primary big" data-act="dispatch" data-id="' + h.id + '" type="button">Salió el repartidor</button><button class="btn soft" data-act="deliver" data-id="' + h.id + '" type="button">Marcar entregada</button></div>';
+      } else {
+        actions = '<div class="actions"><button class="btn ok big" data-act="deliver" data-id="' + h.id + '" type="button">' + I.check + "Marcar entregada</button></div>";
+      }
+      return '<article class="card' + (h.isNew ? " req new ringing" : "") + '"><div class="req-top"><div class="req-icon">' + I.box + '</div><div class="req-title">' +
+        "<h3>" + esc(h.part) + "</h3>" + '<div class="car">' + esc(h.car) + " · " + esc(h.engine) + "</div>" +
+        '<div class="meta"><span>' + I.wrench + esc(h.mech) + " · " + esc(h.shop) + "</span>" + (h.stage === "onroute" ? '<span class="pill wait">El repartidor va en camino</span>' : "") + "</div></div>" +
+        '<div class="timer"><b class="num" data-deadline="' + h.expiresAt + '">' + mmss(h.expiresAt - Date.now()) + "</b><small>se libera en</small></div></div>" +
+        method + '<div class="items">' + h.items.map((i) => '<div class="item-row"><span>' + esc(i.kind + (i.brand ? " · " + i.brand : "") + " · Garantía " + i.warranty.toLowerCase()) + '</span><b class="num">' + money(i.price) + "</b></div>").join("") +
+        '<div class="item-row"><span><b>Total</b></span><b class="num">' + money(total) + "</b></div></div>" + actions + "</article>";
+    }).join("");
+  }
+
+  function viewEntregadas() {
+    let html = '<div class="head"><div><h1>Entregadas hoy</h1><p class="sub">Ventas a mecánicos de Mecanifique. Cada una generó su ticket digital.</p></div>' +
+      '<div class="strip"><span class="chip-stat">' + state.sales.length + ' ventas · <b class="num">' + money(salesTotal()) + "</b></span></div></div>";
+    if (!state.sales.length) return html + '<div class="card empty"><strong>Todavía no hay ventas hoy</strong></div>';
+    return html + '<div class="card table-wrap"><table><thead><tr><th>Hora</th><th>Pieza</th><th>Mecánico</th><th>Pago</th><th>Ticket</th><th>Total</th></tr></thead><tbody>' +
+      state.sales.map((s) => '<tr><td class="num">' + hhmm(s.time) + "</td><td>" + esc(s.part) + "</td><td>" + esc(s.mech) + "</td><td>" + esc(s.pay) + '</td><td class="num">' + esc(s.ticket) + '</td><td class="money num">' + money(s.total) + "</td></tr>").join("") +
+      "</tbody></table></div>";
+  }
+
+  function viewEstadisticas() {
+    const st = state.stats;
+    const pct = st.received ? Math.round((st.answered / st.received) * 100) : 0;
+    const won = st.won;
+    const avgTicket = state.sales.length ? Math.round(salesTotal() / state.sales.length) : 0;
+    const hours = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    const max = Math.max(1, ...hours.map((h) => state.hourly[h] || 0));
+    const nowH = new Date().getHours();
+    const cats = Object.entries(state.cats).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const catMax = Math.max(1, ...cats.map((c) => c[1]));
+    return '<div class="head"><div><h1>Estadísticas de hoy</h1><p class="sub">Lo que te trae Mecanifique y qué te piden.</p></div></div>' +
+      '<div class="tiles">' +
+      '<div class="tile"><small>Solicitudes</small><b class="num">' + st.received + "</b><span>te llegaron hoy</span></div>" +
+      '<div class="tile"><small>Contestaste</small><b class="num">' + pct + "%</b><span>" + st.answered + " de " + st.received + "</span></div>" +
+      '<div class="tile"><small>Tiempo de respuesta</small><b class="num">' + avgSeconds() + " s</b><span>en promedio</span></div>" +
+      '<div class="tile"><small>Te eligieron</small><b class="num">' + won + "</b><span>apartados hoy</span></div>" +
+      '<div class="tile"><small>Ventas</small><b class="num">' + money(salesTotal()) + "</b><span>ticket promedio " + money(avgTicket) + "</span></div>" +
+      "</div>" +
+      '<div class="grid2">' +
+      '<div class="card"><h2>Solicitudes por hora</h2><div class="bars" role="img" aria-label="Solicitudes por hora de 8 a 19">' +
+      hours.map((h) => { const v = state.hourly[h] || 0; return '<div class="bar' + (h === nowH ? " now" : "") + '"><span class="num">' + (v || "") + '</span><i style="height:' + Math.round((v / max) * 110) + 'px"></i><span class="num">' + h + "</span></div>"; }).join("") +
+      '</div><p class="hint">La barra amarilla es la hora actual.</p></div>' +
+      '<div class="card"><h2>Lo que más te piden</h2><div class="rank">' +
+      cats.map((c) => '<div class="rank-row"><span>' + esc(c[0]) + '</span><b class="num">' + c[1] + '</b><div class="track"><i style="width:' + Math.round((c[1] / catMax) * 100) + '%"></i></div></div>').join("") +
+      "</div></div>" +
+      '<div class="card"><h2>Te pidieron y no tenías</h2><p class="hint">Ventas que se fueron a otra tienda. Considera tenerlas en existencia.</p><div class="rank">' +
+      (state.missing.length ? state.missing.map((m) => '<div class="missing-row"><span>' + esc(m.part) + '</span><b class="num">' + m.count + (m.count === 1 ? " vez" : " veces") + "</b></div>").join("") : '<p class="hint">Nada por ahora.</p>') +
+      "</div></div></div>";
+  }
+
+  function viewTienda() {
+    const s = state.settings;
+    const all = ["Frenos", "Suspensión", "Encendido", "Enfriamiento", "Clutch", "Eléctrico", "Combustible", "Motor", "Transmisión", "Importados", "Diésel", "Carrocería"];
+    return '<div class="head"><div><h1>Mi tienda</h1><p class="sub">Con esto decidimos qué solicitudes te llegan.</p></div></div>' +
+      '<div class="card"><h2>' + esc(STORE.name) + " · " + esc(STORE.branch) + '</h2><p class="hint">' + esc(s.hours) + "</p></div>" +
+      '<div class="card"><h2>¿Qué surtes?</h2><p class="hint">Solo te llegan solicitudes de estas categorías.</p><div class="chips">' +
+      all.map((c) => '<button type="button" data-act="cat" data-value="' + c + '" aria-pressed="' + s.cats.includes(c) + '">' + c + "</button>").join("") + "</div></div>" +
+      '<div class="card"><h2>¿Hasta dónde te llegan solicitudes?</h2><div class="seg">' +
+      [3, 5, 10, 20].map((km) => '<button type="button" data-act="radius" data-value="' + km + '" aria-pressed="' + (s.radius === km) + '">' + km + " km</button>").join("") +
+      '</div><p class="hint">Distancia entre tu tienda y el taller del mecánico.</p></div>' +
+      '<div class="card"><h2>¿Tienes repartidor?</h2><div class="seg">' +
+      '<button type="button" data-act="delivery" data-value="1" aria-pressed="' + s.delivery + '">Sí, mandamos a talleres</button>' +
+      '<button type="button" data-act="delivery" data-value="0" aria-pressed="' + !s.delivery + '">Solo en mostrador</button>' +
+      '</div><p class="hint">Si sí, el mecánico puede pedir «Mándamela».</p></div>';
+  }
+
+  // Pinta la sección actual sin perder lo que se está escribiendo.
+  function render() {
+    const active = document.activeElement;
+    const activeId = active && active.id;
+    const sel = active && "selectionStart" in active ? [active.selectionStart, active.selectionEnd] : null;
+    renderChrome();
+    const views = { solicitudes: viewSolicitudes, apartados: viewApartados, entregadas: viewEntregadas, estadisticas: viewEstadisticas, tienda: viewTienda };
+    $("#main").innerHTML = views[state.view]();
+    state.requests.forEach((r) => { r.ringing = false; });
+    state.holds.forEach((h) => { h.isNew = false; });
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch (e) {} }
+    }
+  }
+
+  /* ---------- Eventos ---------- */
+  document.addEventListener("click", (e) => {
+    const nav = e.target.closest("nav.side button");
+    if (nav) { state.view = nav.dataset.view; render(); window.scrollTo({ top: 0 }); return; }
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const id = Number(b.dataset.id);
+    const act = b.dataset.act;
+    const r = state.requests.find((x) => x.id === id);
+    const h = state.holds.find((x) => x.id === id);
+    if (act === "yes") startAnswer(id, "yes");
+    else if (act === "consigo") startAnswer(id, "consigo");
+    else if (act === "no") startAnswer(id, "no");
+    else if (act === "cancel" && r) { r.status = "new"; r.mode = null; render(); }
+    else if (act === "decline") decline(id, b.dataset.reason);
+    else if (act === "send") sendAnswer(id);
+    else if (act === "add-option" && r) { r.draft.options.push(Object.assign(newOption(r.mode), { kind: "Original" })); render(); }
+    else if (act === "remove-option" && r) { r.draft.options.splice(Number(b.dataset.i), 1); render(); }
+    else if (act === "opt" && r) { r.draft.options[Number(b.dataset.i)][b.dataset.field] = b.dataset.value; render(); }
+    else if (act === "dispatch" && h) { h.stage = "onroute"; toast("Le avisamos a " + h.mech + " que su pieza va en camino."); render(); }
+    else if (act === "deliver" && h) { h.paying = true; render(); }
+    else if (act === "pay-cancel" && h) { h.paying = false; render(); }
+    else if (act === "pay") deliver(id, b.dataset.pay);
+    else if (act === "sound-on") enableSound(true);
+    else if (act === "resume") { state.receiving = true; render(); }
+    else if (act === "cat") { const c = b.dataset.value; const s = state.settings; s.cats = s.cats.includes(c) ? s.cats.filter((x) => x !== c) : s.cats.concat(c); render(); }
+    else if (act === "radius") { state.settings.radius = Number(b.dataset.value); render(); }
+    else if (act === "delivery") { state.settings.delivery = b.dataset.value === "1"; render(); }
+  });
+
+  document.addEventListener("input", (e) => {
+    const el = e.target.closest("[data-input]");
+    if (!el) return;
+    const r = state.requests.find((x) => x.id === Number(el.dataset.id));
+    if (!r || !r.draft) return;
+    const o = r.draft.options[Number(el.dataset.i)];
+    o[el.dataset.input] = el.dataset.input === "price" ? el.value.replace(/[^0-9]/g, "") : el.value;
+    if (el.dataset.input === "price" && el.value !== o.price) el.value = o.price;
+  });
+  document.addEventListener("change", (e) => {
+    const el = e.target.closest("select[data-input]");
+    if (!el) return;
+    const r = state.requests.find((x) => x.id === Number(el.dataset.id));
+    if (r && r.draft) r.draft.options[Number(el.dataset.i)].warranty = el.value;
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const el = e.target.closest("input[data-input]");
+    if (el) { e.preventDefault(); sendAnswer(Number(el.dataset.id)); }
+  });
+
+  function enableSound(on) {
+    state.sound = on;
+    if (on) {
+      try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        if (audio.state === "suspended") audio.resume();
+        tone(880, 0, 0.12, 0.15);
+      } catch (err) { state.sound = false; toast("Este navegador no deja reproducir sonido."); }
+    }
+    render();
+  }
+
+  $("#sound-btn").addEventListener("click", () => enableSound(!state.sound));
+  $("#switch-btn").addEventListener("click", () => { state.receiving = !state.receiving; render(); });
+  $("#demo-new").addEventListener("click", arrive);
+  $("#demo-auto").addEventListener("click", () => { state.auto = !state.auto; state.nextAutoAt = Date.now() + 20000; render(); });
+  $("#demo-reset").addEventListener("click", () => { const sound = state.sound; fresh(); state.sound = sound; render(); toast("Demostración reiniciada."); });
+
+  /* ---------- Reloj: cuentas regresivas, vencimientos y solicitudes automáticas ---------- */
+  function tick() {
+    const now = Date.now();
+    $("#clock").textContent = new Date(now).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" });
+    let changed = false;
+    state.requests.forEach((r) => {
+      if ((r.status === "new" || r.status === "answering") && now >= r.deadline) { r.status = "expired"; changed = true; }
+    });
+    const before = state.holds.length;
+    state.holds = state.holds.filter((h) => h.expiresAt > now);
+    if (state.holds.length !== before) { changed = true; toast("Un apartado se liberó: el mecánico no pasó a tiempo."); }
+    if (state.auto && state.receiving && now >= state.nextAutoAt) {
+      state.nextAutoAt = now + 30000;
+      const pending = state.requests.filter((r) => r.status === "new" || r.status === "answering").length;
+      if (pending < 4) { arrive(); return; }
+    }
+    if (changed) { render(); return; }
+    document.querySelectorAll("[data-deadline]").forEach((el) => {
+      const left = Number(el.dataset.deadline) - now;
+      el.textContent = mmss(left);
+      const box = el.closest(".timer");
+      if (box && box.querySelector("small") && box.querySelector("small").textContent === "para contestar") box.classList.toggle("urgent", left < 60000);
+    });
+  }
+
+  fresh();
+  render();
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
