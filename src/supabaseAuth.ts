@@ -456,6 +456,39 @@ export function isSupabaseAdminConfigured(): boolean {
 }
 
 /**
+ * Crea una cuenta con el correo ya confirmado (sin mandar el correo de
+ * confirmación). Solo para invitaciones del admin, donde el enlace se lo
+ * mandó él directo a la persona (src/mostrador.ts). Usa la clave de
+ * administrador. Devuelve null si el correo ya tenía cuenta.
+ */
+export async function createConfirmedSupabaseUser(
+  email: string,
+  password: string,
+  fullName: string
+): Promise<{ id: string; email?: string; user_metadata?: Record<string, unknown> } | null> {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || "";
+  const headers: Record<string, string> = { apikey: key, "Content-Type": "application/json" };
+  if (!key.startsWith("sb_")) {
+    headers.Authorization = `Bearer ${key}`;
+  }
+  const response = await supabaseFetch(`${supabaseUrl}/auth/v1/admin/users`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { full_name: fullName, role: "customer" } }),
+  });
+  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) {
+    const message = getSupabaseError(data, "").toLowerCase();
+    if (response.status === 422 || message.includes("already") || message.includes("registered") || message.includes("exists")) {
+      return null;
+    }
+    throw new Error(getSupabaseError(data, "No se pudo crear la cuenta"));
+  }
+  const user = (data.user ?? data) as { id: string; email?: string; user_metadata?: Record<string, unknown> };
+  return user;
+}
+
+/**
  * Borra el usuario de Supabase Auth (ya no podrá iniciar sesión). Usa la
  * clave de administrador: la heredada "service_role" (un JWT, va también en
  * Authorization) o la nueva "sb_secret_…" (solo en apikey).

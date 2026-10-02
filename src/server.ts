@@ -37,8 +37,12 @@ import {
   isSupabaseAdminConfigured,
   deleteSupabaseAuthUser,
   SignupError,
-  isPhoneTaken
+  isPhoneTaken,
+  createConfirmedSupabaseUser,
+  ensureLocalUser
 } from "./supabaseAuth";
+import { createMostradorRouter, type StoreAccountResult } from "./routes/mostrador";
+import { sweepMostrador } from "./mostrador";
 import {
   anonymizeAccount,
   deletionRequestErrorPage,
@@ -1293,6 +1297,18 @@ export async function sweepExpiredHolds(): Promise<number> {
   return handled;
 }
 
+// Mostrador (src/mostrador.ts): apartados que nadie recogió en 30 minutos.
+async function sweepMostradorHolds(): Promise<void> {
+  const expired = await sweepMostrador();
+  for (const hold of expired) {
+    sendRealtimeEvent(`store:${hold.storeId}`, "part-hold", {});
+    const userId = await getUserIdByMechanicId(hold.mechanicId);
+    if (userId) {
+      await createNotification(userId, "Se liberó tu apartado", `Pasaron 30 minutos y la tienda liberó tu ${hold.part.toLowerCase()}.`, {});
+    }
+  }
+}
+
 const HOLD_SWEEP_INTERVAL_MS = 20_000;
 let holdSweepTimer: NodeJS.Timeout | null = null;
 let holdSweepRunning = false;
@@ -1307,6 +1323,7 @@ function startHoldSweep(): void {
     }
     holdSweepRunning = true;
     sweepExpiredHolds()
+      .then(() => sweepMostradorHolds())
       .catch((error) => console.error("Hold sweep failed:", error))
       .finally(() => {
         holdSweepRunning = false;
@@ -1647,6 +1664,47 @@ app.get(
 // URLs externas, nunca binarios). Rutas completas en routes/vehicles.ts.
 app.use("/api", vehiclesRouter);
 app.use("/api", createCommunityRouter({ createNotification, calculateDistanceKm, applyRateLimit }));
+
+// Cuenta de quien acepta una invitación al Mostrador: se crea con el correo
+// ya confirmado (el enlace se lo mandó el admin) y entra de una vez.
+async function createStoreAccount(email: string, password: string, fullName: string): Promise<StoreAccountResult> {
+  if (!isSupabaseAdminConfigured()) {
+    return { ok: false, status: 503, error: "Por ahora no se pueden crear cuentas desde la invitación. Escríbenos." };
+  }
+  const supabaseUser = await createConfirmedSupabaseUser(email, password, fullName);
+  if (!supabaseUser) {
+    return {
+      ok: false,
+      status: 409,
+      error: "Ya tienes cuenta de Mecanifique con ese correo. Entra con tu contraseña para aceptar la invitación."
+    };
+  }
+  const localUser = await ensureLocalUser(supabaseUser);
+  const login = await loginWithSupabase(email, password);
+  return {
+    ok: true,
+    userId: localUser.id,
+    session: {
+      user: login.user,
+      accessToken: login.accessToken,
+      refreshToken: login.session.refresh_token ?? null,
+      expiresIn: login.session.expires_in ?? 3600
+    }
+  };
+}
+
+app.use(
+  "/api",
+  createMostradorRouter({
+    createNotification,
+    sendRealtimeEvent,
+    calculateDistanceKm,
+    applyRateLimit,
+    getUserIdByMechanicId,
+    createStoreAccount,
+    siteUrl: SITE_URL
+  })
+);
 
 // ============================================================================
 // IDENTITY VERIFICATION (document binaries remain in private object storage)

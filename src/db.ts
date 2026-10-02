@@ -834,6 +834,123 @@ export async function initDb(): Promise<void> {
     )
   `);
 
+  // Mostrador (src/mostrador.ts): refaccionarias que contestan las
+  // solicitudes de pieza de los mecánicos. Una tienda del directorio entra al
+  // Mostrador solo por invitación del admin; su gente entra con una cuenta
+  // normal de Mecanifique ligada a la tienda (store_members).
+  await ensureColumn("parts_stores", "mostrador_enabled", "ALTER TABLE parts_stores ADD COLUMN mostrador_enabled INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn("parts_stores", "receiving", "ALTER TABLE parts_stores ADD COLUMN receiving INTEGER NOT NULL DEFAULT 1");
+  await ensureColumn("parts_stores", "categories", "ALTER TABLE parts_stores ADD COLUMN categories TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn("parts_stores", "radius_km", "ALTER TABLE parts_stores ADD COLUMN radius_km INTEGER NOT NULL DEFAULT 5");
+  await ensureColumn("parts_stores", "delivery", "ALTER TABLE parts_stores ADD COLUMN delivery INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn("parts_stores", "next_ticket", "ALTER TABLE parts_stores ADD COLUMN next_ticket INTEGER NOT NULL DEFAULT 1");
+  await run(`
+    CREATE TABLE IF NOT EXISTS store_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      store_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('owner', 'staff')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, user_id),
+      FOREIGN KEY(store_id) REFERENCES parts_stores(id),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS store_invitations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      store_id INTEGER NOT NULL,
+      email TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL DEFAULT 'owner' CHECK(role IN ('owner', 'staff')),
+      created_by_user_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TEXT NOT NULL,
+      accepted_at TEXT,
+      accepted_user_id INTEGER,
+      revoked_at TEXT,
+      FOREIGN KEY(store_id) REFERENCES parts_stores(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS part_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mechanic_id INTEGER NOT NULL,
+      service_request_id INTEGER,
+      part TEXT NOT NULL,
+      category TEXT,
+      note TEXT,
+      vehicle TEXT,
+      latitude REAL,
+      longitude REAL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'held', 'closed', 'cancelled')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      respond_until TEXT NOT NULL,
+      closes_at TEXT NOT NULL,
+      FOREIGN KEY(mechanic_id) REFERENCES mechanics(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_part_requests_mechanic ON part_requests(mechanic_id, created_at)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS part_request_targets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_request_id INTEGER NOT NULL,
+      store_id INTEGER NOT NULL,
+      distance_km REAL,
+      responded_at TEXT,
+      UNIQUE(part_request_id, store_id),
+      FOREIGN KEY(part_request_id) REFERENCES part_requests(id),
+      FOREIGN KEY(store_id) REFERENCES parts_stores(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_part_request_targets_store ON part_request_targets(store_id)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS part_offers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_request_id INTEGER NOT NULL,
+      store_id INTEGER NOT NULL,
+      responder_user_id INTEGER NOT NULL,
+      available TEXT NOT NULL CHECK(available IN ('yes', 'order', 'no')),
+      kind TEXT CHECK(kind IN ('original', 'generic', 'remanufactured')),
+      brand TEXT,
+      price REAL,
+      stock TEXT CHECK(stock IN ('counter', 'today', 'tomorrow')),
+      warranty TEXT,
+      decline_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(part_request_id) REFERENCES part_requests(id),
+      FOREIGN KEY(store_id) REFERENCES parts_stores(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_part_offers_request ON part_offers(part_request_id)");
+  await run(`
+    CREATE TABLE IF NOT EXISTS part_holds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      part_request_id INTEGER NOT NULL,
+      offer_id INTEGER NOT NULL,
+      store_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      method TEXT NOT NULL CHECK(method IN ('pickup', 'delivery')),
+      status TEXT NOT NULL DEFAULT 'held' CHECK(status IN ('held', 'dispatched', 'delivered', 'cancelled', 'expired')),
+      price REAL NOT NULL,
+      expires_at TEXT NOT NULL,
+      dispatched_at TEXT,
+      delivered_at TEXT,
+      payment_method TEXT,
+      ticket_code TEXT,
+      receipt_id INTEGER,
+      cancelled_by TEXT,
+      cancel_reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(part_request_id) REFERENCES part_requests(id),
+      FOREIGN KEY(offer_id) REFERENCES part_offers(id),
+      FOREIGN KEY(store_id) REFERENCES parts_stores(id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_part_holds_store ON part_holds(store_id, status)");
+  // Ticket que llegó del Mostrador de la tienda (sin foto: lo emitió la tienda).
+  await ensureColumn("parts_receipts", "store_id", "ALTER TABLE parts_receipts ADD COLUMN store_id INTEGER");
+
   // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
   await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");
 

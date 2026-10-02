@@ -2493,3 +2493,207 @@ test("zonas: 'Ahora mismo' llega a quien tiene el auto dentro de su radio, no a 
   const offeredB = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestB]);
   assert.equal(offeredB.mechanicId, longRadius);
 });
+
+test("Mostrador: invitación, solicitud a tiendas cercanas, respuestas, apartado y ticket automático al entregar", async () => {
+  const mostrador = require("../src/mostrador.ts");
+  const { getReceiptsForRequest } = require("../src/partsReceipts.ts");
+  const distance = (latA, lngA, latB, lngB) => Math.hypot(latA - latB, lngA - lngB) * 111;
+  const tag = crypto.randomUUID().slice(0, 8);
+  const storeIds = [];
+  const userIds = [];
+  const partRequestIds = [];
+
+  async function store(name, lat, lng, extra = {}) {
+    const created = await run(
+      `INSERT INTO parts_stores (name, latitude, longitude, status, radius_km, delivery, receiving, categories)
+       VALUES (?, ?, ?, 'active', ?, ?, ?, ?)`,
+      [`${name} ${tag}`, lat, lng, extra.radius ?? 5, extra.delivery ?? 0, extra.receiving ?? 1, JSON.stringify(extra.categories ?? [])]
+    );
+    storeIds.push(created.lastID);
+    return created.lastID;
+  }
+  async function user(fullName) {
+    const created = await run(
+      `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash) VALUES ('customer', ?, ?, ?, 'x', 'x')`,
+      [`${crypto.randomUUID()}@example.test`, crypto.randomUUID(), fullName]
+    );
+    userIds.push(created.lastID);
+    return created.lastID;
+  }
+
+  try {
+    // Tiendas cerca del auto (lat -60, lng -60): una a ~1 km, otra cerca con repartidor, una lejos, una en pausa y una que no surte frenos.
+    const near = await store("Refacciones Cerca", -60.009, -60);
+    const second = await store("Autopartes Dos", -60.012, -60, { delivery: 1 });
+    const far = await store("Refaccionaria Lejos", -60.3, -60);
+    const paused = await store("En Pausa", -60.005, -60, { receiving: 0 });
+    const noBrakes = await store("Solo Eléctrico", -60.006, -60, { categories: ["Eléctrico"] });
+    const admin = await user("Sergio Admin");
+
+    // Invitación del admin: un solo uso.
+    const staff = {};
+    for (const id of [near, second, far, paused, noBrakes]) {
+      const invitation = await mostrador.createInvitation({ storeId: id, email: `tienda-${id}@example.test`, createdByUserId: admin });
+      staff[id] = await user(`Mostrador ${id}`);
+      const membership = await mostrador.acceptInvitation(invitation.token, staff[id]);
+      assert.equal(membership.storeId, id);
+      if (id === near) {
+        await assert.rejects(mostrador.acceptInvitation(invitation.token, admin), (error) => error.status === 409 && /ya se usó/.test(error.message));
+      }
+    }
+    const revoked = await mostrador.createInvitation({ storeId: near, email: "otra@example.test", createdByUserId: admin });
+    await mostrador.revokeInvitation(revoked.id);
+    await assert.rejects(mostrador.acceptInvitation(revoked.token, admin), (error) => error.status === 409 && /canceló/.test(error.message));
+    await assert.rejects(mostrador.requireMembership(admin), (error) => error.status === 403);
+
+    // El servicio, reparando, con el auto en -60, -60 y una cotización con $1,000 de refacciones por comprar.
+    const mechanicId = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+    const { requestId } = await createRequestInStatus(mechanicId, "repairing");
+    await run("UPDATE service_requests SET latitude = -60, longitude = -60 WHERE id = ?", [requestId]);
+    await run(
+      `INSERT INTO service_quotes (service_request_id, mechanic_id, labor_amount, parts_amount, parts_on_hand_amount, description, status)
+       VALUES (?, ?, 500, 1000, 0, 'Cambio de balatas', 'accepted')`,
+      [requestId, mechanicId]
+    );
+
+    const created = await mostrador.createPartRequest(mechanicId, { serviceRequestId: requestId, part: "Balatas delanteras", category: "Frenos" }, distance);
+    partRequestIds.push(created.id);
+    assert.deepEqual([...created.storeIds].sort(), [near, second].sort(), "solo las cercanas, recibiendo y que surten frenos");
+
+    // Otro mecánico no puede preguntar por ese servicio.
+    const otherMechanic = await createOnlineMechanic(`Ciudad-${tag}`, "Centro");
+    await assert.rejects(
+      mostrador.createPartRequest(otherMechanic, { serviceRequestId: requestId, part: "Balatas" }, distance),
+      (error) => error.status === 403
+    );
+    // Sin tiendas cerca: no se crea nada y se le dice qué hacer.
+    await assert.rejects(
+      mostrador.createPartRequest(otherMechanic, { part: "Bujías", latitude: 10, longitude: 10 }, distance),
+      (error) => error.status === 404 && /lista de refaccionarias/.test(error.message)
+    );
+
+    // Contestan: una con dos opciones, otra que no la tiene. Una tienda a la que no le llegó no puede contestar.
+    await mostrador.respondToPartRequest({
+      storeId: near,
+      userId: staff[near],
+      partRequestId: created.id,
+      body: {
+        available: "yes",
+        options: [
+          { kind: "generic", price: 650, stock: "counter", warranty: "3 meses" },
+          { kind: "original", brand: "Bosch", price: 980, stock: "today" }
+        ]
+      }
+    });
+    await assert.rejects(
+      mostrador.respondToPartRequest({ storeId: near, userId: staff[near], partRequestId: created.id, body: { available: "no", reason: "Se me acabó" } }),
+      (error) => error.status === 409
+    );
+    await mostrador.respondToPartRequest({
+      storeId: second,
+      userId: staff[second],
+      partRequestId: created.id,
+      body: { available: "no", reason: "Se me acabó" }
+    });
+    await assert.rejects(
+      mostrador.respondToPartRequest({ storeId: far, userId: staff[far], partRequestId: created.id, body: { available: "no", reason: "No la manejo" } }),
+      (error) => error.status === 404
+    );
+
+    let [mine] = await mostrador.mechanicPartRequests(mechanicId, requestId);
+    assert.equal(mine.storesNotified, 2);
+    assert.equal(mine.stores[0].storeId, near, "la que la tiene, primero");
+    assert.deepEqual(mine.stores[0].options.map((option) => option.price), [650, 980]);
+    assert.equal(mine.stores[1].declined, "Se me acabó");
+
+    // Ninguna tienda ve los precios de otra.
+    const secondFeed = await mostrador.storeFeed(second);
+    assert.ok(!JSON.stringify(secondFeed).includes("650"));
+    assert.equal(secondFeed.stats.missing[0].count, 1, "lo que le pidieron y no tenía");
+
+    // Apartar: a domicilio solo si la tienda tiene repartidor; una sola vez.
+    const cheapest = mine.stores[0].options[0].offerId;
+    await assert.rejects(mostrador.holdOffer(mechanicId, created.id, { offerId: cheapest, method: "delivery" }), (error) => error.status === 409);
+    const hold = await mostrador.holdOffer(mechanicId, created.id, { offerId: cheapest, method: "pickup" });
+    await assert.rejects(mostrador.holdOffer(mechanicId, created.id, { offerId: cheapest, method: "pickup" }), (error) => error.status === 409);
+
+    let nearFeed = await mostrador.storeFeed(near);
+    assert.equal(nearFeed.requests[0].state, "won");
+    assert.equal(nearFeed.holds[0].price, 650);
+    assert.equal((await mostrador.storeFeed(second)).requests[0].state, "lost");
+
+    // Entregar: número de ticket de la tienda y ticket automático en el servicio, sin foto.
+    await assert.rejects(mostrador.deliverHold(second, hold.holdId, { paymentMethod: "Efectivo" }), (error) => error.status === 404);
+    const delivered = await mostrador.deliverHold(near, hold.holdId, { paymentMethod: "Efectivo" });
+    assert.equal(delivered.ticketCode, "T-0001");
+    const { receipts } = await getReceiptsForRequest(requestId);
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].amount, 650);
+    assert.equal(receipts[0].fromStore, true);
+    assert.equal(receipts[0].photoUrl, "");
+    assert.equal(receipts[0].status, "accepted", "dentro de lo cotizado se acepta solo");
+    assert.match(receipts[0].storeNote, /T-0001/);
+    nearFeed = await mostrador.storeFeed(near);
+    assert.equal(nearFeed.sales.length, 1);
+    assert.equal(nearFeed.stats.salesTotal, 650);
+    [mine] = await mostrador.mechanicPartRequests(mechanicId, requestId);
+    assert.equal(mine.status, "closed");
+    assert.equal(mine.hold.ticketCode, "T-0001");
+    assert.equal((await get("SELECT COUNT(*) AS n FROM parts_store_hits WHERE store_id = ?", [near])).n, 1, "cuenta como 'sí tenían la pieza'");
+
+    // Contestar tarde no se puede; un apartado que nadie recoge se libera solo.
+    const late = await mostrador.createPartRequest(mechanicId, { serviceRequestId: requestId, part: "Disco de freno", category: "Frenos" }, distance);
+    partRequestIds.push(late.id);
+    await run("UPDATE part_requests SET respond_until = datetime('now', '-1 minute') WHERE id = ?", [late.id]);
+    await assert.rejects(
+      mostrador.respondToPartRequest({ storeId: near, userId: staff[near], partRequestId: late.id, body: { available: "no", reason: "No la manejo" } }),
+      (error) => error.status === 409 && /venció/.test(error.message)
+    );
+    await run("UPDATE part_requests SET respond_until = datetime('now', '+5 minutes') WHERE id = ?", [late.id]);
+    await mostrador.respondToPartRequest({
+      storeId: second,
+      userId: staff[second],
+      partRequestId: late.id,
+      body: { available: "yes", options: [{ kind: "generic", price: 400, stock: "counter" }] }
+    });
+    const lateMine = (await mostrador.mechanicPartRequests(mechanicId, requestId)).find((r) => r.id === late.id);
+    const lateHold = await mostrador.holdOffer(mechanicId, late.id, { offerId: lateMine.stores[0].options[0].offerId, method: "delivery" });
+    await run("UPDATE part_holds SET expires_at = datetime('now', '-1 minute') WHERE id = ?", [lateHold.holdId]);
+    const swept = await mostrador.sweepMostrador();
+    assert.ok(swept.some((item) => item.holdId === lateHold.holdId));
+    assert.equal((await get("SELECT status FROM part_holds WHERE id = ?", [lateHold.holdId])).status, "expired");
+  } finally {
+    for (const id of partRequestIds) {
+      await run("DELETE FROM part_holds WHERE part_request_id = ?", [id]);
+      await run("DELETE FROM part_offers WHERE part_request_id = ?", [id]);
+      await run("DELETE FROM part_request_targets WHERE part_request_id = ?", [id]);
+      await run("DELETE FROM part_requests WHERE id = ?", [id]);
+    }
+    for (const id of storeIds) {
+      await run("DELETE FROM parts_store_hits WHERE store_id = ?", [id]);
+      await run("DELETE FROM store_members WHERE store_id = ?", [id]);
+      await run("DELETE FROM store_invitations WHERE store_id = ?", [id]);
+      await run("UPDATE parts_receipts SET store_id = NULL WHERE store_id = ?", [id]);
+      await run("DELETE FROM parts_stores WHERE id = ?", [id]);
+    }
+    for (const id of userIds) await run("DELETE FROM users WHERE id = ?", [id]);
+  }
+});
+
+test("Mostrador: las rutas piden sesión y una invitación inexistente no revela nada", async () => {
+  for (const [method, path] of [
+    ["POST", "/api/part-requests"],
+    ["GET", "/api/part-requests/mine"],
+    ["GET", "/api/mostrador/feed"],
+    ["GET", "/api/mostrador/me"],
+    ["POST", "/api/mostrador/requests/1/respond"],
+    ["POST", "/api/mostrador/holds/1/deliver"],
+    ["GET", "/api/admin/mostrador/stores"],
+    ["POST", "/api/admin/mostrador/invitations"]
+  ]) {
+    const { response } = await request(path, { method, body: method === "POST" ? "{}" : undefined });
+    assert.equal(response.status, 401, `${method} ${path}`);
+  }
+  const { response } = await request("/api/mostrador/invitations/no-existe-este-token-de-invitacion");
+  assert.equal(response.status, 404);
+});
