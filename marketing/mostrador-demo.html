@@ -153,6 +153,8 @@
   .item-row b { white-space: nowrap; }
   .method { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
   .pay-form { display: grid; gap: 10px; background: var(--soft); border-radius: 14px; padding: 12px; }
+  /* Sobre fondo suave, los botones suaves necesitan su propio fondo y borde para verse como botones. */
+  .pay-form .btn.soft, .option .btn.soft { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); flex: 1 1 120px; }
 
   /* Tabla de entregadas */
   .table-wrap { overflow-x: auto; }
@@ -197,8 +199,15 @@
   .toast { background: var(--ink); color: var(--bg); border-radius: 14px; padding: 12px 14px; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.25); animation: arrive .3s ease; display: flex; gap: 10px; align-items: center; }
   .toast.win { background: var(--ok); color: #fff; }
 
+  .demo .short { display: none; }
   @media (max-width: 860px) {
-    .top { padding: 10px 16px; }
+    /* En el teléfono la barra de arriba no se queda fija: ocupaba casi un cuarto de la pantalla. */
+    .top { padding: 10px 16px; position: static; }
+    .toasts { top: calc(16px + env(safe-area-inset-top, 0px)); }
+    .demo { left: 16px; right: 16px; justify-content: space-between; flex-wrap: nowrap; padding: 8px; }
+    .demo small, .demo .long { display: none; }
+    .demo .short { display: inline; }
+    .demo button { flex: 1; padding-inline: 8px; }
     .shell { grid-template-columns: 1fr; padding: 12px 16px 150px; gap: 12px; }
     nav.side { position: static; display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
     nav.side button { white-space: nowrap; width: auto; flex-shrink: 0; padding: 9px 12px; }
@@ -208,6 +217,34 @@
     .timer b { font-size: 17px; }
   }
   @media (prefers-reduced-motion: reduce) { .req.ringing, .toast { animation: none; } }
+
+  /* Pantallas táctiles (como las de los restaurantes): todo se toca con el dedo
+     sin lupa ni doble toque, cada botón responde al presionarlo y el precio se
+     escribe con un teclado numérico en pantalla. */
+  button, input, select, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button { user-select: none; -webkit-user-select: none; transition: transform .08s ease, filter .08s ease; }
+  button:active:not(:disabled) { transform: scale(.97); filter: brightness(.94); }
+  .btn { min-height: 52px; }
+  .btn.big { min-height: 60px; }
+  .seg button, .chips button { min-height: 48px; padding-inline: 14px; }
+  nav.side button { min-height: 52px; }
+  .icon-btn { min-height: 44px; padding-inline: 14px; }
+  .switch .knob { width: 56px; height: 32px; }
+  .switch .knob::after { width: 26px; height: 26px; }
+  .switch[data-on="true"] .knob::after { transform: translateX(24px); }
+  .demo button { min-height: 44px; padding-inline: 13px; }
+  label.f input, label.f select { min-height: 50px; }
+  .keypad-box { display: grid; gap: 8px; }
+  .keypad-box .hint b { color: var(--ink); }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 420px; }
+  .keypad button { min-height: 58px; border: 0; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 24px; font-weight: 800; color: var(--ink); }
+  .keypad button.fn { font-size: 15px; color: var(--muted); }
+  .option.typing { box-shadow: inset 0 0 0 2px var(--primary); }
+  @media (pointer: coarse) {
+    body { font-size: 16px; }
+    .btn.big { min-height: 64px; font-size: 17px; }
+    .keypad button { min-height: 64px; }
+  }
 </style>
 
 <header class="top">
@@ -219,6 +256,7 @@
       <button class="knob" id="switch-btn" role="switch" aria-checked="true" aria-label="Recibir solicitudes"></button>
     </div>
     <button class="icon-btn" id="sound-btn" aria-pressed="false" type="button"></button>
+    <button class="icon-btn" id="full-btn" type="button" hidden>Pantalla completa</button>
     <span class="clock num" id="clock"></span>
   </div>
 </header>
@@ -237,8 +275,8 @@
 
 <div class="demo" role="region" aria-label="Controles de la demostración">
   <small>Demo</small>
-  <button class="main" id="demo-new" type="button">Llega una solicitud</button>
-  <button id="demo-auto" type="button" aria-pressed="true">Automáticas: sí</button>
+  <button class="main" id="demo-new" type="button"><span class="long">Llega una solicitud</span><span class="short">+ Solicitud</span></button>
+  <button id="demo-auto" type="button" aria-pressed="true"></button>
   <button id="demo-reset" type="button">Reiniciar</button>
 </div>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
@@ -472,7 +510,7 @@
     const code = "T-" + String(ticket).padStart(4, "0");
     state.sales.unshift({ time: Date.now(), part: h.part + " · " + h.car.replace(/^(\S+\s)/, ""), mech: h.mech, total: h.items.reduce((s, i) => s + i.price, 0), pay, ticket: code });
     state.holds = state.holds.filter((x) => x.id !== holdId);
-    toast("Venta registrada. El ticket " + code + " se agregó al servicio del cliente de " + h.mech + ".", true);
+    toast("Venta registrada: el ticket " + code + " ya está en el servicio de " + h.mech, true);
     render();
   }
 
@@ -504,7 +542,7 @@
     sb.innerHTML = (state.sound ? I.bell : I.mute) + "<span>" + (state.sound ? "Sonido" : "Sin sonido") + "</span>";
     const da = $("#demo-auto");
     da.setAttribute("aria-pressed", String(state.auto));
-    da.textContent = "Automáticas: " + (state.auto ? "sí" : "no");
+    da.innerHTML = '<span class="long">Automáticas: ' + (state.auto ? "sí" : "no") + '</span><span class="short">Auto: ' + (state.auto ? "sí" : "no") + "</span>";
     const pending = state.requests.filter((r) => r.status === "new").length;
     document.title = (pending ? "(" + pending + ") " : "") + "Mecanifique Mostrador";
   }
@@ -564,7 +602,12 @@
         '<p class="hint">Lo que te piden y no tienes aparece en Estadísticas, para que decidas qué comprar.</p></div>';
     }
     if (r.status === "answering" && r.mode !== "no") {
-      html += '<div class="answer">' + r.draft.options.map((o, i) => optionForm(r, o, i)).join("") +
+      const active = Math.min(r.draft.active || 0, r.draft.options.length - 1);
+      const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "del"];
+      const keypad = '<div class="keypad-box"><p class="hint">Precio de la <b>opción ' + (active + 1) + '</b>: tócalo aquí o escríbelo con el teclado.</p><div class="keypad" role="group" aria-label="Teclado numérico">' +
+        keys.map((k) => '<button type="button" class="' + (k.length > 1 ? "fn" : "") + '" data-act="key" data-id="' + r.id + '" data-key="' + k + '" aria-label="' + (k === "del" ? "Borrar un número" : k === "clear" ? "Borrar el precio" : k) + '">' +
+          (k === "del" ? "⌫" : k === "clear" ? "Borrar" : k) + "</button>").join("") + "</div></div>";
+      html += '<div class="answer">' + r.draft.options.map((o, i) => optionForm(r, o, i, i === active)).join("") + keypad +
         '<div class="actions">' +
         (r.draft.options.length < 2 ? '<button class="btn ghost" data-act="add-option" data-id="' + r.id + '" type="button">+ Agregar otra opción (por ejemplo, original y genérica)</button>' : "") +
         "</div>" +
@@ -581,14 +624,18 @@
     return html;
   }
 
-  function optionForm(r, o, i) {
+  // En pantallas táctiles el precio se escribe con el teclado de la página, sin
+  // que salga el del sistema tapando la mitad de la pantalla.
+  const TOUCH = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+
+  function optionForm(r, o, i, typing) {
     const seg = (field, values) => '<div class="seg" role="group">' + values.map((v) =>
       '<button type="button" data-act="opt" data-id="' + r.id + '" data-i="' + i + '" data-field="' + field + '" data-value="' + v + '" aria-pressed="' + (o[field] === v) + '">' + v + "</button>").join("") + "</div>";
-    return '<div class="option"><div class="option-head"><span>Opción ' + (i + 1) + "</span>" +
+    return '<div class="option' + (typing ? " typing" : "") + '"><div class="option-head"><span>Opción ' + (i + 1) + "</span>" +
       (i > 0 ? '<button class="btn ghost" data-act="remove-option" data-id="' + r.id + '" data-i="' + i + '" type="button">Quitar</button>' : "") + "</div>" +
       seg("kind", ["Original", "Genérica", "Remanufacturada"]) +
       '<div class="fields">' +
-      '<label class="f">Precio<div class="price-wrap"><span>$</span><input id="price-' + r.id + "-" + i + '" inputmode="numeric" data-input="price" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.price) + '" placeholder="850"></div></label>' +
+      '<label class="f">Precio<div class="price-wrap"><span>$</span><input id="price-' + r.id + "-" + i + '" inputmode="' + (TOUCH ? "none" : "numeric") + '" data-input="price" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.price) + '" placeholder="850"></div></label>' +
       '<label class="f">Marca (opcional)<input id="brand-' + r.id + "-" + i + '" data-input="brand" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.brand) + '" placeholder="Ej. Bosch"></label>' +
       '<label class="f">Garantía<select id="warranty-' + r.id + "-" + i + '" data-input="warranty" data-id="' + r.id + '" data-i="' + i + '">' +
       ["Sin garantía", "30 días", "3 meses", "6 meses", "1 año"].map((w) => "<option" + (o.warranty === w ? " selected" : "") + ">" + w + "</option>").join("") + "</select></label>" +
@@ -710,8 +757,16 @@
     else if (act === "cancel" && r) { r.status = "new"; r.mode = null; render(); }
     else if (act === "decline") decline(id, b.dataset.reason);
     else if (act === "send") sendAnswer(id);
-    else if (act === "add-option" && r) { r.draft.options.push(Object.assign(newOption(r.mode), { kind: "Original" })); render(); }
-    else if (act === "remove-option" && r) { r.draft.options.splice(Number(b.dataset.i), 1); render(); }
+    else if (act === "add-option" && r) { r.draft.options.push(Object.assign(newOption(r.mode), { kind: "Original" })); r.draft.active = r.draft.options.length - 1; render(); }
+    else if (act === "remove-option" && r) { r.draft.options.splice(Number(b.dataset.i), 1); r.draft.active = 0; render(); }
+    else if (act === "key" && r && r.draft) {
+      const o = r.draft.options[Math.min(r.draft.active || 0, r.draft.options.length - 1)];
+      const k = b.dataset.key;
+      if (k === "del") o.price = String(o.price).slice(0, -1);
+      else if (k === "clear") o.price = "";
+      else if (String(o.price).length < 6) o.price = (String(o.price) === "0" ? "" : String(o.price)) + k;
+      render();
+    }
     else if (act === "opt" && r) { r.draft.options[Number(b.dataset.i)][b.dataset.field] = b.dataset.value; render(); }
     else if (act === "dispatch" && h) { h.stage = "onroute"; toast("Le avisamos a " + h.mech + " que su pieza va en camino."); render(); }
     else if (act === "deliver" && h) { h.paying = true; render(); }
@@ -733,6 +788,20 @@
     o[el.dataset.input] = el.dataset.input === "price" ? el.value.replace(/[^0-9]/g, "") : el.value;
     if (el.dataset.input === "price" && el.value !== o.price) el.value = o.price;
   });
+  // Al tocar el precio o la marca de una opción, el teclado en pantalla escribe en esa.
+  document.addEventListener("focusin", (e) => {
+    const el = e.target.closest("[data-input]");
+    if (!el) return;
+    const r = state.requests.find((x) => x.id === Number(el.dataset.id));
+    const i = Number(el.dataset.i);
+    if (r && r.draft && (r.draft.active || 0) !== i) {
+      r.draft.active = i;
+      document.querySelectorAll("#req-" + r.id + " .option").forEach((box, n) => box.classList.toggle("typing", n === i));
+      const label = document.querySelector("#req-" + r.id + " .keypad-box .hint b");
+      if (label) label.textContent = "opción " + (i + 1);
+    }
+  });
+
   document.addEventListener("change", (e) => {
     const el = e.target.closest("select[data-input]");
     if (!el) return;
@@ -756,6 +825,31 @@
     }
     render();
   }
+
+  // Pantalla completa (si el navegador lo permite) y que la pantalla no se
+  // apague mientras el mostrador está abierto, como la tableta de un restaurante.
+  const fullBtn = $("#full-btn");
+  if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
+    fullBtn.hidden = false;
+    fullBtn.addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+      else document.documentElement.requestFullscreen().catch(() => toast("Este navegador no deja usar pantalla completa aquí."));
+    });
+    document.addEventListener("fullscreenchange", () => {
+      fullBtn.textContent = document.fullscreenElement ? "Salir de pantalla completa" : "Pantalla completa";
+    });
+  }
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      if ("wakeLock" in navigator && !wakeLock) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      }
+    } catch (e) { /* si no se puede, la pantalla se apaga como siempre */ }
+  }
+  document.addEventListener("pointerdown", keepAwake);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
 
   $("#sound-btn").addEventListener("click", () => enableSound(!state.sound));
   $("#switch-btn").addEventListener("click", () => { state.receiving = !state.receiving; render(); });
