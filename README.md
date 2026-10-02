@@ -73,6 +73,11 @@ mantener informadas a ambas partes.
   inversionistas, con aviso de privacidad en `/privacidad`. Vercel está
   conectado a este repo y publica solo `web/` gracias al `vercel.json` de la
   raíz (sin instalar ni compilar); se actualiza solo con cada push a `main`.
+  **Versión de Node:** Vercel la toma de `engines.node` del `package.json`
+  (hoy `24.x`; desde el 1 de octubre de 2026 rechaza `20.x`), y Render de
+  `.node-version` (`20.19.0`, que tiene prioridad sobre `engines`). Así el
+  sitio publica y el servidor sigue en la versión probada; para subir el
+  servidor a Node 24, probarlo y cambiar `.node-version`.
   La raíz del servidor de Render (`/`) redirige al sitio (`SITE_URL`).
 - **Aviso de privacidad dentro de la app** (lo exige Google Play además del
   enlace en la ficha): al crear cuenta ("Al crear tu cuenta aceptas el Aviso
