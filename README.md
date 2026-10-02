@@ -1050,6 +1050,25 @@ privado, URLs firmadas de corta duración, cifrado, control de acceso mínimo,
 auditoría, consentimiento explícito y una política de retención/eliminación
 conforme a la legislación aplicable.
 
+Qué se muestra de una persona a otras (`src/privacy.ts`):
+
+- **Listado público de mecánicos** (`GET /mechanics`, sin sesión): nunca el
+  teléfono. La ubicación, solo de quien está conectado y aproximada a ~1 km
+  (2 decimales): la última conocida de un desconectado puede ser su casa.
+  Las distancias (también las de promociones) se calculan desde la
+  aproximada; si salieran de la exacta, midiendo desde varios puntos se
+  podría ubicar al mecánico. La exacta solo la usan el reparto de solicitudes
+  (`findAvailableMechanic`) y el seguimiento de un servicio en curso
+  (`src/tracking.ts`).
+- **Teléfonos de cliente y mecánico**: solo cuando el mecánico ya aceptó
+  (`contactPhoneSql`: `accepted_at` o, en solicitudes viejas, un estado más
+  allá de pendiente). La solicitud entrante, que es una oferta, ya no trae el
+  teléfono del cliente.
+- **Reseñas públicas** (`GET /mechanics/:id/reviews`): primer nombre e
+  inicial (`communityAuthorName`), sin el id del cliente.
+- Las fotos (`/uploads/:fileName`) se sirven sin sesión, pero su nombre lleva
+  un UUID aleatorio que no se puede adivinar.
+
 ## Documentación relacionada
 
 - [Autenticación Supabase](./SUPABASE_AUTH_SETUP.md)

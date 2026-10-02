@@ -20,7 +20,8 @@ type MechanicSignupStep = 'account' | 'work';
 type Mechanic = {
   id: number;
   fullName: string;
-  phone: string;
+  // Sin teléfono: el listado público no lo trae (src/privacy.ts). El cliente
+  // lo ve hasta que el mecánico acepta su solicitud.
   city: string;
   zone: string;
   yearsExperience: number;

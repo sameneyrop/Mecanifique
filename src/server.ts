@@ -8,7 +8,8 @@ import { all, databaseKind, get, initDb, run } from "./db";
 import { requireAuth, requireRole, type AuthUser } from "./auth";
 import { handleAsync } from "./middleware";
 import { vehiclesRouter } from "./routes/vehicles";
-import { createCommunityRouter } from "./routes/community";
+import { communityAuthorName, createCommunityRouter } from "./routes/community";
+import { approximateLocation, contactPhoneSql } from "./privacy";
 import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
@@ -698,7 +699,6 @@ const panicAlertCreateSchema = z.object({
 type MechanicRow = {
   id: number;
   fullName: string;
-  phone: string;
   city: string;
   zone: string;
   yearsExperience: number;
@@ -754,7 +754,8 @@ type MechanicReviewRow = {
   id: number;
   mechanicId: number;
   serviceRequestId: number;
-  customerUserId: number;
+  /** Solo en la respuesta a quien la escribió; el listado público no lo trae. */
+  customerUserId?: number;
   customerName: string;
   rating: number;
   comment: string;
@@ -3524,8 +3525,10 @@ app.get(
       typeof longitude === "number" &&
       Number.isFinite(longitude);
 
+    // Público: sin teléfono y con la ubicación aproximada, solo de quien está
+    // conectado (src/privacy.ts).
     let sql = `
-      SELECT id, full_name AS fullName, phone, city, zone, years_experience AS yearsExperience,
+      SELECT id, full_name AS fullName, city, zone, years_experience AS yearsExperience,
              specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
              latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, profile_photo_url AS profilePhotoUrl,
              gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
@@ -3549,13 +3552,18 @@ app.get(
     sql += " ORDER BY rating DESC, jobs_completed DESC";
 
     const mechanics = await all<MechanicRow>(sql, params);
-    const normalized = mechanics.map((mechanic) => ({
-      ...mechanic,
-      specialties: parseSpecialties(mechanic.specialties),
-      gallery: JSON.parse(mechanic.galleryJson || '[]'),
-      isAvailable: mechanic.isAvailable === 1,
-      isOnline: mechanic.isOnline === 1
-    }));
+    const normalized = mechanics.map(({ latitude: exactLatitude, longitude: exactLongitude, ...mechanic }) => {
+      const shown = mechanic.isOnline === 1 ? approximateLocation(exactLatitude, exactLongitude) : null;
+      return {
+        ...mechanic,
+        latitude: shown?.latitude ?? null,
+        longitude: shown?.longitude ?? null,
+        specialties: parseSpecialties(mechanic.specialties),
+        gallery: JSON.parse(mechanic.galleryJson || '[]'),
+        isAvailable: mechanic.isAvailable === 1,
+        isOnline: mechanic.isOnline === 1
+      };
+    });
 
     if (!hasLocation) {
       res.json(normalized);
@@ -3571,14 +3579,11 @@ app.get(
 
     const nearby = normalized
       .filter((mechanic) => mechanic.latitude !== null && mechanic.longitude !== null)
+      // Desde la ubicación aproximada, nunca la exacta (src/privacy.ts).
       .map((mechanic) => ({
         ...mechanic,
-        distanceKm: calculateDistanceKm(
-          lat,
-          lng,
-          mechanic.latitude as number,
-          mechanic.longitude as number
-        )
+        distanceKm:
+          Math.round(calculateDistanceKm(lat, lng, mechanic.latitude as number, mechanic.longitude as number) * 10) / 10
       }))
       .filter((mechanic) => mechanic.distanceKm <= radiusKm)
       .sort((left, right) => left.distanceKm - right.distanceKm);
@@ -3621,10 +3626,11 @@ app.get(
       return;
     }
 
-    const reviews = await all<MechanicReviewRow>(
+    // Pública: de quien la escribió solo el primer nombre y la inicial.
+    const reviewRows = await all<MechanicReviewRow>(
       `
       SELECT r.id, r.mechanic_id AS mechanicId, r.service_request_id AS serviceRequestId,
-             r.customer_user_id AS customerUserId, u.full_name AS customerName, r.rating, r.comment,
+             u.full_name AS customerName, r.rating, r.comment,
              r.created_at AS createdAt
       FROM mechanic_reviews r
       JOIN users u ON u.id = r.customer_user_id
@@ -3634,6 +3640,7 @@ app.get(
       `,
       [mechanicId]
     );
+    const reviews = reviewRows.map((review) => ({ ...review, customerName: communityAuthorName(review.customerName) }));
 
     const stats = await get<{ averageRating: number | null; reviewCount: number }>(
       `
@@ -4287,7 +4294,7 @@ app.get(
              sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt,
              sr.latitude, sr.longitude,
-             m.full_name AS mechanicName, c.full_name AS customerName, c.phone AS customerPhone,
+             m.full_name AS mechanicName, c.full_name AS customerName, ${contactPhoneSql("sr", "c.phone")} AS customerPhone,
              sr.paid_at AS paidAt, sr.customer_paid_at AS customerPaidAt, sr.unpaid_reported_at AS unpaidReportedAt,
              EXISTS(SELECT 1 FROM mechanic_reviews r WHERE r.service_request_id = sr.id) AS reviewed,
              sr.parent_request_id AS parentRequestId, sr.cancellation_fee AS cancellationFee, sr.cancel_reason AS cancelReason,
@@ -4357,7 +4364,7 @@ app.get(
              sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId,
               sr.service_address AS serviceAddress,
-             sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName, c.phone AS customerPhone,
+             sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName,
              c.photo_url AS customerPhotoUrl,
              ${VISIT_FEE_SQL} AS visitFee,
              sr.car_photo_url AS carPhotoUrl, sr.spot_photo_url AS spotPhotoUrl, sr.location_source AS locationSource
@@ -4854,8 +4861,8 @@ app.get(
              sr.repair_notes AS repairNotes, sr.estimated_price AS estimatedPrice, sr.final_price AS finalPrice,
              sr.assignment_mode AS assignmentMode,
              sr.created_at AS createdAt, sr.updated_at AS updatedAt,
-             c.full_name AS customerName, c.phone AS customerPhone, c.photo_url AS customerPhotoUrl,
-             m.full_name AS mechanicName, m.phone AS mechanicPhone,
+             c.full_name AS customerName, ${contactPhoneSql("sr", "c.phone")} AS customerPhone, c.photo_url AS customerPhotoUrl,
+             m.full_name AS mechanicName, ${contactPhoneSql("sr", "m.phone")} AS mechanicPhone,
              m.profile_photo_url AS mechanicPhotoUrl, m.rating AS mechanicRating,
              m.review_count AS mechanicReviewCount, m.jobs_completed AS mechanicJobsCompleted,
              m.status = 'active' AS mechanicVerified,

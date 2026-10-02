@@ -344,7 +344,6 @@ export function MechanicsScreen({
               {selected.laborRate ? (
                 <InfoRow icon="cash-outline" text={`Visita y diagnóstico: ${formatPesos(selected.laborRate)}`} />
               ) : null}
-              {selected.phone ? <InfoRow icon="call-outline" text={selected.phone} /> : null}
               {selected.bio ? <Text style={styles.itemText}>{selected.bio}</Text> : null}
 
               {selected.gallery && selected.gallery.length > 0 && (

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { all, get, run } from "../db";
 import { requireAuth, requireRole } from "../auth";
 import { handleAsync } from "../middleware";
+import { approximateLocation } from "../privacy";
 
 /**
  * Comunidad (preguntas de clientes que responden mecánicos verificados;
@@ -420,14 +421,19 @@ export function createCommunityRouter({ createNotification, calculateDistanceKm,
       [mechanicId, mechanicId]
     );
 
+    // La distancia sale de la ubicación aproximada del mecánico, nunca de la
+    // exacta: midiendo desde varios puntos se le podría ubicar (src/privacy.ts).
     const promotions = rows
-      .map(({ latitude: mechanicLatitude, longitude: mechanicLongitude, ...promotion }) => ({
-        ...promotion,
-        distanceKm:
-          hasCoords && mechanicLatitude != null && mechanicLongitude != null
-            ? Math.round(calculateDistanceKm(latitude, longitude, mechanicLatitude, mechanicLongitude) * 10) / 10
-            : null
-      }))
+      .map(({ latitude: mechanicLatitude, longitude: mechanicLongitude, ...promotion }) => {
+        const approximate = approximateLocation(mechanicLatitude, mechanicLongitude);
+        return {
+          ...promotion,
+          distanceKm:
+            hasCoords && approximate
+              ? Math.round(calculateDistanceKm(latitude, longitude, approximate.latitude, approximate.longitude) * 10) / 10
+              : null
+        };
+      })
       .sort((a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY));
 
     res.json({ promotions });

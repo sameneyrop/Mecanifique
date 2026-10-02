@@ -2311,3 +2311,78 @@ test("con coordenadas: si nadie tiene ubicación, se usa la ciudad/zona escrita 
   const request = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestId]);
   assert.equal(request.mechanicId, noLocationSameZone);
 });
+test("privacidad: el listado público no trae teléfonos ni la ubicación exacta; reseñas con primer nombre; teléfonos solo al aceptar", async () => {
+  const { approximateLocation, contactPhoneSql } = require("../src/privacy.ts");
+  assert.deepEqual(approximateLocation(21.884563, -102.291634), { latitude: 21.88, longitude: -102.29 });
+  assert.equal(approximateLocation(null, -102.29), null);
+
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const online = await createOnlineMechanic(city, "Sur", { latitude: 21.884563, longitude: -102.291634 });
+  const offline = await createOnlineMechanic(city, "Sur", { latitude: 21.851234, longitude: -102.287654 });
+  await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id = ?", [offline]);
+  const phones = (await all("SELECT phone FROM mechanics WHERE id IN (?, ?)", [online, offline])).map((row) => row.phone);
+
+  // Listado público: sin teléfonos; ubicación aproximada y solo de quien está conectado.
+  const { body: list } = await request(`/mechanics?city=${encodeURIComponent(city)}`);
+  assert.equal(list.length, 2);
+  for (const phone of phones) assert.ok(!JSON.stringify(list).includes(phone));
+  assert.ok(list.every((mechanic) => !("phone" in mechanic)));
+  const onlineRow = list.find((mechanic) => mechanic.id === online);
+  assert.deepEqual([onlineRow.latitude, onlineRow.longitude], [21.88, -102.29]);
+  const offlineRow = list.find((mechanic) => mechanic.id === offline);
+  assert.deepEqual([offlineRow.latitude, offlineRow.longitude], [null, null], "la última ubicación de un desconectado puede ser su casa");
+
+  // Cercanos: la distancia sale de la ubicación aproximada, no de la exacta.
+  const { body: nearby } = await request(
+    `/mechanics?city=${encodeURIComponent(city)}&latitude=21.88&longitude=-102.29&radiusKm=25`
+  );
+  assert.deepEqual(nearby.map((mechanic) => mechanic.id), [online]);
+  assert.equal(nearby[0].distanceKm, 0);
+
+  // Reseñas públicas: primer nombre e inicial, sin el id del cliente.
+  const { requestId: reviewedRequest } = await createRequestInStatus(online, "completed");
+  const reviewer = await run(
+    `INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash)
+     VALUES ('customer', ?, ?, 'María Fernanda López', 'x', 'x')`,
+    [`${crypto.randomUUID()}@example.test`, crypto.randomUUID()]
+  );
+  try {
+    await run(
+      "INSERT INTO mechanic_reviews (mechanic_id, service_request_id, customer_user_id, rating, comment) VALUES (?, ?, ?, 5, 'Muy bien')",
+      [online, reviewedRequest, reviewer.lastID]
+    );
+    const { body: reviews } = await request(`/mechanics/${online}/reviews`);
+    assert.equal(reviews.reviews[0].customerName, "María F.");
+    assert.ok(!("customerUserId" in reviews.reviews[0]));
+  } finally {
+    await run("DELETE FROM mechanic_reviews WHERE service_request_id = ?", [reviewedRequest]);
+    await run("DELETE FROM users WHERE id = ?", [reviewer.lastID]);
+  }
+
+  // Teléfonos de cliente y mecánico: solo cuando el mecánico ya aceptó.
+  const customer = await run("INSERT INTO customers (full_name, phone) VALUES (?, ?)", ["Cliente Privado", uniquePhone()]);
+  createdRows.customers.push(customer.lastID);
+  const offered = await run(
+    `INSERT INTO service_requests
+       (customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description, preferred_time, city, zone,
+        status, mechanic_id, hold_expires_at)
+     VALUES (?, 'Nissan', 'Versa', 2020, 'No enciende', 'Ahora', ?, 'Sur', 'pending', ?, datetime('now', '+2 minutes'))`,
+    [customer.lastID, city, online]
+  );
+  createdRows.requests.push(offered.lastID);
+  const phonesNow = () =>
+    get(
+      `SELECT ${contactPhoneSql("sr", "c.phone")} AS customerPhone, ${contactPhoneSql("sr", "m.phone")} AS mechanicPhone
+       FROM service_requests sr JOIN customers c ON c.id = sr.customer_id LEFT JOIN mechanics m ON m.id = sr.mechanic_id
+       WHERE sr.id = ?`,
+      [offered.lastID]
+    );
+  assert.deepEqual({ ...(await phonesNow()) }, { customerPhone: null, mechanicPhone: null }, "ofrecida, sin aceptar");
+  await run("UPDATE service_requests SET status = 'cancelled' WHERE id = ?", [offered.lastID]);
+  assert.deepEqual({ ...(await phonesNow()) }, { customerPhone: null, mechanicPhone: null }, "cancelada sin que la aceptaran");
+  await run("UPDATE service_requests SET status = 'assigned', accepted_at = CURRENT_TIMESTAMP WHERE id = ?", [offered.lastID]);
+  const accepted = await phonesNow();
+  assert.ok(accepted.customerPhone && accepted.mechanicPhone, "aceptada: ya se pueden llamar");
+  await run("UPDATE service_requests SET status = 'cancelled' WHERE id = ?", [offered.lastID]);
+  assert.ok((await phonesNow()).customerPhone, "aceptada y luego cancelada: se siguen viendo por si hay cargo que aclarar");
+});
