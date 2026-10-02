@@ -64,11 +64,24 @@ function ReceiptRow({ receipt, children }: { receipt: PartsReceipt; children?: R
       : '';
   return (
     <View style={styles.receiptRow}>
-      <ReceiptPhoto url={receipt.photoUrl} />
+      {/* El ticket de una refaccionaria de Mostrador lo emitió la tienda: no hay foto. */}
+      {receipt.photoUrl ? (
+        <ReceiptPhoto url={receipt.photoUrl} />
+      ) : (
+        <View style={[styles.receiptThumb, styles.receiptStoreThumb]}>
+          <Ionicons name="storefront-outline" size={26} color={colors.primary} />
+        </View>
+      )}
       <View style={[styles.flex, styles.stack]}>
         <Text style={styles.itemTitle}>{formatPesos(receipt.amount)}</Text>
         <Text style={styles.smallText}>
-          {receipt.ordered ? 'Pedida: se instala en la visita de regreso' : receipt.hasTicket ? 'Con ticket' : 'Sin ticket'}
+          {receipt.fromStore
+            ? 'Ticket de la refaccionaria, precio de tienda'
+            : receipt.ordered
+              ? 'Pedida: se instala en la visita de regreso'
+              : receipt.hasTicket
+                ? 'Con ticket'
+                : 'Sin ticket'}
           {receipt.storeNote ? ` · ${receipt.storeNote}` : ''}
         </Text>
         <Text style={[styles.smallText, receipt.status === 'pending' && styles.receiptPendingText]}>

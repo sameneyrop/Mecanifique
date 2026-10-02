@@ -96,8 +96,11 @@ export type PartsReceipt = {
   hasTicket: boolean;
   // Pieza pedida que llega otro día: se paga hoy y se instala en la visita de regreso.
   ordered?: boolean;
+  /** Vacía si lo emitió una refaccionaria de Mostrador (fromStore). */
   photoUrl: string;
   storeNote: string | null;
+  /** Ticket emitido por la tienda desde su Mostrador: precio real de la tienda, sin foto. */
+  fromStore?: boolean;
   status: 'accepted' | 'pending' | 'rejected';
   createdAt: string;
 };

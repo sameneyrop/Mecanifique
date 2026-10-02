@@ -182,7 +182,7 @@ export function createMostradorRouter(deps: MostradorDeps) {
         result.mechanicId,
         `${result.storeName} ${result.available === "yes" ? "tiene" : "consigue"} tu ${result.part.toLowerCase()}`,
         `Desde ${money(result.cheapest ?? 0)}. Ábrela para apartarla.`,
-        { partRequestId: id }
+        { partRequestId: id, ...(result.serviceRequestId ? { requestId: result.serviceRequestId } : {}) }
       );
     }
     res.json({ ok: true });
@@ -194,7 +194,8 @@ export function createMostradorRouter(deps: MostradorDeps) {
     if (!id) throw new MostradorError(400, "Apartado inválido");
     const hold = await dispatchHold(member.storeId, id);
     await notifyMechanic(hold.mechanicId, "Tu pieza va en camino", `${hold.storeName} mandó tu ${hold.part.toLowerCase()} con su repartidor.`, {
-      partRequestId: hold.partRequestId
+      partRequestId: hold.partRequestId,
+      ...(hold.serviceRequestId ? { requestId: hold.serviceRequestId } : {})
     });
     res.json({ ok: true });
   }));
@@ -237,7 +238,7 @@ export function createMostradorRouter(deps: MostradorDeps) {
       hold.mechanicId,
       `${hold.storeName} ya no puede entregar tu pieza`,
       `Aparta otra respuesta de tu ${hold.part.toLowerCase()} o pregunta de nuevo.`,
-      { partRequestId: hold.partRequestId }
+      { partRequestId: hold.partRequestId, ...(hold.serviceRequestId ? { requestId: hold.serviceRequestId } : {}) }
     );
     res.json({ ok: true });
   }));

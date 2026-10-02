@@ -535,11 +535,18 @@ export type MechanicPartRequest = {
     storeId: number;
     storeName: string;
     method: "pickup" | "delivery";
-    status: string;
+    status: "held" | "dispatched" | "delivered" | "cancelled" | "expired";
     price: number;
     expiresAt: string;
     ticketCode: string | null;
+    /** Si la tienda lo canceló, por qué (el mecánico puede apartar otra). */
+    cancelledBy: "mechanic" | "store" | null;
+    cancelReason: string | null;
     address: string | null;
+    city: string;
+    storePhone: string | null;
+    latitude: number | null;
+    longitude: number | null;
   };
 };
 
@@ -567,11 +574,19 @@ export async function mechanicPartRequests(mechanicId: number, serviceRequestId?
        FROM part_offers WHERE part_request_id = ? ORDER BY id`,
       [request.id]
     );
+    // Una tienda que canceló un apartado de esta pieza ya no la puede surtir.
+    const storeCancelled = await all<{ storeId: number; reason: string | null }>(
+      "SELECT store_id AS storeId, cancel_reason AS reason FROM part_holds WHERE part_request_id = ? AND cancelled_by = 'store'",
+      [request.id]
+    );
     const stores = targets
       .filter((target) => target.respondedAt)
       .map((target) => {
-        const mine = offers.filter((offer) => offer.storeId === target.storeId);
-        const decline = mine.find((offer) => offer.available === "no");
+        const cancelled = storeCancelled.find((row) => row.storeId === target.storeId);
+        const mine = cancelled ? [] : offers.filter((offer) => offer.storeId === target.storeId);
+        const decline = cancelled
+          ? { declineReason: cancelled.reason || "Ya no la tiene" }
+          : mine.find((offer) => offer.available === "no");
         return {
           storeId: target.storeId,
           name: target.name,
@@ -602,9 +617,10 @@ export async function mechanicPartRequests(mechanicId: number, serviceRequestId?
       });
     const hold = await get<NonNullable<MechanicPartRequest["hold"]>>(
       `SELECT h.id, h.offer_id AS offerId, h.store_id AS storeId, s.name AS storeName, h.method, h.status, h.price,
-              h.expires_at AS expiresAt, h.ticket_code AS ticketCode, s.address
+              h.expires_at AS expiresAt, h.ticket_code AS ticketCode, h.cancelled_by AS cancelledBy, h.cancel_reason AS cancelReason,
+              s.address, s.city, s.phone AS storePhone, s.latitude, s.longitude
        FROM part_holds h JOIN parts_stores s ON s.id = h.store_id
-       WHERE h.part_request_id = ? AND h.status IN ('held', 'dispatched', 'delivered')
+       WHERE h.part_request_id = ?
        ORDER BY h.id DESC LIMIT 1`,
       [request.id]
     );
@@ -637,6 +653,11 @@ export async function holdOffer(
     [offerId, partRequestId]
   );
   if (!offer || offer.available === "no" || offer.price == null) throw new MostradorError(404, "Respuesta no encontrada");
+  const storeCancelled = await get<{ id: number }>(
+    "SELECT id FROM part_holds WHERE part_request_id = ? AND store_id = ? AND cancelled_by = 'store' LIMIT 1",
+    [partRequestId, offer.storeId]
+  );
+  if (storeCancelled) throw new MostradorError(409, "Esa tienda ya no la tiene. Aparta en otra.");
   if (method === "delivery" && !offer.delivery) throw new MostradorError(409, "Esa tienda no tiene repartidor: pasa por ella.");
 
   const claimed = await run("UPDATE part_requests SET status = 'held' WHERE id = ? AND status = 'open'", [partRequestId]);
@@ -694,12 +715,27 @@ export async function respondToPartRequest(input: {
   userId: number;
   partRequestId: number;
   body: unknown;
-}): Promise<{ mechanicId: number; part: string; storeName: string; available: "yes" | "order" | "no"; cheapest: number | null }> {
+}): Promise<{
+  mechanicId: number;
+  serviceRequestId: number | null;
+  part: string;
+  storeName: string;
+  available: "yes" | "order" | "no";
+  cheapest: number | null;
+}> {
   const parsed = respondSchema.safeParse(input.body);
   if (!parsed.success) throw new MostradorError(400, "Escribe el precio, el tipo de pieza y si la tienes.");
-  const target = await get<{ respondedAt: string | null; status: string; canRespond: number; mechanicId: number; part: string; storeName: string }>(
+  const target = await get<{
+    respondedAt: string | null;
+    status: string;
+    canRespond: number;
+    mechanicId: number;
+    serviceRequestId: number | null;
+    part: string;
+    storeName: string;
+  }>(
     `SELECT t.responded_at AS respondedAt, r.status, r.respond_until > CURRENT_TIMESTAMP AS canRespond, r.mechanic_id AS mechanicId,
-            r.part, s.name AS storeName
+            r.service_request_id AS serviceRequestId, r.part, s.name AS storeName
      FROM part_request_targets t JOIN part_requests r ON r.id = t.part_request_id JOIN parts_stores s ON s.id = t.store_id
      WHERE t.part_request_id = ? AND t.store_id = ?`,
     [input.partRequestId, input.storeId]
@@ -720,7 +756,14 @@ export async function respondToPartRequest(input: {
       `INSERT INTO part_offers (part_request_id, store_id, responder_user_id, available, decline_reason) VALUES (?, ?, ?, 'no', ?)`,
       [input.partRequestId, input.storeId, input.userId, data.reason]
     );
-    return { mechanicId: target.mechanicId, part: target.part, storeName: target.storeName, available: "no", cheapest: null };
+    return {
+      mechanicId: target.mechanicId,
+      serviceRequestId: target.serviceRequestId,
+      part: target.part,
+      storeName: target.storeName,
+      available: "no",
+      cheapest: null
+    };
   }
   for (const option of data.options) {
     await run(
@@ -741,6 +784,7 @@ export async function respondToPartRequest(input: {
   }
   return {
     mechanicId: target.mechanicId,
+    serviceRequestId: target.serviceRequestId,
     part: target.part,
     storeName: target.storeName,
     available: data.available,
@@ -900,6 +944,10 @@ export type StoreFeed = {
     warranty: string | null;
     distanceKm: number | null;
     expiresAt: string;
+    /** Solo de quien ya apartó con esta tienda, para ponerse de acuerdo. */
+    mechanicPhone: string | null;
+    /** A dónde llevarla (solo si se la mandan): el auto o donde estaba el mecánico. */
+    destination: { latitude: number; longitude: number } | null;
   }>;
   sales: Array<{ id: number; deliveredAt: string; part: string; vehicle: string | null; mechanicName: string; price: number; paymentMethod: string | null; ticketCode: string | null }>;
   stats: {
@@ -1001,9 +1049,12 @@ export async function storeFeed(storeId: number): Promise<StoreFeed> {
     warranty: string | null;
     distanceKm: number | null;
     expiresAt: string;
+    mechanicPhone: string | null;
+    latitude: number | null;
+    longitude: number | null;
   }>(
     `SELECT h.id, r.part, r.vehicle, m.full_name AS mechanicName, h.method, h.status, h.price, o.kind, o.brand, o.stock, o.warranty,
-            t.distance_km AS distanceKm, h.expires_at AS expiresAt
+            t.distance_km AS distanceKm, h.expires_at AS expiresAt, m.phone AS mechanicPhone, r.latitude, r.longitude
      FROM part_holds h
      JOIN part_requests r ON r.id = h.part_request_id
      JOIN part_offers o ON o.id = h.offer_id
@@ -1024,7 +1075,12 @@ export async function storeFeed(storeId: number): Promise<StoreFeed> {
     text: offerText(row),
     warranty: row.warranty,
     distanceKm: row.distanceKm,
-    expiresAt: row.expiresAt
+    expiresAt: row.expiresAt,
+    mechanicPhone: row.mechanicPhone,
+    destination:
+      row.method === "delivery" && row.latitude != null && row.longitude != null
+        ? { latitude: row.latitude, longitude: row.longitude }
+        : null
   }));
 
   const salesRows = await all<{

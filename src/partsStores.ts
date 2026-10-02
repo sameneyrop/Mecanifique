@@ -33,6 +33,8 @@ export type PartsStore = {
   /** Veces que un mecánico dijo "sí tenían la pieza" (últimos 90 días). */
   recentHits: number;
   distanceKm: number | null;
+  /** Contesta desde el Mostrador y el lugar de búsqueda queda dentro de su distancia. */
+  mostrador: boolean;
 };
 
 const STORE_COLUMNS = `s.id, s.name, s.phone, s.whatsapp, s.address, s.zone, s.city, s.latitude, s.longitude,
@@ -85,17 +87,23 @@ export async function seedPartsStores(seed = PARTS_STORES_SEED): Promise<void> {
  * o del mecánico). Las que no tienen ubicación van al final.
  */
 export async function listPartsStores(near?: { latitude: number; longitude: number } | null): Promise<PartsStore[]> {
-  const rows = await all<Omit<PartsStore, "distanceKm">>(
-    `SELECT ${STORE_COLUMNS} FROM parts_stores s WHERE s.status = 'active' ORDER BY s.name LIMIT 300`
+  const rows = await all<Omit<PartsStore, "distanceKm" | "mostrador"> & { mostradorOn: number; radiusKm: number }>(
+    `SELECT ${STORE_COLUMNS}, s.radius_km AS radiusKm,
+            (s.mostrador_enabled = 1 AND s.receiving = 1 AND EXISTS (SELECT 1 FROM store_members m WHERE m.store_id = s.id)) AS mostradorOn
+     FROM parts_stores s WHERE s.status = 'active' ORDER BY s.name LIMIT 300`
   );
-  const withDistance = rows.map((row) => ({
-    ...row,
-    recentHits: Number(row.recentHits ?? 0),
-    distanceKm:
+  const withDistance = rows.map(({ mostradorOn, radiusKm, ...row }) => {
+    const km =
       near && row.latitude != null && row.longitude != null
         ? Math.round(distanceKm(near.latitude, near.longitude, row.latitude, row.longitude) * 10) / 10
-        : null
-  }));
+        : null;
+    return {
+      ...row,
+      recentHits: Number(row.recentHits ?? 0),
+      distanceKm: km,
+      mostrador: Boolean(mostradorOn) && km !== null && km <= Number(radiusKm)
+    };
+  });
   return withDistance.sort((a, b) => {
     if (a.distanceKm === null && b.distanceKm === null) return b.recentHits - a.recentHits || a.name.localeCompare(b.name);
     if (a.distanceKm === null) return 1;
@@ -177,12 +185,12 @@ export async function markStoreHadPart(input: {
 
 /** Admin: sugerencias por revisar. */
 export async function pendingPartsStores(): Promise<Array<PartsStore & { suggestedBy: string | null; createdAt: string }>> {
-  const rows = await all<Omit<PartsStore, "distanceKm"> & { suggestedBy: string | null; createdAt: string }>(
+  const rows = await all<Omit<PartsStore, "distanceKm" | "mostrador"> & { suggestedBy: string | null; createdAt: string }>(
     `SELECT ${STORE_COLUMNS}, u.full_name AS suggestedBy, s.created_at AS createdAt
      FROM parts_stores s LEFT JOIN users u ON u.id = s.suggested_by_user_id
      WHERE s.status = 'pending' ORDER BY s.created_at`
   );
-  return rows.map((row) => ({ ...row, recentHits: Number(row.recentHits ?? 0), distanceKm: null }));
+  return rows.map((row) => ({ ...row, recentHits: Number(row.recentHits ?? 0), distanceKm: null, mostrador: false }));
 }
 
 export async function reviewPartsStore(storeId: number, approve: boolean): Promise<void> {

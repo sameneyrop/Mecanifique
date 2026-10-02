@@ -2658,10 +2658,48 @@ test("Mostrador: invitación, solicitud a tiendas cercanas, respuestas, apartado
     });
     const lateMine = (await mostrador.mechanicPartRequests(mechanicId, requestId)).find((r) => r.id === late.id);
     const lateHold = await mostrador.holdOffer(mechanicId, late.id, { offerId: lateMine.stores[0].options[0].offerId, method: "delivery" });
+    // Con el apartado, la tienda ve a dónde mandarla y el teléfono del mecánico; las demás no.
+    const deliveryHold = (await mostrador.storeFeed(second)).holds.find((item) => item.id === lateHold.holdId);
+    assert.deepEqual(deliveryHold.destination, { latitude: -60, longitude: -60 });
+    assert.ok(deliveryHold.mechanicPhone);
+    assert.equal((await mostrador.storeFeed(near)).holds.length, 0);
     await run("UPDATE part_holds SET expires_at = datetime('now', '-1 minute') WHERE id = ?", [lateHold.holdId]);
     const swept = await mostrador.sweepMostrador();
     assert.ok(swept.some((item) => item.holdId === lateHold.holdId));
     assert.equal((await get("SELECT status FROM part_holds WHERE id = ?", [lateHold.holdId])).status, "expired");
+
+    // La tienda cancela un apartado: el mecánico ve por qué y ya no le puede apartar a ella, pero sí a otra.
+    const pump = await mostrador.createPartRequest(mechanicId, { serviceRequestId: requestId, part: "Bomba de agua" }, distance);
+    partRequestIds.push(pump.id);
+    for (const [id, price] of [[near, 900], [second, 1100]]) {
+      await mostrador.respondToPartRequest({
+        storeId: id,
+        userId: staff[id],
+        partRequestId: pump.id,
+        body: { available: "yes", options: [{ kind: "generic", price, stock: "counter" }] }
+      });
+    }
+    let pumpMine = (await mostrador.mechanicPartRequests(mechanicId, requestId)).find((r) => r.id === pump.id);
+    const nearOffer = pumpMine.stores.find((item) => item.storeId === near).options[0].offerId;
+    const pumpHold = await mostrador.holdOffer(mechanicId, pump.id, { offerId: nearOffer, method: "pickup" });
+    await mostrador.cancelHoldByStore(near, pumpHold.holdId, { reason: "Se vendió en mostrador" });
+    pumpMine = (await mostrador.mechanicPartRequests(mechanicId, requestId)).find((r) => r.id === pump.id);
+    assert.equal(pumpMine.status, "open");
+    assert.equal(pumpMine.hold.cancelledBy, "store");
+    const nearAfter = pumpMine.stores.find((item) => item.storeId === near);
+    assert.equal(nearAfter.options.length, 0);
+    assert.equal(nearAfter.declined, "Se vendió en mostrador");
+    await assert.rejects(mostrador.holdOffer(mechanicId, pump.id, { offerId: nearOffer, method: "pickup" }), (error) => error.status === 409);
+    const secondOffer = pumpMine.stores.find((item) => item.storeId === second).options[0].offerId;
+    await mostrador.holdOffer(mechanicId, pump.id, { offerId: secondOffer, method: "pickup" });
+
+    // En la lista de refaccionarias se marcan las que contestan en la app y alcanzan el lugar.
+    const { listPartsStores } = require("../src/partsStores.ts");
+    const listed = await listPartsStores({ latitude: -60, longitude: -60 });
+    const flag = (id) => listed.find((item) => item.id === id).mostrador;
+    assert.equal(flag(near), true);
+    assert.equal(flag(far), false, "fuera de su distancia");
+    assert.equal(flag(paused), false, "en pausa");
   } finally {
     for (const id of partRequestIds) {
       await run("DELETE FROM part_holds WHERE part_request_id = ?", [id]);

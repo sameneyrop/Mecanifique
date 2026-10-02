@@ -591,6 +591,56 @@ function buildStyles(colors: Palette) {
     borderRadius: 10,
     backgroundColor: colors.primaryLight,
   },
+  receiptStoreThumb: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Mostrador: preguntar una pieza a las refaccionarias y apartar la respuesta.
+  askStoresBox: {
+    gap: 10,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLighter,
+  },
+  partStoreBox: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.surface,
+  },
+  partStoreHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  partOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  partPrice: {
+    color: colors.textDark,
+    fontFamily: fonts.extrabold,
+    fontSize: 20,
+    fontVariant: ['tabular-nums'],
+  },
+  partHoldBox: {
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.successBorder,
+    backgroundColor: colors.successBg,
+  },
+  partHoldTitle: {
+    color: colors.successText,
+    fontFamily: fonts.extrabold,
+    fontSize: 16,
+  },
   receiptPendingText: {
     color: colors.primaryDark,
     fontFamily: fonts.bold,

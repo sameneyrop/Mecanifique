@@ -4,6 +4,7 @@ import { Linking, Text, View } from 'react-native';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from './ui';
+import { AskStoresBox, MyPartRequests } from './PartRequests';
 import { formatError, formatServerDate, openServiceNavigation } from '../utils';
 import type { ApiCall } from '../App';
 
@@ -12,6 +13,8 @@ import type { ApiCall } from '../App';
  * cercanas al auto primero; con un toque se manda por WhatsApp "¿tienen tal
  * pieza para tal auto?" con los datos del servicio, o se llama. El mecánico
  * marca "sí tenían la pieza" y puede sugerir tiendas que no estén.
+ * Si hay refaccionarias de Mostrador cerca, además le puede preguntar a todas
+ * de un jalón y apartar la respuesta (components/PartRequests.tsx).
  */
 
 type Store = {
@@ -28,6 +31,8 @@ type Store = {
   specialties: string | null;
   recentHits: number;
   distanceKm: number | null;
+  /** Contesta desde el Mostrador y alcanza el lugar. */
+  mostrador: boolean;
 };
 
 const PAGE_SIZE = 12;
@@ -56,6 +61,7 @@ export function PartsStoreFinder({
   const [marked, setMarked] = useState<number[]>([]);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestion, setSuggestion] = useState({ name: '', phone: '', address: '' });
+  const [askedKey, setAskedKey] = useState(0);
   const apiRef = useRef(api);
   apiRef.current = api;
 
@@ -141,20 +147,39 @@ export function PartsStoreFinder({
     ? 'Refaccionarias más cercanas al auto: pregúntales por WhatsApp o llámales.'
     : 'Refaccionarias cerca de ti: pregúntales por WhatsApp o llámales.';
 
+  const myRequests = <MyPartRequests api={api} serviceRequestId={request?.id} refreshKey={askedKey} />;
+  const mostradorStores = stores?.filter((store) => store.mostrador).length ?? 0;
+
   if (!open) {
     return (
-      <Card title="¿Te falta una pieza?" subtitle={subtitle}>
-        <SecondaryButton title="Buscar en refaccionarias" onPress={toggle} />
-      </Card>
+      <>
+        {myRequests}
+        <Card title="¿Te falta una pieza?" subtitle={subtitle}>
+          <SecondaryButton title="Buscar en refaccionarias" onPress={toggle} />
+        </Card>
+      </>
     );
   }
 
   return (
+    <>
+    {myRequests}
     <Card title="Buscar la pieza" subtitle={subtitle}>
       <View style={styles.stack}>
         <Field label="¿Qué pieza buscas?">
           <Input value={part} maxLength={120} placeholder="Ej. bomba de gasolina" onChangeText={setPart} />
         </Field>
+        <AskStoresBox
+          api={api}
+          serviceRequestId={request?.id}
+          near={near}
+          part={part}
+          stores={mostradorStores}
+          onAsked={() => {
+            setPart('');
+            setAskedKey((key) => key + 1);
+          }}
+        />
         {part.trim().length >= 3 && (
           <Text style={styles.smallText}>
             Mensaje: “Hola, ¿tienen {part.trim()}
@@ -174,6 +199,7 @@ export function PartsStoreFinder({
                 <Text style={styles.smallText}>
                   {[store.distanceKm != null ? `a ${store.distanceKm} km` : null, store.zone, store.hours].filter(Boolean).join(' · ')}
                 </Text>
+                {store.mostrador ? <InfoRow icon="flash-outline" text="Contesta aquí en la app" /> : null}
                 {store.specialties ? <InfoRow icon="construct-outline" text={store.specialties} /> : null}
                 {store.recentHits > 0 ? (
                   <InfoRow
@@ -245,6 +271,7 @@ export function PartsStoreFinder({
         <SecondaryButton title="Cerrar" compact onPress={toggle} />
       </View>
     </Card>
+    </>
   );
 }
 
