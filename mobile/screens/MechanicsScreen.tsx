@@ -11,7 +11,7 @@ import { MechanicRadar } from '../components/MechanicRadar';
 import { ILLUSTRATIONS } from '../illustrations';
 import { PromotionItem, type Promotion } from './PromotionsScreen';
 import type { ApiCall } from '../App';
-import { formatError, formatPesos, getMechanicPublicStatus, formatCalendarDate } from '../utils';
+import { formatError, formatPesos, getMechanicPublicStatus, formatCalendarDate, mechanicCoverageText } from '../utils';
 
 type ScheduleSlot = {
   id: number;
@@ -223,18 +223,23 @@ export function MechanicsScreen({
           </Animated.View>
     
           <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
-            <Card title="Busca por zona" subtitle="Escribe una ciudad y una zona para ver a todos sus mecánicos.">
+            <Card
+              title="Busca por zona"
+              subtitle="Escribe tu ciudad o municipio para ver a los mecánicos que atienden ahí. Si pones tu zona, primero salen los de esa zona."
+            >
               <View style={styles.stack}>
                 <View style={styles.row}>
-                  <Field label="Ciudad" style={styles.flex}>
+                  <Field label="Ciudad o municipio" style={styles.flex}>
                     <Input
                       value={mechanicsFilter.city}
+                      placeholder="Ej. Jesús María"
                       onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, city: value })}
                     />
                   </Field>
-                  <Field label="Zona" style={styles.flex}>
+                  <Field label="Zona (opcional)" style={styles.flex}>
                     <Input
                       value={mechanicsFilter.zone}
+                      placeholder="Ej. Sur"
                       onChangeText={(value) => setMechanicsFilter({ ...mechanicsFilter, zone: value })}
                     />
                   </Field>
@@ -340,6 +345,9 @@ export function MechanicsScreen({
                 icon="location-outline"
                 text={`${selected.city} · ${selected.zone}${typeof selectedDistanceKm === 'number' ? ` · a ${selectedDistanceKm.toFixed(1)} km` : ''}`}
               />
+              {selected.serviceAreas && selected.serviceAreas.length > 0 ? (
+                <InfoRow icon="map-outline" text={`Atiende en ${mechanicCoverageText(selected)}`} lines={3} />
+              ) : null}
               <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(selected)} />
               {selected.laborRate ? (
                 <InfoRow icon="cash-outline" text={`Visita y diagnóstico: ${formatPesos(selected.laborRate)}`} />

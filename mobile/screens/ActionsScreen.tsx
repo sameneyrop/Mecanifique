@@ -28,6 +28,7 @@ import { AdminCommissionsCard, CommissionsPanel } from '../components/Commission
 import { AdminWaitlistCard } from '../components/Waitlist';
 import { AdminPartsStoresCard } from '../components/PartsStoreFinder';
 import { MotionPreview } from '../components/MotionPreview';
+import { ServiceAreaCard } from '../components/ServiceAreaCard';
 import { BiometricSetting } from '../components/BiometricSetting';
 import { takeMechanicTab, type MechanicTab } from '../navigationRequests';
 import { RateSuggestion } from '../components/MarketInsights';
@@ -423,6 +424,7 @@ export function ActionsScreen({
                   <PrimaryButton title="Guardar cambios" busy={busy} onPress={onSavePublicProfile} />
                 </View>
               </Card>
+              <ServiceAreaCard api={api} />
               <TipInfoCard api={api} />
               <IdentityVerificationCard
                 identityState={identityState}

@@ -222,12 +222,26 @@ mantener informadas a ambas partes.
   para siempre); `GET /api/mechanics/me` reconcilia a quien ya estaba en
   ese caso.
 - **Emparejamiento por distancia**: si la solicitud tiene coordenadas, se
-  ofrece al mecánico disponible más cercano dentro de 25 km
-  (`findAvailableMechanic`, `MATCH_RADIUS_KM`). La ciudad/zona escritas son
-  solo respaldo, y solo para mecánicos sin ubicación registrada (antes era
-  la única forma, y fallaba con cualquier diferencia de texto). El mecánico
-  manda su ubicación al conectarse (CONECTARME), además de durante un
-  servicio activo.
+  ofrece al mecánico disponible más cercano entre los que tienen el auto
+  dentro de su radio (`findAvailableMechanic`; "¿Hasta dónde vas?", 25 km si
+  no lo ha elegido). La ciudad/zona escritas son solo respaldo, y solo para
+  mecánicos sin ubicación registrada. El mecánico manda su ubicación al
+  conectarse (CONECTARME), además de durante un servicio activo.
+- **Dónde da servicio cada mecánico** (`src/serviceAreas.ts`, tarjeta
+  `ServiceAreaCard` en Acciones → Mi perfil; `GET/PUT
+  /api/mechanics/me/service-area`): ciudad y zona de su taller (lo que se ve
+  en su perfil; antes no se podían cambiar después del registro), municipios
+  del estado donde también atiende (`mechanics.service_areas`, o "Todo el
+  estado") y hasta dónde va por un "Ahora mismo" (`service_radius_km`: 10,
+  25, 50 km o 100 = todo el estado). Los lugares se comparan sin acentos,
+  mayúsculas ni "Zona"/"Col." (`placeKey`) y "Ags" es Aguascalientes
+  (`resolveMunicipality`); la ciudad se guarda con su nombre oficial. La
+  búsqueda de la pestaña Mecánicos (`GET /mechanics?city=&zone=`) lista a
+  quien atiende en esa ciudad (su taller o uno de sus municipios) y la zona
+  solo ordena: antes ciudad y zona tenían que coincidir letra por letra, y la
+  zona que llena el GPS del cliente suele ser una colonia ("Canteras"), así
+  que casi nunca había resultados. El perfil público dice "Atiende en
+  Aguascalientes y Jesús María".
 - **Pedir un servicio con menos pasos**: la ubicación de la solicitud se
   llena sola con el GPS (coordenadas + ciudad/zona/dirección por
   geocodificación inversa, todo editable, con botón "Usar mi ubicación

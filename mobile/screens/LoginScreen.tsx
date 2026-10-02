@@ -470,9 +470,17 @@ export function LoginScreen({
                           <Input value={mechanicForm.city} onChangeText={(value) => setMechanicForm({ ...mechanicForm, city: value })} />
                         </Field>
                         <Field label="Zona" style={styles.flex}>
-                          <Input value={mechanicForm.zone} onChangeText={(value) => setMechanicForm({ ...mechanicForm, zone: value })} />
+                          <Input
+                            value={mechanicForm.zone}
+                            placeholder="Ej. Sur"
+                            onChangeText={(value) => setMechanicForm({ ...mechanicForm, zone: value })}
+                          />
                         </Field>
                       </View>
+                      <Text style={styles.smallText}>
+                        La de tu taller o donde estás más seguido. ¿Trabajas en varios municipios? Después los eliges en Acciones →
+                        Mi perfil → Dónde das servicio.
+                      </Text>
                       <Field label="Años de experiencia">
                         <Input
                           value={mechanicForm.yearsExperience}

@@ -121,6 +121,14 @@ export async function initDb(): Promise<void> {
   await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE profile_photo_url IS NULL AND is_online = 1");
   await ensureColumn("mechanics", "gallery_json", "ALTER TABLE mechanics ADD COLUMN gallery_json TEXT NOT NULL DEFAULT '[]'");
   await ensureColumn("mechanics", "review_count", "ALTER TABLE mechanics ADD COLUMN review_count INTEGER NOT NULL DEFAULT 0");
+  // Dónde da servicio (src/serviceAreas.ts): municipios donde también atiende
+  // (además de su ciudad) y hasta cuántos km va por un "Ahora mismo".
+  await ensureColumn("mechanics", "service_areas", "ALTER TABLE mechanics ADD COLUMN service_areas TEXT NOT NULL DEFAULT '[]'");
+  await ensureColumn(
+    "mechanics",
+    "service_radius_km",
+    "ALTER TABLE mechanics ADD COLUMN service_radius_km INTEGER NOT NULL DEFAULT 25"
+  );
   await ensureColumn(
     "mechanics",
     "labor_rate",

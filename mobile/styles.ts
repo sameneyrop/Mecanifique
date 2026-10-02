@@ -1240,6 +1240,12 @@ function buildStyles(colors: Palette) {
     gap: 8,
     paddingVertical: 2,
   },
+  // Opciones que se pueden marcar varias, en renglones que se acomodan solos.
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',

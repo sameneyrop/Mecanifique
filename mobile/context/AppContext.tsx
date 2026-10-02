@@ -40,6 +40,8 @@ type Mechanic = {
   gallery?: string[];
   reviewCount?: number;
   laborRate?: number | null;
+  /** Municipios donde también atiende, además de su ciudad (src/serviceAreas.ts). */
+  serviceAreas?: string[];
 };
 
 type RequestSummary = {

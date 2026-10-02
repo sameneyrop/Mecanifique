@@ -11,6 +11,18 @@ import { vehiclesRouter } from "./routes/vehicles";
 import { communityAuthorName, createCommunityRouter } from "./routes/community";
 import { approximateLocation, contactPhoneSql } from "./privacy";
 import {
+  AGUASCALIENTES_MUNICIPALITIES,
+  DEFAULT_SERVICE_RADIUS_KM,
+  SERVICE_RADIUS_OPTIONS,
+  ServiceAreaError,
+  canonicalCity,
+  coversCity,
+  getServiceArea,
+  parseServiceAreas,
+  saveServiceArea,
+  zoneMatches
+} from "./serviceAreas";
+import {
   supabaseAuthMiddleware,
   requireSupabaseAuth,
   requireSupabaseRole,
@@ -982,8 +994,6 @@ function parseSpecialties(raw: string): string[] {
 // buscaba a otro; si el hold vencía sin respuesta, no pasaba nada en absoluto.
 // En ambos casos el cliente veía "Pendiente" para siempre.
 
-const MATCH_RADIUS_KM = 25;
-
 // Condiciones para que un mecánico pueda recibir una oferta ahora mismo.
 // Usa dos parámetros: requestId (dos veces) para excluir a quien ya no la
 // tomó.
@@ -1011,11 +1021,13 @@ const ELIGIBLE_MECHANIC_CONDITIONS = `
 
 /**
  * Siguiente mecánico para una solicitud. Si la solicitud tiene coordenadas,
- * el más cercano dentro de MATCH_RADIUS_KM. Si no hay nadie cerca (o la
- * solicitud no tiene coordenadas), cae a coincidencia por ciudad/zona
- * escritas — antes era la única forma, y fallaba con cualquier diferencia de
- * texto ("Norte" vs "Zona Norte") aunque estuvieran a 2 km. En ese respaldo,
- * si la solicitud sí tiene coordenadas, solo cuentan mecánicos sin ubicación
+ * el más cercano entre los que la tienen dentro de su radio ("¿Hasta dónde
+ * vas?", 25 km si no lo ha elegido; src/serviceAreas.ts). Si no hay nadie (o
+ * la solicitud no tiene coordenadas), cae a la ciudad escrita: quien atiende
+ * en esa ciudad (la de su taller o una de sus áreas), primero los de esa
+ * zona. Se compara sin acentos ni "Zona"/"Col.": antes tenía que coincidir
+ * letra por letra ("Norte" vs "Zona Norte" no contaba). En ese respaldo, si
+ * la solicitud sí tiene coordenadas, solo cuentan mecánicos sin ubicación
  * conocida: uno que sabemos que está lejos no se elige por el texto.
  * Si se pasa requestId, excluye a quienes ya no tomaron esa solicitud.
  */
@@ -1026,9 +1038,9 @@ async function findAvailableMechanic(
   coords: { latitude: number; longitude: number } | null
 ): Promise<number | null> {
   if (coords) {
-    const candidates = await all<{ id: number; latitude: number; longitude: number; rating: number }>(
+    const candidates = await all<{ id: number; latitude: number; longitude: number; rating: number; serviceRadiusKm: number | null }>(
       `
-      SELECT id, latitude, longitude, rating
+      SELECT id, latitude, longitude, rating, service_radius_km AS serviceRadiusKm
       FROM mechanics
       WHERE latitude IS NOT NULL
         AND longitude IS NOT NULL
@@ -1040,29 +1052,38 @@ async function findAvailableMechanic(
       .map((mechanic) => ({
         id: mechanic.id,
         rating: mechanic.rating,
+        radiusKm: mechanic.serviceRadiusKm ?? DEFAULT_SERVICE_RADIUS_KM,
         distanceKm: calculateDistanceKm(coords.latitude, coords.longitude, mechanic.latitude, mechanic.longitude)
       }))
-      .filter((mechanic) => mechanic.distanceKm <= MATCH_RADIUS_KM)
+      .filter((mechanic) => mechanic.distanceKm <= mechanic.radiusKm)
       .sort((a, b) => a.distanceKm - b.distanceKm || b.rating - a.rating)[0];
     if (nearest) {
       return nearest.id;
     }
   }
 
-  const row = await get<{ id: number }>(
+  const byPlace = await all<{ id: number; city: string; zone: string; serviceAreas: string | null }>(
     `
-    SELECT id
+    SELECT id, city, zone, service_areas AS serviceAreas
     FROM mechanics
-    WHERE city = ?
-      AND zone = ?
+    WHERE ${ELIGIBLE_MECHANIC_CONDITIONS}
       ${coords ? "AND (latitude IS NULL OR longitude IS NULL)" : ""}
-      AND ${ELIGIBLE_MECHANIC_CONDITIONS}
     ORDER BY rating DESC, jobs_completed DESC
-    LIMIT 1
     `,
-    [city, zone, requestId, requestId]
+    [requestId, requestId]
   );
-  return row?.id ?? null;
+  // Primero los de esa zona, luego los que tienen su taller en esa ciudad y
+  // al final los que la atienden desde otro municipio; entre iguales, el
+  // orden de la consulta (calificación).
+  const ranked = byPlace
+    .filter((mechanic) => coversCity({ city: mechanic.city, serviceAreas: parseServiceAreas(mechanic.serviceAreas) }, city))
+    .map((mechanic, order) => ({
+      id: mechanic.id,
+      order,
+      rank: (zoneMatches(mechanic.zone, zone) ? 0 : 2) + (coversCity({ city: mechanic.city, serviceAreas: [] }, city) ? 0 : 1)
+    }))
+    .sort((a, b) => a.rank - b.rank || a.order - b.order);
+  return ranked[0]?.id ?? null;
 }
 
 /** Coordenadas de una fila de solicitud, o null si no las tiene. */
@@ -2056,8 +2077,8 @@ app.post(
         payload.password,
         payload.fullName,
         payload.phone,
-        payload.city,
-        payload.zone,
+        canonicalCity(payload.city),
+        payload.zone.trim(),
         payload.yearsExperience,
         payload.specialties
       );
@@ -2271,7 +2292,7 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
         [
           authUser.fullName,
           phone,
-          payload.city,
+          canonicalCity(payload.city),
           payload.zone,
           payload.yearsExperience,
           JSON.stringify(payload.specialties),
@@ -3396,30 +3417,8 @@ app.post(
 
     let mechanicId = payload.mechanicId;
     if (!mechanicId) {
-      const bestMechanic = await get<{ id: number }>(
-        `
-        SELECT id
-        FROM mechanics
-        WHERE status = 'active'
-          AND is_online = 1
-          AND is_available = 1
-          AND city = ?
-          AND zone = ?
-          AND NOT EXISTS (
-            SELECT 1
-            FROM service_requests held
-            WHERE held.mechanic_id = mechanics.id
-              AND held.status = 'pending'
-              AND held.hold_expires_at IS NOT NULL
-              AND held.hold_expires_at > CURRENT_TIMESTAMP
-          )
-        ORDER BY rating DESC, jobs_completed DESC
-        LIMIT 1
-        `,
-        [serviceRequest.city, serviceRequest.zone]
-      );
-
-      mechanicId = bestMechanic?.id;
+      // Por ciudad y zona escritas, con la misma comparación tolerante que el reparto.
+      mechanicId = (await findAvailableMechanic(serviceRequest.city, serviceRequest.zone, null, null)) ?? undefined;
     }
 
     if (!mechanicId) {
@@ -3531,27 +3530,20 @@ app.get(
       SELECT id, full_name AS fullName, city, zone, years_experience AS yearsExperience,
              specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
              latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, profile_photo_url AS profilePhotoUrl,
-             gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt
+             gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt,
+             service_areas AS serviceAreas
       FROM mechanics
       WHERE status = 'active'
     `;
     const params: Array<string | number> = [];
 
-    if (city) {
-      sql += " AND city = ?";
-      params.push(city);
-    }
-    if (zone) {
-      sql += " AND zone = ?";
-      params.push(zone);
-    }
     if (availableOnly) {
       sql += " AND is_available = 1";
     }
 
     sql += " ORDER BY rating DESC, jobs_completed DESC";
 
-    const mechanics = await all<MechanicRow>(sql, params);
+    const mechanics = await all<MechanicRow & { serviceAreas: string | null }>(sql, params);
     const normalized = mechanics.map(({ latitude: exactLatitude, longitude: exactLongitude, ...mechanic }) => {
       const shown = mechanic.isOnline === 1 ? approximateLocation(exactLatitude, exactLongitude) : null;
       return {
@@ -3560,10 +3552,28 @@ app.get(
         longitude: shown?.longitude ?? null,
         specialties: parseSpecialties(mechanic.specialties),
         gallery: JSON.parse(mechanic.galleryJson || '[]'),
+        serviceAreas: parseServiceAreas(mechanic.serviceAreas),
         isAvailable: mechanic.isAvailable === 1,
         isOnline: mechanic.isOnline === 1
       };
     });
+
+    // Por ciudad: quien atiende ahí (su taller o uno de sus municipios),
+    // comparando sin acentos ni "Zona"/"Col." (src/serviceAreas.ts). La zona
+    // no esconde a nadie: los de esa zona salen primero. Antes las dos tenían
+    // que coincidir letra por letra y casi nunca había resultados.
+    if (city?.trim() || zone?.trim()) {
+      const ranked = normalized
+        .filter((mechanic) => !city?.trim() || coversCity(mechanic, city))
+        .map((mechanic, order) => ({ mechanic, order, inZone: Boolean(zone?.trim()) && zoneMatches(mechanic.zone, zone) }))
+        .sort((a, b) => Number(b.inZone) - Number(a.inZone) || a.order - b.order)
+        .map((entry) => entry.mechanic);
+      if (!hasLocation) {
+        res.json(ranked);
+        return;
+      }
+      normalized.splice(0, normalized.length, ...ranked);
+    }
 
     if (!hasLocation) {
       res.json(normalized);
@@ -3993,11 +4003,14 @@ app.get(
       galleryJson: string | null;
       city: string;
       zone: string;
+      serviceAreas: string | null;
+      serviceRadiusKm: number | null;
     }>(
       `
       SELECT id, status, is_online AS isOnline, is_available AS isAvailable, labor_rate AS laborRate,
              bio, cover_photo_url AS coverPhotoUrl, profile_photo_url AS profilePhotoUrl,
-             gallery_json AS galleryJson, city, zone
+             gallery_json AS galleryJson, city, zone,
+             service_areas AS serviceAreas, service_radius_km AS serviceRadiusKm
       FROM mechanics
       WHERE id = ?
       `,
@@ -4018,10 +4031,42 @@ app.get(
       profilePhotoUrl: mechanic.profilePhotoUrl,
       gallery: JSON.parse(mechanic.galleryJson || "[]"),
       city: mechanic.city,
-      zone: mechanic.zone
+      zone: mechanic.zone,
+      serviceAreas: parseServiceAreas(mechanic.serviceAreas),
+      serviceRadiusKm: mechanic.serviceRadiusKm ?? DEFAULT_SERVICE_RADIUS_KM
     });
   })
 );
+
+// Dónde da servicio (src/serviceAreas.ts): ciudad y zona de su taller, los
+// municipios donde también atiende y hasta dónde va por un "Ahora mismo".
+app.get("/api/mechanics/me/service-area", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const mechanicId = req.auth?.user.mechanicId;
+  const area = mechanicId ? await getServiceArea(mechanicId) : null;
+  if (!area) {
+    res.status(404).json({ error: "Mecánico no encontrado" });
+    return;
+  }
+  res.json({ ...area, municipalities: AGUASCALIENTES_MUNICIPALITIES, radiusOptions: SERVICE_RADIUS_OPTIONS });
+}));
+
+app.put("/api/mechanics/me/service-area", requireAuth, requireRole("mechanic"), handleAsync(async (req, res) => {
+  const mechanicId = req.auth?.user.mechanicId;
+  if (!mechanicId) {
+    res.status(400).json({ error: "Mecánico autenticado inválido" });
+    return;
+  }
+  try {
+    const area = await saveServiceArea(mechanicId, req.body);
+    res.json({ ...area, municipalities: AGUASCALIENTES_MUNICIPALITIES, radiusOptions: SERVICE_RADIUS_OPTIONS });
+  } catch (error) {
+    if (error instanceof ServiceAreaError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
+    throw error;
+  }
+}));
 
 // Propina directa (ver src/tips.ts): el mecánico guarda, si quiere, su CLABE.
 const tipInfoSchema = z.object({

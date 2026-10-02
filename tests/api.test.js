@@ -2386,3 +2386,110 @@ test("privacidad: el listado público no trae teléfonos ni la ubicación exacta
   await run("UPDATE service_requests SET status = 'cancelled' WHERE id = ?", [offered.lastID]);
   assert.ok((await phonesNow()).customerPhone, "aceptada y luego cancelada: se siguen viendo por si hay cargo que aclarar");
 });
+
+test("zonas: municipios sin acentos ni prefijos, 'Ags' es Aguascalientes, y la zona 'Zona Sur' es 'sur'", () => {
+  const { placeKey, resolveMunicipality, canonicalCity, coversCity, zoneMatches, coverageText, AGUASCALIENTES_MUNICIPALITIES } =
+    require("../src/serviceAreas.ts");
+  assert.equal(placeKey("Zona Sur"), "sur");
+  assert.equal(placeKey("Col. Centro"), "centro");
+  assert.equal(resolveMunicipality("ags"), "Aguascalientes");
+  assert.equal(resolveMunicipality("JESUS MARIA"), "Jesús María");
+  assert.equal(resolveMunicipality("Pabellón"), "Pabellón de Arteaga");
+  assert.equal(resolveMunicipality("Rincón de R."), "Rincón de Romos");
+  assert.equal(resolveMunicipality("Zacatecas"), null);
+  assert.equal(resolveMunicipality("San"), null, "ambiguo: varios municipios empiezan así");
+  assert.equal(canonicalCity("  aguascalientes "), "Aguascalientes");
+  assert.equal(canonicalCity("León"), "León");
+
+  const mechanic = { city: "Aguascalientes", serviceAreas: ["Jesús María"] };
+  assert.equal(coversCity(mechanic, "Ags"), true);
+  assert.equal(coversCity(mechanic, "jesus maria"), true);
+  assert.equal(coversCity(mechanic, "Calvillo"), false);
+
+  assert.equal(zoneMatches("Zona Sur", "sur"), true);
+  assert.equal(zoneMatches("Centro", "Centro Histórico"), true);
+  assert.equal(zoneMatches("Sur", "Norte"), false);
+  assert.equal(zoneMatches("Sur", ""), false);
+
+  assert.equal(coverageText(mechanic), "Aguascalientes y Jesús María");
+  assert.equal(coverageText({ city: "Calvillo", serviceAreas: [] }), "Calvillo");
+  assert.equal(coverageText({ city: "Calvillo", serviceAreas: [...AGUASCALIENTES_MUNICIPALITIES] }), "Todo el estado de Aguascalientes");
+});
+
+test("zonas: guardar dónde da servicio valida municipios y distancia, y deja la ciudad con su nombre oficial", async () => {
+  const { saveServiceArea, getServiceArea, ServiceAreaError } = require("../src/serviceAreas.ts");
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+
+  const saved = await saveServiceArea(mechanicId, {
+    city: "ags",
+    zone: "  Sur  ",
+    serviceAreas: ["calvillo", "Jesús María", "jesus maria"],
+    serviceRadiusKm: 50
+  });
+  assert.deepEqual(saved, { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Calvillo", "Jesús María"], serviceRadiusKm: 50 });
+  assert.deepEqual(await getServiceArea(mechanicId), saved);
+
+  for (const bad of [
+    { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Zacatecas"], serviceRadiusKm: 25 },
+    { city: "Aguascalientes", zone: "Sur", serviceAreas: [], serviceRadiusKm: 30 },
+    { city: "A", zone: "Sur", serviceAreas: [], serviceRadiusKm: 25 }
+  ]) {
+    await assert.rejects(saveServiceArea(mechanicId, bad), (error) => error instanceof ServiceAreaError && error.status === 400);
+  }
+  assert.deepEqual(await getServiceArea(mechanicId), saved, "lo inválido no cambia nada");
+
+  for (const method of ["GET", "PUT"]) {
+    const { response } = await request("/api/mechanics/me/service-area", { method, body: method === "PUT" ? "{}" : undefined });
+    assert.equal(response.status, 401);
+  }
+});
+
+test("zonas: la búsqueda por ciudad incluye a quien atiende ahí desde otro municipio y la zona solo ordena", async () => {
+  const { saveServiceArea } = require("../src/serviceAreas.ts");
+  // Calificación alta, para que el orden normal (por calificación) los ponga antes que otros.
+  const fromCapital = await createOnlineMechanic("Aguascalientes", "Sur");
+  await saveServiceArea(fromCapital, { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Jesús María"], serviceRadiusKm: 25 });
+  const local = await createOnlineMechanic("Jesús María", "Centro");
+  const elsewhere = await createOnlineMechanic("Calvillo", "Centro");
+  await run("UPDATE mechanics SET rating = 4.9 WHERE id = ?", [fromCapital]);
+  await run("UPDATE mechanics SET rating = 4.1 WHERE id = ?", [local]);
+  const mine = [fromCapital, local, elsewhere];
+  const ids = (list) => list.map((mechanic) => mechanic.id).filter((id) => mine.includes(id));
+
+  const { body: jesusMaria } = await request(`/mechanics?city=${encodeURIComponent("jesus maria")}&zone=${encodeURIComponent("zona centro")}`);
+  assert.deepEqual(ids(jesusMaria), [local, fromCapital], "los de la zona primero, aunque tengan menos calificación");
+  assert.deepEqual(jesusMaria.find((mechanic) => mechanic.id === fromCapital).serviceAreas, ["Jesús María"]);
+
+  const { body: capital } = await request(`/mechanics?city=Ags&zone=${encodeURIComponent("Canteras")}`);
+  assert.deepEqual(ids(capital), [fromCapital], "una colonia que no coincide con ninguna zona no deja la lista vacía");
+});
+
+test("zonas: 'Ahora mismo' llega a quien tiene el auto dentro de su radio, no a 25 km fijos", async () => {
+  const { saveServiceArea } = require("../src/serviceAreas.ts");
+  const at40Km = (longitude) => ({ latitude: -45.0 + 0.36, longitude });
+
+  // A 40 km con radio de 25: no le llega.
+  const holderA = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro", { latitude: -45.0, longitude: -125 });
+  const shortRadius = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro", at40Km(-125));
+  const requestA = await createPendingRequestWithExpiredHold(`Ciudad-${crypto.randomUUID()}`, "Centro", holderA, "auto", {
+    latitude: -45.0,
+    longitude: -125
+  });
+
+  // A 40 km con radio de 50: sí le llega.
+  const holderB = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro", { latitude: -45.0, longitude: -126 });
+  const longRadius = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro", at40Km(-126));
+  await saveServiceArea(longRadius, { city: "Aguascalientes", zone: "Centro", serviceAreas: [], serviceRadiusKm: 50 });
+  // saveServiceArea cambió su ciudad: que no coincida con la de la solicitud por texto.
+  const requestB = await createPendingRequestWithExpiredHold(`Ciudad-${crypto.randomUUID()}`, "Centro", holderB, "auto", {
+    latitude: -45.0,
+    longitude: -126
+  });
+
+  await sweepExpiredHolds();
+
+  const offeredA = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestA]);
+  assert.notEqual(offeredA.mechanicId, shortRadius);
+  const offeredB = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [requestB]);
+  assert.equal(offeredB.mechanicId, longRadius);
+});

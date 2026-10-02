@@ -105,6 +105,31 @@ export function formatDateOnly(value: string): string {
 }
 
 /** Pesos sin centavos y con comas: $2,200. */
+/** Para comparar lugares sin acentos ni mayúsculas ("Jesús María" = "jesus maria"). */
+export function placeKey(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Los 11 municipios del estado (el servidor tiene la lista oficial:
+// src/serviceAreas.ts). Si los marca todos, atiende en todo el estado.
+const AGUASCALIENTES_MUNICIPALITY_COUNT = 11;
+
+/** "Aguascalientes y Jesús María", o "Todo el estado de Aguascalientes". */
+export function mechanicCoverageText(mechanic: { city: string; serviceAreas?: string[] }): string {
+  const areas = mechanic.serviceAreas ?? [];
+  if (areas.length >= AGUASCALIENTES_MUNICIPALITY_COUNT) return 'Todo el estado de Aguascalientes';
+  const places = [mechanic.city, ...areas].filter(
+    (place, index, all) => place.trim() && all.findIndex((other) => placeKey(other) === placeKey(place)) === index,
+  );
+  if (places.length <= 1) return places[0] ?? mechanic.city;
+  return `${places.slice(0, -1).join(', ')} y ${places[places.length - 1]}`;
+}
+
 export function formatPesos(amount: number): string {
   return `$${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
