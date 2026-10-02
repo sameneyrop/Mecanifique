@@ -78,6 +78,11 @@ function AuthDivider() {
   );
 }
 
+// Apagado mientras Meta no publique la app (pide verificación del negocio y
+// revisión; en modo Desarrollo solo entran los administradores y a los demás
+// les sale "la app no está disponible"). Para volver a mostrarlo: true.
+const FACEBOOK_LOGIN_ENABLED = false;
+
 function FacebookButton({ title, onPress, busy }: { title: string; onPress: () => void; busy: boolean }) {
   return (
     <Pressable
@@ -228,7 +233,10 @@ export function LoginScreen({
 
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         {authMode === 'login' && (
-          <Card title="Inicia sesión" subtitle="Con tu correo y contraseña, o con Facebook.">
+          <Card
+            title="Inicia sesión"
+            subtitle={FACEBOOK_LOGIN_ENABLED ? 'Con tu correo y contraseña, o con Facebook.' : 'Con tu correo y contraseña.'}
+          >
             <View style={styles.stack}>
               {biometricName !== null && (
                 <>
@@ -269,11 +277,15 @@ export function LoginScreen({
                 />
               </Field>
               <PrimaryButton title="Entrar" onPress={onSubmit} busy={busy} />
-              <AuthDivider />
-              <FacebookButton title="Entrar con Facebook" onPress={() => onFacebookLogin(false)} busy={busy} />
-              <Text style={styles.consentNote}>
-                Si es tu primera vez, se crea tu cuenta de cliente y aceptas los Términos y el Aviso de privacidad.
-              </Text>
+              {FACEBOOK_LOGIN_ENABLED && (
+                <>
+                  <AuthDivider />
+                  <FacebookButton title="Entrar con Facebook" onPress={() => onFacebookLogin(false)} busy={busy} />
+                  <Text style={styles.consentNote}>
+                    Si es tu primera vez, se crea tu cuenta de cliente y aceptas los Términos y el Aviso de privacidad.
+                  </Text>
+                </>
+              )}
               <Text
                 style={[styles.textLink, styles.forgotPasswordLink]}
                 onPress={() => onForgotPassword(loginForm.email)}
@@ -358,14 +370,18 @@ export function LoginScreen({
                   </Field>
                   <ConsentCheck checked={acceptedTerms} onToggle={() => setAcceptedTerms((value) => !value)} />
                   <PrimaryButton title="Crear cuenta" onPress={() => submitSignup(customerForm.password)} busy={busy} />
-                  <AuthDivider />
-                  <FacebookButton
-                    title="Crear cuenta con Facebook"
-                    onPress={() => {
-                      if (consentOk()) onFacebookLogin(false);
-                    }}
-                    busy={busy}
-                  />
+                  {FACEBOOK_LOGIN_ENABLED && (
+                    <>
+                      <AuthDivider />
+                      <FacebookButton
+                        title="Crear cuenta con Facebook"
+                        onPress={() => {
+                          if (consentOk()) onFacebookLogin(false);
+                        }}
+                        busy={busy}
+                      />
+                    </>
+                  )}
                 </>
               )}
 
@@ -420,15 +436,19 @@ export function LoginScreen({
                           setMechanicSignupStep('work');
                         }}
                       />
-                      <AuthDivider />
-                      <FacebookButton
-                        title="Continuar con Facebook"
-                        onPress={() => {
-                          setMechanicViaFacebook(true);
-                          setMechanicSignupStep('work');
-                        }}
-                        busy={busy}
-                      />
+                      {FACEBOOK_LOGIN_ENABLED && (
+                        <>
+                          <AuthDivider />
+                          <FacebookButton
+                            title="Continuar con Facebook"
+                            onPress={() => {
+                              setMechanicViaFacebook(true);
+                              setMechanicSignupStep('work');
+                            }}
+                            busy={busy}
+                          />
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
