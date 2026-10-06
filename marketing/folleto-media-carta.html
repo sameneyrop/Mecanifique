@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folleto media carta · Mecanifique</title>
+<!--
+  Folleto para conseguir clientes: media carta (5.5 × 8.5 in), SOLO FRENTE,
+  acomodado DOS POR HOJA CARTA horizontal (11 × 8.5 in). Se corta por la línea
+  punteada del centro.
+
+  Todo lo arma JavaScript: el mapa de la portada (calles y la ruta del
+  mecánico), el código QR con el enlace de descarga y el acomodo en la hoja.
+
+  Imprimir (Chrome o Edge, Ctrl+P): tamaño Carta, orientación Horizontal,
+  márgenes «Ninguno», escala 100 %, «Gráficos de fondo» activado, una sola
+  cara. Cada folleto lleva un marco blanco, así que sale bien aunque la
+  impresora no imprima hasta la orilla.
+
+  Dos versiones del mismo folleto:
+  - Corta (la de siempre): mapa, título, una frase, tres palomitas y el QR.
+    Para dejar en la puerta: se entiende de un vistazo.
+  - Completa (?version=completa): además, cómo funciona en tres pasos, por
+    qué confiar, que la app no cuesta y cómo instalarla.
+
+  Opciones (también en la barra de arriba de la página):
+  - ?version=completa   la versión con más información
+  - ?tinta=1   versión ahorro de tinta (el mapa en azul claro)
+  - ?solo=1    la hoja a tamaño real, sin barra (para exportar la vista previa)
+  Para otra ciudad u otro enlace, cambia CONFIG abajo.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+  :root {
+    --navy: #08273a;
+    --blue: #0072b2;
+    --bright: #2f8fea;
+    --sun: #f2b84b;
+    --ink: #12374f;
+    --muted: #5b7487;
+    --pale: #eef5fb;
+    --line: #d4e4f0;
+    --white: #ffffff;
+    --font: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+    /* La portada en color: el mapa nocturno de la campaña de Facebook. */
+    --hero-bg: var(--navy);
+    --hero-ink: var(--white);
+    --street: rgba(255, 255, 255, 0.08);
+    --avenue: rgba(255, 255, 255, 0.15);
+    --park: rgba(47, 143, 234, 0.16);
+    --free-bg: var(--blue);
+    --free-ink: var(--white);
+  }
+  /* Ahorro de tinta: el mapa en azul muy claro y la franja de $0 sin relleno. */
+  body.ink {
+    --hero-bg: #e7f0f9;
+    --hero-ink: var(--navy);
+    --street: rgba(0, 114, 178, 0.10);
+    --avenue: rgba(0, 114, 178, 0.20);
+    --park: rgba(0, 114, 178, 0.08);
+    --free-bg: var(--pale);
+    --free-ink: var(--navy);
+  }
+
+  @page { size: letter landscape; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: #c9d6e0; font-family: var(--font); color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* ---------- Barra de pantalla (no se imprime) ---------- */
+  .toolbar { position: sticky; top: 0; z-index: 5; background: var(--white); border-bottom: 1px solid var(--line);
+    padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 14px; }
+  .toolbar strong { font-size: 16px; color: var(--navy); }
+  .toolbar button { font: inherit; font-weight: 700; border: 0; border-radius: 999px; padding: 10px 18px; background: var(--blue); color: var(--white); cursor: pointer; }
+  .toolbar label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
+  .toolbar .how { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .sheets { padding: 24px 0 48px; display: grid; justify-content: center; zoom: var(--fit, 1); }
+
+  /* ---------- Hoja carta horizontal con dos folletos ---------- */
+  .sheet { width: 11in; height: 8.5in; background: var(--white); position: relative; overflow: hidden;
+    display: grid; grid-template-columns: 5.5in 5.5in; box-shadow: 0 6px 24px rgba(8, 39, 58, 0.18); }
+  .cut { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px dashed #a8bccb; }
+  .cut::before, .cut::after { content: "✂"; position: absolute; left: -0.08in; font-size: 10pt; color: #8aa3b5; }
+  .cut::before { top: 0.3in; transform: rotate(-90deg); }
+  .cut::after { bottom: 0.3in; transform: rotate(90deg); }
+
+  @media print {
+    body { background: var(--white); }
+    .toolbar { display: none; }
+    .sheets { padding: 0; zoom: 1; display: block; }
+    .sheet { box-shadow: none; }
+  }
+  body.solo { background: var(--white); }
+  body.solo .toolbar { display: none; }
+  body.solo .sheets { padding: 0; zoom: 1; display: block; }
+  body.solo .sheet { box-shadow: none; }
+
+  /* ---------- Un folleto (media carta, solo frente) ---------- */
+  .flyer { width: 5.5in; height: 8.5in; padding: 0.3in; display: flex; flex-direction: column; overflow: hidden; }
+  /* En esta tipografía el punto es muy ancho: a tamaño grande se ve despegado ("auto ."). */
+  .pd { margin: 0 -0.05em; }
+  .pd-end { margin-left: -0.07em; }
+
+  .hero { position: relative; height: 2.2in; border-radius: 0.2in; overflow: hidden; background: var(--hero-bg); color: var(--hero-ink); flex-shrink: 0; }
+  .hero svg.map { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .hero-top { position: absolute; top: 0.18in; left: 0.2in; right: 0.18in; display: flex; justify-content: space-between; align-items: center; }
+  .hero-top img { height: 0.23in; display: block; }
+  .zone { font-size: 6.6pt; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sun);
+    border: 1px solid rgba(242, 184, 75, 0.6); border-radius: 99px; padding: 0.045in 0.11in; }
+  body.ink .zone { color: #8a5a00; border-color: rgba(138, 90, 0, 0.45); }
+  .onway { position: absolute; left: 0.18in; bottom: 0.18in; background: var(--white); color: var(--navy); border-radius: 0.12in;
+    padding: 0.07in 0.13in 0.07in 0.09in; display: flex; gap: 0.08in; align-items: center; box-shadow: 0 0.04in 0.14in rgba(0, 0, 0, 0.25); }
+  body.ink .onway { box-shadow: 0 0 0 1px var(--line); }
+  .onway .pulse { width: 0.11in; height: 0.11in; border-radius: 50%; background: #22a35a; box-shadow: 0 0 0 0.035in rgba(34, 163, 90, 0.22); flex-shrink: 0; }
+  .onway b { display: block; font-size: 7.8pt; font-weight: 800; }
+  .onway span { display: block; font-size: 6.5pt; color: var(--muted); font-weight: 600; }
+
+  .copy { padding: 0.18in 0.04in 0; }
+  .q { margin: 0 0 0.04in; font-size: 11.5pt; font-weight: 800; color: var(--blue); letter-spacing: -0.01em; }
+  h1 { margin: 0; font-size: 26pt; line-height: 1.02; font-weight: 800; letter-spacing: -0.035em; color: var(--navy); }
+  h1 em { font-style: normal; color: var(--blue); }
+  .lead { margin: 0.09in 0 0; font-size: 9.6pt; line-height: 1.4; color: var(--ink); }
+  .chips { margin: 0.1in 0.04in 0; display: flex; flex-wrap: wrap; gap: 0.05in; align-items: center; }
+  .chips .label { font-size: 7.4pt; font-weight: 700; color: var(--muted); margin-right: 0.02in; }
+  .chips .chip { font-size: 7.4pt; font-weight: 700; color: var(--navy); background: var(--pale); border: 1px solid var(--line); border-radius: 99px; padding: 0.03in 0.09in; }
+
+  .steps { margin: 0.16in 0.04in 0; padding-top: 0.13in; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.12in; }
+  .step .num { width: 0.24in; height: 0.24in; border-radius: 50%; background: var(--blue); color: var(--white); font-weight: 800; font-size: 8.6pt; display: grid; place-items: center; }
+  .step b { display: block; margin: 0.06in 0 0.02in; font-size: 8.6pt; font-weight: 800; color: var(--navy); line-height: 1.2; }
+  .step p { margin: 0; font-size: 7.5pt; line-height: 1.36; color: var(--ink); }
+
+  .trust { margin: 0.13in 0.04in 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.05in 0.14in; }
+  .trust span { display: inline-flex; align-items: center; gap: 0.05in; font-size: 8pt; font-weight: 700; color: var(--navy); }
+  .trust svg { width: 0.14in; height: 0.14in; color: var(--blue); flex-shrink: 0; }
+
+  .free { margin: 0.13in 0.04in 0.12in; background: var(--free-bg); color: var(--free-ink); border-radius: 0.13in; padding: 0.08in 0.14in; display: flex; gap: 0.12in; align-items: center; }
+  body.ink .free { box-shadow: inset 0 0 0 1.5px var(--line); }
+  .free .big { font-size: 19pt; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .free p { margin: 0; font-size: 8pt; line-height: 1.36; }
+
+  .download { margin-top: auto; display: flex; gap: 0.15in; align-items: center; border: 1.5px solid var(--line); border-radius: 0.18in; padding: 0.13in; }
+  .qr { width: 1.12in; height: 1.12in; flex-shrink: 0; }
+  .qr svg { width: 100%; height: 100%; display: block; }
+  .download .label { margin: 0; font-size: 7pt; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .download .url { margin: 0.02in 0 0.05in; font-size: 13pt; font-weight: 800; color: var(--navy); letter-spacing: -0.02em; line-height: 1.12; }
+  .download .url span { color: var(--blue); }
+  .badge { display: inline-block; font-size: 7.2pt; font-weight: 800; color: var(--navy); background: var(--sun); border-radius: 99px; padding: 0.025in 0.09in; }
+  .download .how { margin: 0.06in 0 0; font-size: 7pt; line-height: 1.34; color: var(--ink); }
+  .download .iphone { margin: 0.04in 0 0; font-size: 7pt; line-height: 1.34; color: var(--muted); }
+  .download b { color: var(--ink); }
+
+  /* ---------- Versión corta: menos texto, el QR más grande ---------- */
+  .short .hero { height: 3.3in; }
+  .short .copy { padding: 0.22in 0.04in 0; }
+  .short .q { font-size: 13pt; margin-bottom: 0.05in; }
+  .short h1 { font-size: 32pt; }
+  .short .lead { margin-top: 0.12in; font-size: 11pt; line-height: 1.42; text-wrap: balance; }
+  .short .checks { margin: 0.16in 0.04in 0; display: flex; flex-direction: column; gap: 0.07in; }
+  .short .checks span { display: inline-flex; align-items: center; gap: 0.06in; font-size: 9.6pt; font-weight: 800; color: var(--navy); }
+  .short .checks svg { width: 0.16in; height: 0.16in; color: var(--blue); flex-shrink: 0; }
+  .short .download { padding: 0.15in; gap: 0.18in; }
+  .short .qr { width: 1.42in; height: 1.42in; }
+  .short .download .label { font-size: 7.6pt; }
+  .short .download .url { font-size: 15pt; margin: 0.03in 0 0.07in; }
+  .short .badge { font-size: 7.8pt; padding: 0.03in 0.1in; }
+  .short .download .how { margin-top: 0.08in; font-size: 7.4pt; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <strong>Folleto media carta · solo frente · 2 por hoja</strong>
+  <button type="button" id="print">Imprimir</button>
+  <label><input type="radio" name="version" value="corta" id="v-corta"> Versión corta</label>
+  <label><input type="radio" name="version" value="completa" id="v-completa"> Versión completa</label>
+  <label><input type="checkbox" id="ink"> Ahorro de tinta</label>
+  <p class="how">En la ventana de impresión: tamaño <b>Carta</b>, orientación <b>Horizontal</b>, márgenes <b>Ninguno</b>, escala <b>100 %</b>,
+    <b>Gráficos de fondo</b> activado y a <b>una cara</b>. Sale una hoja con dos folletos: córtala por la línea punteada.</p>
+</div>
+<main class="sheets" id="sheets"></main>
+
+<script>
+// Cambia aquí para hacer otra versión del folleto.
+const CONFIG = {
+  city: "Aguascalientes",
+  downloadUrl: "https://mecanifique.vercel.app/app",
+  site: "mecanifique.vercel.app",
+};
+
+// Logos del sitio (web/assets), incrustados para que el archivo funcione solo.
+const LOGO_WHITE = "data:image/png;base64,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";
+const LOGO_BLUE = "data:image/png;base64,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";
+
+const pretty = (url) => url.replace(/^https?:\/\//, "");
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+/** Direcciones web con los puntos pegados a las letras (ver .pd en el CSS). */
+const dots = (s) => esc(s).replace(/[.]/g, '<span class="pd">.</span>');
+
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+/** El auto del ícono de la app (cuadrícula de 1024), como en las imágenes de Facebook. */
+const CAR = [[380,421],[568,421],[632,483],[766,483],[798,515],[798,549],[810,558],[820,568],[820,596],[812,602],[776,602],[737,563],[690,563],[652,601],[398,601],[360,563],[300,563],[260,602],[212,602],[205,595],[205,567],[215,557],[226,549],[226,513],[250,487],[313,487]];
+function carPath(cx, cy, width) {
+  const s = width / 615;
+  return "M" + CAR.map(([x, y]) => `${(cx + (x - 512.5) * s).toFixed(2)} ${(cy + (y - 511.5) * s).toFixed(2)}`).join("L") + "Z";
+}
+
+/**
+ * Mapa de calles de la portada, con la ruta del mecánico hasta el auto. Las
+ * calles van giradas; la ruta va por ellas y los marcadores quedan derechos.
+ */
+function mapSvg({ H = 230, gap = 40, cy = 134, r = 16 } = {}) {
+  const W = 480, angle = -0.24;
+  const cx = 240;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const at = (gx, gy) => [cx + gap * (gx * cos - gy * sin), cy + gap * (gx * sin + gy * cos)];
+  const deg = (angle * 180) / Math.PI;
+  let streets = "";
+  for (let i = -14; i <= 14; i++) {
+    streets += `<line x1="${i * gap}" y1="-600" x2="${i * gap}" y2="600" />`;
+    streets += `<line x1="-600" y1="${i * gap}" x2="600" y2="${i * gap}" />`;
+  }
+  const avenues = [-3, 2].map((i) => `<line x1="${i * gap}" y1="-600" x2="${i * gap}" y2="600" />`).join("") +
+    `<line x1="-600" y1="${-1 * gap}" x2="600" y2="${-1 * gap}" />`;
+  const parks = [[-4, -2], [1, -3], [-2, 1], [4, 1]].map(([gx, gy]) =>
+    `<rect x="${gx * gap + 6}" y="${gy * gap + 6}" width="${gap - 12}" height="${gap - 12}" rx="6" />`).join("");
+  const route = [[1, 2], [1, 1], [3, 1], [3, 0], [4, 0]].map(([gx, gy]) => at(gx, gy));
+  const points = route.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const [mx, my] = route[0];
+  const [ax, ay] = route[route.length - 1];
+  // Gota del auto: la punta queda sobre el final de la ruta.
+  const top = ay - r * 2.55;
+  const drop = `M${ax} ${ay} C${ax - r * 0.35} ${ay - r * 0.5} ${ax - r} ${ay - r} ${ax - r} ${ay - r * 1.55}
+    A${r} ${r} 0 1 1 ${ax + r} ${ay - r * 1.55} C${ax + r} ${ay - r} ${ax + r * 0.35} ${ay - r * 0.5} ${ax} ${ay}Z`;
+  return `<svg class="map" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <g transform="translate(${cx} ${cy}) rotate(${deg.toFixed(2)})">
+      <g fill="var(--park)">${parks}</g>
+      <g stroke="var(--street)" stroke-width="5">${streets}</g>
+      <g stroke="var(--avenue)" stroke-width="10">${avenues}</g>
+    </g>
+    <polyline points="${points}" fill="none" stroke="rgba(47,143,234,0.3)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+    <polyline points="${points}" fill="none" stroke="#2f8fea" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="${mx}" cy="${my}" r="12" fill="#fff" />
+    <circle cx="${mx}" cy="${my}" r="9.7" fill="#2f8fea" />
+    <path transform="translate(${mx - 6} ${my - 6}) scale(0.5)" d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"
+      fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" />
+    <path d="${drop}" fill="#f2b84b" />
+    <path d="${carPath(ax, top + r, r * 1.3)}" fill="#08273a" stroke="#08273a" stroke-width="0.3" stroke-linejoin="round" />
+  </svg>`;
+}
+
+/** Código QR como SVG nítido (corrección "M": aguanta arrugas del papel). */
+function qrSvg(text) {
+  if (typeof qrcode === "undefined") return '<p style="font-size:7pt">Sin internet: no se generó el QR.</p>';
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const pad = 2;
+  let d = "";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + pad} ${r + pad}h1v1h-1z`;
+  const size = n + pad * 2;
+  return `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" role="img" aria-label="Código QR: ${esc(text)}">
+    <rect width="${size}" height="${size}" fill="#fff"/><path d="${d}" fill="#08273a"/></svg>`;
+}
+
+function urlHtml(url) {
+  const plain = pretty(url);
+  const slash = plain.indexOf("/");
+  return slash > 0 ? `${dots(plain.slice(0, slash))}<span>${dots(plain.slice(slash))}</span>` : dots(plain);
+}
+
+function flyer(ink) {
+  const chips = ["No arranca", "Batería", "Frenos", "Se calienta", "Luz en el tablero"];
+  const steps = [
+    ["Pídelo", "Cuenta qué le pasa y dónde está tu auto: casa, trabajo o calle."],
+    ["Un mecánico acepta", "Ves su foto y sus calificaciones, y lo sigues en el mapa."],
+    ["Apruebas el precio", "Nada se repara sin tu visto bueno. Le pagas directo a él."],
+  ];
+  const trust = ["Identidad verificada", "Calificaciones reales", "Precio antes de reparar", "Botón de emergencia (911)"];
+  return `<article class="flyer">
+    <div class="hero">
+      ${mapSvg()}
+      <div class="hero-top"><img src="${ink ? LOGO_BLUE : LOGO_WHITE}" alt="Mecanifique"><span class="zone">${esc(CONFIG.city)} · a domicilio</span></div>
+      <div class="onway"><span class="pulse"></span><div><b>Tu mecánico va en camino</b><span>Lo sigues en el mapa desde tu celular</span></div></div>
+    </div>
+    <div class="copy">
+      <p class="q">¿Se descompuso tu auto?</p>
+      <h1>Un mecánico que va<br><em>hasta tu auto<span class="pd-end">.</span></em></h1>
+      <p class="lead">Sin grúa y sin llevarlo al taller: lo pides desde tu celular y ves quién es antes de que llegue.</p>
+    </div>
+    <div class="chips"><span class="label">Para cuando:</span>${chips.map((c) => `<span class="chip">${esc(c)}</span>`).join("")}</div>
+    <div class="steps">${steps.map(([t, p], i) => `<div class="step"><span class="num">${i + 1}</span><b>${esc(t)}</b><p>${esc(p)}</p></div>`).join("")}</div>
+    <div class="trust">${trust.map((t) => `<span>${CHECK}${esc(t)}</span>`).join("")}</div>
+    <div class="free"><span class="big">$0</span><p>Usar la app no te cuesta. La visita y la reparación se las pagas directo al mecánico.</p></div>
+    <div class="download">
+      <div class="qr">${qrSvg(CONFIG.downloadUrl)}</div>
+      <div>
+        <p class="label">Descárgala gratis</p>
+        <p class="url">${urlHtml(CONFIG.downloadUrl)}</p>
+        <span class="badge">App para Android</span>
+        <p class="how">Ábrela en Chrome o escanea el código, toca <b>Descargar</b> y luego <b>Instalar</b>. Como todavía no está en Play Store, Android te pide permiso.</p>
+        <p class="iphone">¿Tienes iPhone? Anótate en <b>${dots(CONFIG.site)}</b> y te avisamos.</p>
+      </div>
+    </div>
+  </article>`;
+}
+
+/** Versión corta: lo que se entiende de un vistazo en la puerta. */
+function flyerShort(ink) {
+  const checks = ["Identidad verificada", "Precio antes de reparar", "Usar la app es gratis"];
+  return `<article class="flyer short">
+    <div class="hero">
+      ${mapSvg({ H: 320, gap: 46, cy: 168, r: 18 })}
+      <div class="hero-top"><img src="${ink ? LOGO_BLUE : LOGO_WHITE}" alt="Mecanifique"><span class="zone">${esc(CONFIG.city)} · a domicilio</span></div>
+      <div class="onway"><span class="pulse"></span><div><b>Tu mecánico va en camino</b><span>Lo sigues en el mapa desde tu celular</span></div></div>
+    </div>
+    <div class="copy">
+      <p class="q">¿Se descompuso tu auto?</p>
+      <h1>Un mecánico que va<br><em>hasta tu auto<span class="pd-end">.</span></em></h1>
+      <p class="lead">Pídelo desde tu celular: ves quién es y cuánto cobra antes de que llegue.</p>
+    </div>
+    <div class="checks">${checks.map((t) => `<span>${CHECK}${esc(t)}</span>`).join("")}</div>
+    <div class="download">
+      <div class="qr">${qrSvg(CONFIG.downloadUrl)}</div>
+      <div>
+        <p class="label">Descárgala gratis</p>
+        <p class="url">${urlHtml(CONFIG.downloadUrl)}</p>
+        <span class="badge">App para Android</span>
+        <p class="how">Aún no está en Play Store: Android te pedirá permiso para instalarla. ¿iPhone? Anótate en <b>${dots(CONFIG.site)}</b>.</p>
+      </div>
+    </div>
+  </article>`;
+}
+
+const params = new URLSearchParams(location.search);
+const state = { ink: params.get("tinta") === "1", version: params.get("version") === "completa" ? "completa" : "corta" };
+
+function render() {
+  document.body.classList.toggle("ink", state.ink);
+  const one = state.version === "completa" ? flyer(state.ink) : flyerShort(state.ink);
+  document.getElementById("sheets").innerHTML = `<section class="sheet">${one}${one}<div class="cut" aria-hidden="true"></div></section>`;
+  fit();
+}
+
+// En pantalla, que la hoja quepa a lo ancho; al imprimir va a tamaño real.
+function fit() {
+  const width = 11 * 96 + 32;
+  document.documentElement.style.setProperty("--fit", String(Math.min(1, window.innerWidth / width)));
+}
+
+if (params.get("solo") === "1") document.body.classList.add("solo");
+document.getElementById("ink").checked = state.ink;
+document.getElementById(state.version === "completa" ? "v-completa" : "v-corta").checked = true;
+document.querySelectorAll('input[name="version"]').forEach((input) =>
+  input.addEventListener("change", (e) => { state.version = e.target.value; render(); }));
+document.getElementById("ink").addEventListener("change", (e) => { state.ink = e.target.checked; render(); });
+document.getElementById("print").addEventListener("click", () => window.print());
+window.addEventListener("resize", fit);
+render();
+document.fonts.ready.then(() => { document.body.dataset.ready = "1"; });
+</script>
+</body>
+</html>
