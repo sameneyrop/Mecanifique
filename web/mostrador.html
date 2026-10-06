@@ -1,0 +1,1362 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mecanifique Mostrador</title>
+<meta name="description" content="Panel de Mostrador para refaccionarias de Mecanifique.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="assets/mecanifique-logo-blue.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<!--
+  Mostrador: el panel de las refaccionarias (servidor: src/mostrador.ts y
+  src/routes/mostrador.ts). Los mecánicos preguntan una pieza desde la app,
+  aquí suena y la tienda contesta con precio y existencia; si el mecánico la
+  aparta, se entrega y el ticket entra solo al servicio.
+
+  - Se entra por invitación: el admin manda el enlace /mostrador?invitacion=…
+  - Habla con la API de Render; para probar con el servidor local:
+    mostrador.html?api=http://localhost:3000 (solo acepta localhost, para que
+    un enlace no pueda mandar la contraseña a otro servidor).
+  - Se actualiza por el canal en tiempo real store:<id> (solo un aviso, sin
+    datos) y, por si se cae, cada 10 segundos.
+-->
+<style>
+  :root {
+    --bg: #E3ECF8;
+    --surface: #FFFFFF;
+    --soft: #EEF3FA;
+    --line: #D6E4F5;
+    --ink: #0B0F22;
+    --muted: #4A5568;
+    --primary: #2F8FEA;
+    --primary-ink: #1C6DC4;
+    --on-primary: #FFFFFF;
+    --accent: #F2B84B;
+    --accent-bg: rgba(242, 184, 75, 0.18);
+    --accent-ink: #8A5A00;
+    --ok: #15803D;
+    --ok-bg: #D9F3E4;
+    --danger: #C0392B;
+    --danger-bg: #FBE3E0;
+    --shadow: 0 1px 2px rgba(11, 31, 51, 0.06), 0 8px 24px rgba(11, 31, 51, 0.07);
+    --font: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B1F33; --surface: #132A44; --soft: #1A3552; --line: #28486B; --ink: #E8EFF7; --muted: #A7B6C8;
+      --primary: #2F8FEA; --primary-ink: #7DB8F2; --on-primary: #FFFFFF;
+      --accent: #F2B84B; --accent-bg: rgba(242, 184, 75, 0.16); --accent-ink: #F2C46B;
+      --ok: #7EE2A8; --ok-bg: #143D2A; --danger: #FF8A80; --danger-bg: #3D1F22;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45;
+    padding-top: env(safe-area-inset-top, 0px); }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+  a { color: var(--primary-ink); font-weight: 700; }
+  svg { flex-shrink: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+
+  /* Entrar / invitación */
+  .auth { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+  .auth-card { width: min(440px, 100%); background: var(--surface); border-radius: 22px; box-shadow: var(--shadow); padding: 28px 24px; display: grid; gap: 16px; }
+  .auth-brand { display: flex; align-items: baseline; gap: 8px; }
+  .auth-brand strong { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--primary-ink); }
+  .auth-brand span { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .auth h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; text-wrap: balance; }
+  .auth p { margin: 0; color: var(--muted); }
+  .auth form { display: grid; gap: 12px; }
+  .auth .fineprint { font-size: 13px; }
+  .auth .error { background: var(--danger-bg); color: var(--danger); border-radius: 12px; padding: 10px 12px; font-weight: 700; font-size: 14px; }
+  .auth .info { background: var(--soft); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+  .link-btn { border: 0; background: none; padding: 6px 0; color: var(--primary-ink); font-weight: 700; justify-self: start; min-height: 40px; }
+  .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--primary); animation: spin 0.8s linear infinite; justify-self: center; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Barra de arriba */
+  .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; padding: 10px 20px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .brand strong { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: var(--primary-ink); }
+  .brand span { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .store { font-weight: 700; font-size: 14px; color: var(--muted); min-width: 0; }
+  .store select { border: 1px solid var(--line); background: var(--soft); border-radius: 10px; padding: 6px 8px; font-weight: 700; max-width: 260px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .switch { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 8px 6px 14px; background: var(--soft); font-weight: 700; font-size: 14px; }
+  .switch .knob { width: 56px; height: 32px; border-radius: 99px; background: var(--line); position: relative; transition: background .2s; border: 0; padding: 0; }
+  .switch .knob::after { content: ""; position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .switch[data-on="true"] .knob { background: var(--ok); }
+  .switch[data-on="true"] .knob::after { transform: translateX(24px); }
+  .icon-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 14px; font-weight: 700; font-size: 13px; min-height: 44px; }
+  .icon-btn[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-ink); }
+  .clock { font-weight: 700; color: var(--muted); font-size: 14px; }
+  .conn { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
+  .conn.off { background: var(--danger); }
+
+  /* Esqueleto */
+  .shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; max-width: 1240px; margin: 0 auto; padding: 20px 20px 80px; }
+  nav.side { display: grid; gap: 4px; align-content: start; position: sticky; top: 76px; }
+  nav.side button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: transparent; padding: 11px 12px; border-radius: 12px; font-weight: 700; color: var(--muted); min-height: 52px; }
+  nav.side button[aria-current="page"] { background: var(--surface); color: var(--primary-ink); box-shadow: var(--shadow); }
+  nav.side .badge { margin-left: auto; min-width: 24px; height: 24px; border-radius: 99px; background: var(--primary); color: var(--on-primary); font-size: 12px; display: grid; place-items: center; padding: 0 7px; }
+  nav.side .badge.accent { background: var(--accent); color: #3B2A00; }
+  .side-foot { margin-top: 14px; display: grid; gap: 6px; font-size: 13px; color: var(--muted); padding: 0 12px; }
+  .side-foot button { border: 0; background: none; padding: 8px 0; text-align: left; color: var(--primary-ink); font-weight: 700; }
+  main { min-width: 0; display: grid; gap: 16px; align-content: start; }
+
+  h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  .strip { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip-stat { background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; color: var(--muted); box-shadow: var(--shadow); }
+  .chip-stat b { color: var(--ink); }
+
+  .banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); font-weight: 600; flex-wrap: wrap; }
+  .banner.warn { background: var(--accent-bg); box-shadow: none; }
+  .banner.bad { background: var(--danger-bg); color: var(--danger); box-shadow: none; }
+  .banner > span { flex: 1 1 240px; }
+
+  /* Tarjetas */
+  .card { background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); padding: 16px 18px; display: grid; gap: 12px; }
+  .req.new { border: 2px solid var(--primary); }
+  .req.done { opacity: .72; }
+  @keyframes arrive { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes ring { 0%,100% { box-shadow: var(--shadow); } 50% { box-shadow: 0 0 0 6px rgba(47,143,234,.25); } }
+  .ringing { animation: arrive .5s ease, ring 1s ease 3; }
+  .req-top { display: flex; gap: 12px; align-items: flex-start; }
+  .req-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--soft); display: grid; place-items: center; color: var(--primary-ink); }
+  .req-title { min-width: 0; flex: 1; display: grid; gap: 2px; }
+  .req-title h3 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+  .req-title .car { font-weight: 600; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 14px; }
+  .meta span { display: inline-flex; align-items: center; gap: 5px; }
+  .timer { text-align: right; flex-shrink: 0; }
+  .timer b { display: block; font-size: 20px; font-weight: 800; }
+  .timer small { color: var(--muted); font-size: 12px; font-weight: 600; }
+  .timer.urgent b { color: var(--danger); }
+  .note { background: var(--soft); border-radius: 12px; padding: 9px 12px; font-size: 14px; overflow-wrap: anywhere; }
+  .compete { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 3px 10px; font-size: 12px; font-weight: 700; }
+  .pill.new { background: var(--primary); color: var(--on-primary); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.wait { background: var(--accent-bg); color: var(--accent-ink); }
+  .pill.off { background: var(--soft); color: var(--muted); }
+  .title-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { border: 0; border-radius: 12px; padding: 11px 16px; font-weight: 800; min-height: 52px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; text-decoration: none; }
+  .btn.primary { background: var(--primary); color: var(--on-primary); }
+  .btn.ok { background: var(--ok); color: #fff; }
+  .btn.soft { background: var(--soft); color: var(--ink); }
+  .btn.ghost { background: transparent; color: var(--primary-ink); padding-inline: 10px; }
+  .btn.danger { background: transparent; color: var(--danger); padding-inline: 10px; }
+  .btn.big { flex: 1 1 150px; font-size: 16px; min-height: 60px; }
+  .btn.wide { width: 100%; }
+  .btn:disabled { opacity: .55; cursor: default; }
+  body.busy [data-act], body.busy form button { pointer-events: none; opacity: .6; }
+
+  /* Formulario de respuesta */
+  .answer { border-top: 1px dashed var(--line); padding-top: 12px; display: grid; gap: 12px; }
+  .option { background: var(--soft); border-radius: 14px; padding: 12px; display: grid; gap: 10px; }
+  .option.typing { box-shadow: inset 0 0 0 2px var(--primary); }
+  .option-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 14px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  label.f { display: grid; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  label.f input, label.f select { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 11px; font-size: 16px; color: var(--ink); width: 100%; min-width: 0; min-height: 50px; }
+  .price-wrap { position: relative; }
+  .price-wrap span { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; }
+  .price-wrap input { padding-left: 24px !important; font-weight: 800; }
+  .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { border: 1.5px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 14px; font-weight: 700; font-size: 14px; min-height: 48px; }
+  .seg button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-ink); background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
+  .reasons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .option .btn.soft, .pay-form .btn.soft, .cancel-form .btn.soft { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); flex: 1 1 120px; }
+  .keypad-box { display: grid; gap: 8px; }
+  .keypad-box .hint b { color: var(--ink); }
+  .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 420px; }
+  .keypad button { min-height: 58px; border: 0; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font-size: 24px; font-weight: 800; color: var(--ink); }
+  .keypad button.fn { font-size: 15px; color: var(--muted); }
+
+  .empty { text-align: center; padding: 34px 18px; color: var(--muted); display: grid; gap: 6px; justify-items: center; }
+  .empty strong { color: var(--ink); font-size: 17px; }
+
+  /* Apartados */
+  .items { display: grid; gap: 6px; }
+  .item-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; background: var(--soft); border-radius: 10px; padding: 8px 12px; }
+  .item-row b { white-space: nowrap; }
+  .method { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; flex-wrap: wrap; }
+  .pay-form, .cancel-form { display: grid; gap: 10px; background: var(--soft); border-radius: 14px; padding: 12px; }
+  .cancel-form input { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 11px; font-size: 16px; min-height: 50px; width: 100%; }
+  .contact { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: 14px; }
+
+  /* Tabla de entregadas */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 560px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  td.money { font-weight: 800; white-space: nowrap; }
+
+  /* Estadísticas */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border-radius: 16px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .tile small { color: var(--muted); font-weight: 700; font-size: 13px; }
+  .tile b { display: block; font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }
+  .tile span { font-size: 13px; color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .bars { display: grid; gap: 6px; align-items: end; height: 150px; }
+  .bar { display: grid; gap: 4px; justify-items: center; align-content: end; height: 100%; }
+  .bar i { width: 100%; border-radius: 6px 6px 2px 2px; background: var(--primary); min-height: 3px; }
+  .bar.now i { background: var(--accent); }
+  .bar span { font-size: 11px; color: var(--muted); font-weight: 600; }
+  .rank { display: grid; gap: 8px; }
+  .rank-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
+  .rank-row .track { grid-column: 1 / -1; height: 7px; border-radius: 99px; background: var(--soft); overflow: hidden; }
+  .rank-row .track i { display: block; height: 100%; background: var(--primary); border-radius: 99px; }
+  .missing-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--accent-bg); font-size: 14px; }
+  h2 { margin: 0; font-size: 17px; font-weight: 800; }
+  .hint { margin: 0; color: var(--muted); font-size: 13px; }
+
+  /* Mi tienda */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips button { border: 1.5px solid var(--line); background: var(--surface); border-radius: 99px; padding: 7px 14px; font-weight: 700; font-size: 14px; min-height: 48px; }
+  .chips button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-ink); background: color-mix(in srgb, var(--primary) 12%, var(--surface)); }
+  .inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+  .inline-form label.f { flex: 1 1 240px; }
+
+  .toasts { position: fixed; left: 50%; top: calc(76px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 40; display: grid; gap: 8px; width: min(440px, calc(100% - 32px)); pointer-events: none; }
+  .toast { background: var(--ink); color: var(--bg); border-radius: 14px; padding: 12px 14px; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,.25); animation: arrive .3s ease; display: flex; gap: 10px; align-items: center; }
+  .toast.win { background: var(--ok); color: #fff; }
+  .toast.bad { background: var(--danger); color: #fff; }
+  .waking { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 35; margin: 0 auto; max-width: 520px;
+    background: var(--surface); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.2); padding: 12px 14px; display: flex; gap: 12px; align-items: center; font-weight: 600; font-size: 14px; }
+  .waking .spinner { width: 22px; height: 22px; margin: 0; }
+
+  @media (max-width: 860px) {
+    .top { padding: 10px 16px; position: static; }
+    .toasts { top: calc(16px + env(safe-area-inset-top, 0px)); }
+    .shell { grid-template-columns: 1fr; padding: 12px 16px 80px; gap: 12px; }
+    nav.side { position: static; display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+    nav.side button { white-space: nowrap; width: auto; flex-shrink: 0; padding: 9px 12px; }
+    .side-foot { display: none; }
+    .clock { display: none; }
+    .timer b { font-size: 17px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .ringing, .toast, .spinner { animation: none; } }
+
+  /* Pantallas táctiles: todo se toca con el dedo y el precio se escribe con el teclado en pantalla. */
+  button, input, select, label { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button { user-select: none; -webkit-user-select: none; transition: transform .08s ease, filter .08s ease; }
+  button:active:not(:disabled) { transform: scale(.97); filter: brightness(.94); }
+  @media (pointer: coarse) {
+    body { font-size: 16px; }
+    .btn.big { min-height: 64px; font-size: 17px; }
+    .keypad button { min-height: 64px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toasts" id="toasts" aria-live="assertive"></div>
+<div class="waking" id="waking" hidden><div class="spinner"></div><span>Conectando con Mecanifique… la primera vez del día puede tardar hasta un minuto.</span></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- Servidor ---------- */
+  const PROD_API = "https://mecanifique.onrender.com";
+  const params = new URLSearchParams(location.search);
+  const localApi = params.get("api");
+  const API = localApi && /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?$/.test(localApi) ? localApi : PROD_API;
+  const CONTACT = "ameneyro.design@gmail.com";
+  const POLL_MS = 10000;
+  const RING_AGAIN_MS = 45000;
+
+  /* ---------- Guardado en este navegador (la sesión y preferencias) ---------- */
+  const saved = {
+    get(key) { try { return localStorage.getItem(key + "@" + API); } catch (e) { return null; } },
+    set(key, value) {
+      try {
+        if (value == null) localStorage.removeItem(key + "@" + API);
+        else localStorage.setItem(key + "@" + API, value);
+      } catch (e) { /* sin almacenamiento: la sesión dura lo que la pestaña */ }
+    }
+  };
+  let session = null;
+  try { session = JSON.parse(saved.get("mostrador.session") || "null"); } catch (e) { session = null; }
+  function saveSession(next) {
+    session = next && next.accessToken ? { accessToken: next.accessToken, refreshToken: next.refreshToken || null } : null;
+    saved.set("mostrador.session", session ? JSON.stringify(session) : null);
+  }
+
+  /* ---------- Íconos ---------- */
+  const I = {
+    bell: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+    mute: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0 1 18 8c0 2.7.6 4.6 1.3 6"/><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m2 2 20 20"/></svg>',
+    inbox: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+    box: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+    check: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    chart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>',
+    store: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M2 7h20v3a3 3 0 0 1-6 0 3 3 0 0 1-4 0 3 3 0 0 1-4 0 3 3 0 0 1-6 0Z"/></svg>',
+    pin: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>',
+    star: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+    wrench: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    car: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>',
+    truck: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+    walk: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/></svg>',
+    users: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    phone: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>'
+  };
+
+  /* ---------- Utilidades ---------- */
+  const money = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n || 0);
+  const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const $ = (sel, root = document) => root.querySelector(sel);
+  /** Fechas de SQLite: UTC sin zona ("2026-10-05 18:22:10"). */
+  function ts(value) {
+    if (!value) return 0;
+    const normalized = value.includes("T") ? value : value.replace(" ", "T");
+    const ms = Date.parse(/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized) ? normalized : normalized + "Z");
+    return Number.isNaN(ms) ? 0 : ms;
+  }
+  let clockOffset = 0;
+  const now = () => Date.now() + clockOffset;
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" });
+  const mapsLink = (lat, lng) => "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng;
+  const phoneText = (digits) => String(digits || "").replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3");
+
+  /* ---------- Llamadas a la API ---------- */
+  class ApiError extends Error {
+    constructor(status, message) { super(message); this.status = status; }
+  }
+  let refreshing = null;
+  function refreshSession() {
+    if (!session || !session.refreshToken) return Promise.resolve(false);
+    if (!refreshing) {
+      refreshing = fetch(API + "/auth/v2/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: session.refreshToken })
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data || !data.accessToken) return false;
+          saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+          return true;
+        })
+        .catch(() => false);
+      refreshing.finally(() => { refreshing = null; });
+    }
+    return refreshing;
+  }
+  let pendingLoud = 0;
+  function showWaking(delta) {
+    pendingLoud = Math.max(0, pendingLoud + delta);
+    $("#waking").hidden = pendingLoud === 0;
+  }
+  async function api(path, opts = {}) {
+    const headers = { "Content-Type": "application/json" };
+    const withAuth = opts.auth !== false;
+    if (withAuth && session) headers.Authorization = "Bearer " + session.accessToken;
+    if (withAuth && state.storeId) headers["X-Store-Id"] = String(state.storeId);
+    // Render duerme el servidor si nadie lo usa: si tarda, se avisa (no en las consultas de fondo).
+    let waking = false;
+    const slow = opts.quiet ? null : setTimeout(() => { waking = true; showWaking(1); }, 3500);
+    let res;
+    try {
+      res = await fetch(API + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+    } catch (e) {
+      throw new ApiError(0, "Sin conexión con Mecanifique. Revisa el internet.");
+    } finally {
+      if (slow) clearTimeout(slow);
+      if (waking) showWaking(-1);
+    }
+    if (res.status === 401 && withAuth && session && opts.retry !== false) {
+      if (await refreshSession()) return api(path, Object.assign({}, opts, { retry: false }));
+      logout("Tu sesión expiró. Vuelve a entrar.");
+      throw new ApiError(401, "Tu sesión expiró.");
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, data.error || data.message || "Algo salió mal. Intenta de nuevo.");
+    return data;
+  }
+
+  /* ---------- Estado ---------- */
+  const state = {
+    storeId: Number(saved.get("mostrador.store")) || null,
+    me: null,
+    settings: null,
+    options: null,
+    memberships: [],
+    feed: null,
+    feedKey: "",
+    view: "solicitudes",
+    sound: saved.get("mostrador.sound") === "1",
+    soundReady: false,
+    drafts: {},       // respuestas a medio escribir, por solicitud
+    holdUi: {},       // apartado: "paying" | "cancelling"
+    seenRequests: null,
+    seenHolds: null,
+    ringing: new Set(),
+    lastRingAt: 0,
+    connected: true,
+    timers: []
+  };
+
+  /* ---------- Sonido (solo después de un toque: así lo piden los navegadores) ---------- */
+  let audio = null;
+  function tone(freq, start, dur, gain = 0.22) {
+    const osc = audio.createOscillator();
+    const g = audio.createGain();
+    osc.type = "sine"; osc.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, audio.currentTime + start);
+    g.gain.exponentialRampToValueAtTime(gain, audio.currentTime + start + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + start + dur);
+    osc.connect(g).connect(audio.destination);
+    osc.start(audio.currentTime + start); osc.stop(audio.currentTime + start + dur + 0.05);
+  }
+  function unlockAudio() {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === "suspended") audio.resume();
+      state.soundReady = true;
+      return true;
+    } catch (e) { return false; }
+  }
+  function play(kind) {
+    if (!state.sound || !audio || !state.soundReady) return;
+    try {
+      if (kind === "new") { tone(988, 0, 0.22); tone(784, 0.24, 0.32); tone(988, 0.62, 0.22); tone(784, 0.86, 0.32); }
+      else if (kind === "win") { tone(659, 0, 0.14); tone(880, 0.14, 0.14); tone(1175, 0.28, 0.3); }
+      else if (kind === "test") { tone(880, 0, 0.12, 0.15); }
+    } catch (e) { /* sin sonido */ }
+  }
+  function setSound(on) {
+    if (on && !unlockAudio()) { toast("Este navegador no deja reproducir sonido.", "bad"); on = false; }
+    state.sound = on;
+    saved.set("mostrador.sound", on ? "1" : "0");
+    if (on) play("test");
+    render();
+  }
+  // Si ya lo tenía activado, el primer toque en la página lo vuelve a encender.
+  document.addEventListener("pointerdown", () => { if (state.sound && !state.soundReady) unlockAudio(); }, { capture: true });
+
+  /* ---------- Avisos ---------- */
+  function toast(text, kind) {
+    const el = document.createElement("div");
+    el.className = "toast" + (kind ? " " + kind : "");
+    el.innerHTML = (kind === "win" ? I.check : I.bell) + "<span>" + esc(text) + "</span>";
+    $("#toasts").appendChild(el);
+    setTimeout(() => el.remove(), 4600);
+  }
+  function setBusy(on) { document.body.classList.toggle("busy", on); }
+
+  /* =====================================================================
+     Entrar, invitación y salir
+     ===================================================================== */
+  function authShell(inner) {
+    stopPanel();
+    document.title = "Mecanifique Mostrador";
+    $("#app").innerHTML = '<div class="auth"><div class="auth-card"><div class="auth-brand"><strong>Mecanifique</strong><span>Mostrador</span></div>' + inner + "</div></div>";
+  }
+  function showLoading(text) {
+    authShell('<div class="spinner" role="status" aria-label="Cargando"></div><p style="text-align:center">' + esc(text) + "</p>");
+  }
+
+  function showLogin(message, kind) {
+    authShell(
+      "<h1>Entra a tu Mostrador</h1>" +
+      "<p>Contesta a los mecánicos que buscan piezas cerca de tu refaccionaria.</p>" +
+      (message ? '<div class="' + (kind === "info" ? "info" : "error") + '">' + esc(message) + "</div>" : "") +
+      '<form id="login-form" novalidate>' +
+      '<label class="f">Correo<input type="email" name="email" autocomplete="username" required></label>' +
+      '<label class="f">Contraseña<input type="password" name="password" autocomplete="current-password" required></label>' +
+      '<button class="btn primary wide" type="submit">Entrar</button>' +
+      "</form>" +
+      '<button class="link-btn" type="button" id="forgot">Olvidé mi contraseña</button>' +
+      '<p class="fineprint">El Mostrador es por invitación. Si tu refaccionaria quiere recibir solicitudes, escríbenos a <b>' + esc(CONTACT) + "</b>.</p>"
+    );
+    $("#login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const email = form.email.value.trim();
+      const password = form.password.value;
+      if (!email || password.length < 8) { showLogin("Escribe tu correo y tu contraseña (mínimo 8 caracteres)."); return; }
+      setBusy(true);
+      try {
+        const data = await api("/auth/v2/login", { method: "POST", auth: false, body: { email, password } });
+        saveSession(data);
+        await enterPanel();
+      } catch (err) {
+        showLogin(err.status === 400 ? "Revisa tu correo y tu contraseña." : err.message);
+        const again = $("#login-form");
+        if (again) again.email.value = email;
+      } finally { setBusy(false); }
+    });
+    $("#forgot").addEventListener("click", async () => {
+      const email = $("#login-form").email.value.trim();
+      if (!email) { toast("Escribe tu correo arriba y vuelve a tocar «Olvidé mi contraseña»."); return; }
+      setBusy(true);
+      try {
+        await api("/auth/v2/forgot-password", { method: "POST", auth: false, body: { email } });
+        showLogin("Si ese correo tiene cuenta, te mandamos un enlace para poner una contraseña nueva.", "info");
+      } catch (err) { toast(err.message, "bad"); } finally { setBusy(false); }
+    });
+  }
+
+  const INVITATION_STATE_TEXT = {
+    expired: "Esta invitación ya venció. Pídele a Mecanifique una nueva.",
+    used: "Esta invitación ya se usó. Entra con tu correo y contraseña.",
+    revoked: "Esta invitación se canceló. Pídele a Mecanifique una nueva."
+  };
+  function clearInvitationFromUrl() {
+    params.delete("invitacion");
+    const query = params.toString();
+    history.replaceState(null, "", location.pathname + (query ? "?" + query : "") + location.hash);
+  }
+
+  async function showInvitation(token, mode, message) {
+    let invitation;
+    if (!mode) {
+      showLoading("Abriendo tu invitación…");
+      try {
+        invitation = await api("/api/mostrador/invitations/" + encodeURIComponent(token), { auth: false });
+      } catch (err) {
+        clearInvitationFromUrl();
+        // Con la sesión abierta, mejor a su panel con el aviso que a «Entrar».
+        if (session) return enterPanel(err.message, "bad");
+        showLogin(err.message);
+        return;
+      }
+      if (invitation.state !== "valid") {
+        clearInvitationFromUrl();
+        const text = INVITATION_STATE_TEXT[invitation.state] || "Esta invitación ya no se puede usar.";
+        if (session) return enterPanel(invitation.state === "used" ? "Esta invitación ya se usó." : text, "bad");
+        showLogin(text);
+        return;
+      }
+      state.invitation = invitation;
+      mode = "create";
+    }
+    invitation = state.invitation;
+    const intro = "<h1>Te invitaron al Mostrador de " + esc(invitation.storeName) + "</h1>";
+    const note = message ? '<div class="error">' + esc(message) + "</div>" : "";
+    if (mode === "create") {
+      authShell(
+        intro +
+        "<p>Crea tu cuenta con <b>" + esc(invitation.email) + "</b> para contestar desde aquí a los mecánicos que buscan piezas.</p>" + note +
+        '<form id="invite-form" novalidate>' +
+        '<label class="f">Tu nombre<input name="fullName" autocomplete="name" maxlength="80" required></label>' +
+        '<label class="f">Contraseña<input type="password" name="password" autocomplete="new-password" minlength="8" maxlength="72" required></label>' +
+        '<p class="hint">Mínimo 8 caracteres, con letras y números.</p>' +
+        '<button class="btn primary wide" type="submit">Crear cuenta y entrar</button>' +
+        "</form>" +
+        '<button class="link-btn" type="button" id="have-account">Ya tengo cuenta de Mecanifique</button>' +
+        '<p class="fineprint">Al crear tu cuenta aceptas los <a href="/terminos" target="_blank" rel="noopener">Términos</a> y el <a href="/privacidad" target="_blank" rel="noopener">Aviso de privacidad</a>.</p>'
+      );
+      $("#have-account").addEventListener("click", () => showInvitation(token, "login"));
+      $("#invite-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const fullName = e.target.fullName.value.trim();
+        const password = e.target.password.value;
+        if (fullName.length < 3) { showInvitation(token, "create", "Escribe tu nombre."); return; }
+        if (password.length < 8 || !/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(password) || !/\d/.test(password)) {
+          showInvitation(token, "create", "Tu contraseña necesita mínimo 8 caracteres, con letras y números.");
+          $("#invite-form").fullName.value = fullName;
+          return;
+        }
+        setBusy(true);
+        try {
+          const data = await api("/api/mostrador/invitations/" + encodeURIComponent(token) + "/accept", { method: "POST", auth: false, body: { fullName, password } });
+          saveSession(data);
+          state.storeId = data.membership ? data.membership.storeId : null;
+          clearInvitationFromUrl();
+          await enterPanel("Listo: ya estás en el Mostrador de " + invitation.storeName + ".");
+        } catch (err) {
+          if (err.status === 409 && /Ya tienes cuenta/.test(err.message)) showInvitation(token, "login", err.message);
+          else showInvitation(token, "create", err.message);
+        } finally { setBusy(false); }
+      });
+    } else {
+      authShell(
+        intro +
+        "<p>Entra con tu cuenta de Mecanifique para ligarla a la tienda.</p>" + note +
+        '<form id="claim-form" novalidate>' +
+        '<label class="f">Correo<input type="email" name="email" autocomplete="username" required value="' + esc(invitation.email) + '"></label>' +
+        '<label class="f">Contraseña<input type="password" name="password" autocomplete="current-password" required></label>' +
+        '<button class="btn primary wide" type="submit">Entrar y aceptar</button>' +
+        "</form>" +
+        '<button class="link-btn" type="button" id="new-account">Crear una cuenta nueva</button>'
+      );
+      $("#new-account").addEventListener("click", () => showInvitation(token, "create"));
+      $("#claim-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = e.target.email.value.trim();
+        const password = e.target.password.value;
+        setBusy(true);
+        try {
+          const login = await api("/auth/v2/login", { method: "POST", auth: false, body: { email, password } });
+          saveSession(login);
+          const claimed = await api("/api/mostrador/invitations/" + encodeURIComponent(token) + "/claim", { method: "POST", body: {} });
+          state.storeId = claimed.membership ? claimed.membership.storeId : null;
+          clearInvitationFromUrl();
+          await enterPanel("Listo: ya estás en el Mostrador de " + invitation.storeName + ".");
+        } catch (err) {
+          showInvitation(token, "login", err.status === 400 ? "Revisa tu correo y tu contraseña." : err.message);
+        } finally { setBusy(false); }
+      });
+    }
+  }
+
+  function showNotLinked(message) {
+    authShell(
+      "<h1>Tu cuenta no tiene Mostrador</h1>" +
+      "<p>" + esc(message || "Tu cuenta no está ligada a ninguna refaccionaria de Mostrador.") + "</p>" +
+      '<p class="fineprint">Si tu refaccionaria ya está invitada, abre el enlace de la invitación. Si no, escríbenos a <b>' + esc(CONTACT) + "</b>.</p>" +
+      '<button class="btn soft wide" type="button" id="logout">Salir</button>'
+    );
+    $("#logout").addEventListener("click", () => logout());
+  }
+
+  function showFatal(message) {
+    authShell("<h1>No pudimos abrir el Mostrador</h1><p>" + esc(message) + '</p><button class="btn primary wide" type="button" id="retry">Intentar de nuevo</button>' +
+      '<button class="link-btn" type="button" id="logout">Salir</button>');
+    $("#retry").addEventListener("click", () => enterPanel());
+    $("#logout").addEventListener("click", () => logout());
+  }
+
+  function logout(message) {
+    saveSession(null);
+    stopPanel();
+    state.feed = null; state.feedKey = ""; state.seenRequests = null; state.seenHolds = null; state.drafts = {}; state.holdUi = {};
+    showLogin(message, message ? "error" : undefined);
+  }
+
+  /* =====================================================================
+     Panel
+     ===================================================================== */
+  async function enterPanel(welcome, welcomeKind) {
+    showLoading("Abriendo tu Mostrador…");
+    let me;
+    try {
+      me = await api("/api/mostrador/me");
+    } catch (err) {
+      if (err.status === 403 && state.storeId) {
+        // La tienda guardada ya no es suya: entra a la primera que tenga.
+        state.storeId = null;
+        saved.set("mostrador.store", null);
+        return enterPanel(welcome, welcomeKind);
+      }
+      if (err.status === 403) return showNotLinked(err.message);
+      if (err.status === 401) return;
+      return showFatal(err.message);
+    }
+    applyMe(me);
+    mountPanel();
+    if (welcome) toast(welcome, welcomeKind || "win");
+    await loadFeed();
+    connectRealtime();
+    state.timers.push(setInterval(() => { void loadFeed(); }, POLL_MS));
+    state.timers.push(setInterval(tick, 1000));
+    tick();
+  }
+
+  function applyMe(me) {
+    state.me = me;
+    state.settings = me.store;
+    state.options = me.options;
+    state.memberships = me.memberships || [];
+    state.storeId = me.store.storeId;
+    saved.set("mostrador.store", String(state.storeId));
+  }
+
+  function stopPanel() {
+    state.timers.forEach((t) => clearInterval(t));
+    state.timers = [];
+    if (realtime.socket) { realtime.stopped = true; try { realtime.socket.close(); } catch (e) {} }
+    realtime.socket = null;
+  }
+
+  function mountPanel() {
+    $("#app").innerHTML =
+      '<header class="top">' +
+      '<div class="brand"><strong>Mecanifique</strong><span>Mostrador</span></div>' +
+      '<div class="store" id="store-name"></div>' +
+      '<div class="top-right">' +
+      '<span class="conn" id="conn" title="Conectado"></span>' +
+      '<div class="switch" id="switch" data-on="true"><span id="switch-label">Recibiendo solicitudes</span>' +
+      '<button class="knob" id="switch-btn" role="switch" aria-checked="true" aria-label="Recibir solicitudes" type="button"></button></div>' +
+      '<button class="icon-btn" id="sound-btn" aria-pressed="false" type="button"></button>' +
+      '<button class="icon-btn" id="full-btn" type="button" hidden>Pantalla completa</button>' +
+      '<span class="clock num" id="clock"></span>' +
+      "</div></header>" +
+      '<div class="shell"><nav class="side" aria-label="Secciones">' +
+      '<button data-view="solicitudes" type="button"></button><button data-view="apartados" type="button"></button>' +
+      '<button data-view="entregadas" type="button"></button><button data-view="estadisticas" type="button"></button>' +
+      '<button data-view="tienda" type="button"></button>' +
+      '<div class="side-foot"><span id="who"></span><button type="button" data-act="logout">Salir</button></div>' +
+      '</nav><main id="main" aria-live="polite"></main></div>';
+    $("#sound-btn").addEventListener("click", () => setSound(!state.sound));
+    $("#switch-btn").addEventListener("click", () => saveSettings({ receiving: !state.settings.receiving }));
+    const fullBtn = $("#full-btn");
+    if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
+      fullBtn.hidden = false;
+      fullBtn.addEventListener("click", () => {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+        else document.documentElement.requestFullscreen().catch(() => toast("Este navegador no deja usar pantalla completa aquí."));
+      });
+    }
+    render();
+  }
+
+  /* ---------- Datos ---------- */
+  let loading = false;
+  async function loadFeed() {
+    if (loading || !session) return;
+    loading = true;
+    try {
+      const feed = await api("/api/mostrador/feed", { quiet: true });
+      if (feed.serverTime) clockOffset = feed.serverTime - Date.now();
+      setConnected(true);
+      const { serverTime, ...data } = feed;
+      const key = JSON.stringify(data);
+      if (key === state.feedKey) return;
+      noticeChanges(data);
+      state.feed = data;
+      state.feedKey = key;
+      render();
+    } catch (err) {
+      if (err.status === 401) return;
+      if (err.status === 403) { stopPanel(); showNotLinked(err.message); return; }
+      setConnected(false);
+    } finally { loading = false; }
+  }
+
+  function setConnected(on) {
+    if (state.connected === on) return;
+    state.connected = on;
+    const dot = $("#conn");
+    if (dot) { dot.classList.toggle("off", !on); dot.title = on ? "Conectado" : "Sin conexión"; }
+    render();
+  }
+
+  // Lo que llegó desde la última vez: suena, avisa y marca la tarjeta.
+  function noticeChanges(feed) {
+    const newIds = feed.requests.filter((r) => r.state === "new").map((r) => r.id);
+    const holdIds = feed.holds.map((h) => h.id);
+    if (state.seenRequests) {
+      const fresh = newIds.filter((id) => !state.seenRequests.has(id));
+      if (fresh.length) {
+        fresh.forEach((id) => state.ringing.add(id));
+        play("new");
+        state.lastRingAt = Date.now();
+        const first = feed.requests.find((r) => r.id === fresh[0]);
+        if (state.view !== "solicitudes" && first) toast("Nueva solicitud: " + first.part + (first.vehicle ? " · " + first.vehicle : ""));
+      }
+    }
+    if (state.seenHolds) {
+      feed.holds.filter((h) => !state.seenHolds.has(h.id)).forEach((h) => {
+        state.ringing.add("hold-" + h.id);
+        play("win");
+        toast(h.mechanicName + " apartó tu " + h.part.toLowerCase() + (h.method === "delivery" ? " y pidió que se la mandes." : ": va a pasar por ella."), "win");
+      });
+      const previous = state.feed ? state.feed.holds : [];
+      previous.filter((h) => !holdIds.includes(h.id) && !state.delivered.has(h.id) && !state.cancelledHolds.has(h.id)).forEach((h) => {
+        toast("Se liberó el apartado de " + h.part.toLowerCase() + ": el mecánico lo canceló o no pasó a tiempo.");
+      });
+    }
+    state.seenRequests = new Set([...(state.seenRequests || []), ...feed.requests.map((r) => r.id)]);
+    state.seenHolds = new Set([...(state.seenHolds || []), ...holdIds]);
+  }
+  state.delivered = new Set();
+  state.cancelledHolds = new Set();
+
+  /* ---------- Tiempo real: un aviso sin datos y se vuelve a pedir el feed ---------- */
+  const realtime = { socket: null, retry: 1000, stopped: false, ping: null };
+  function connectRealtime() {
+    realtime.stopped = false;
+    const url = API.replace(/^http/, "ws") + "/ws";
+    let socket;
+    try { socket = new WebSocket(url); } catch (e) { return scheduleRealtime(); }
+    realtime.socket = socket;
+    socket.onopen = () => {
+      realtime.retry = 1000;
+      socket.send(JSON.stringify({ type: "subscribe", channel: "store:" + state.storeId, token: session ? session.accessToken : undefined }));
+      clearInterval(realtime.ping);
+      realtime.ping = setInterval(() => { try { socket.send(JSON.stringify({ type: "ping" })); } catch (e) {} }, 25000);
+    };
+    socket.onmessage = (event) => {
+      try { const message = JSON.parse(event.data); if (message.type === "event") void loadFeed(); } catch (e) {}
+    };
+    socket.onclose = () => { clearInterval(realtime.ping); if (!realtime.stopped) scheduleRealtime(); };
+    socket.onerror = () => { try { socket.close(); } catch (e) {} };
+  }
+  function scheduleRealtime() {
+    if (realtime.stopped) return;
+    setTimeout(() => { if (!realtime.stopped) connectRealtime(); }, realtime.retry);
+    realtime.retry = Math.min(realtime.retry * 2, 30000);
+  }
+
+  /* ---------- Acciones de la tienda ---------- */
+  async function saveSettings(change, okText) {
+    setBusy(true);
+    try {
+      const data = await api("/api/mostrador/settings", { method: "PUT", body: change });
+      state.settings = data.store;
+      if (okText) toast(okText, "win");
+      render();
+    } catch (err) { toast(err.message, "bad"); } finally { setBusy(false); }
+  }
+
+  const KIND = { "Original": "original", "Genérica": "generic", "Remanufacturada": "remanufactured" };
+  const STOCK = { "En mostrador": "counter", "Llega hoy": "today", "Llega mañana": "tomorrow" };
+  const WARRANTIES = ["Sin garantía", "30 días", "3 meses", "6 meses", "1 año"];
+
+  function newOption(mode, kind) {
+    return { kind: kind || "Genérica", brand: "", price: "", stock: mode === "order" ? "Llega hoy" : "En mostrador", warranty: "3 meses" };
+  }
+  function startAnswer(id, mode) {
+    const draft = state.drafts[id] || {};
+    draft.mode = mode;
+    if (mode !== "no") {
+      if (!draft.options) draft.options = [newOption(mode)];
+      draft.options.forEach((o) => { if (mode === "order" && o.stock === "En mostrador") o.stock = "Llega hoy"; });
+      draft.active = 0;
+    }
+    state.drafts[id] = draft;
+    state.ringing.delete(id);
+    render();
+    if (mode !== "no" && !TOUCH) setTimeout(() => { const el = document.getElementById("price-" + id + "-0"); if (el) el.focus(); }, 30);
+  }
+
+  async function respond(id, body, okText) {
+    setBusy(true);
+    try {
+      await api("/api/mostrador/requests/" + id + "/respond", { method: "POST", body });
+      delete state.drafts[id];
+      toast(okText, "win");
+      state.feedKey = "";
+      await loadFeed();
+    } catch (err) {
+      toast(err.message, "bad");
+      state.feedKey = "";
+      await loadFeed();
+    } finally { setBusy(false); }
+  }
+
+  function sendAnswer(id) {
+    const draft = state.drafts[id];
+    if (!draft || !draft.options) return;
+    const options = draft.options.filter((o) => Number(o.price) > 0).map((o) => ({
+      kind: KIND[o.kind],
+      brand: o.brand.trim() || undefined,
+      price: Number(o.price),
+      stock: STOCK[o.stock],
+      warranty: o.warranty === "Sin garantía" ? undefined : o.warranty
+    }));
+    if (!options.length) { toast("Escribe el precio para contestar."); return; }
+    void respond(id, { available: draft.mode, options }, "Respuesta enviada. Si el mecánico la aparta, te va a sonar.");
+  }
+
+  async function holdAction(id, path, body, okText) {
+    setBusy(true);
+    try {
+      const data = await api("/api/mostrador/holds/" + id + "/" + path, { method: "POST", body: body || {} });
+      delete state.holdUi[id];
+      toast(typeof okText === "function" ? okText(data) : okText, "win");
+      state.feedKey = "";
+      await loadFeed();
+    } catch (err) {
+      toast(err.message, "bad");
+      state.feedKey = "";
+      await loadFeed();
+    } finally { setBusy(false); }
+  }
+
+  function useMyLocation() {
+    if (!navigator.geolocation) { toast("Este navegador no da la ubicación. Pega las coordenadas de Google Maps.", "bad"); return; }
+    toast("Buscando tu ubicación…");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = Math.round(pos.coords.latitude * 1e6) / 1e6;
+        const lng = Math.round(pos.coords.longitude * 1e6) / 1e6;
+        const meters = Math.round(pos.coords.accuracy || 0);
+        void saveSettings({ latitude: lat, longitude: lng },
+          meters > 300 ? "Guardada, pero es aproximada (±" + meters + " m). Revísala en el mapa." : "Ubicación de la tienda guardada.");
+      },
+      () => toast("No pudimos tomar tu ubicación. Pega las coordenadas de Google Maps.", "bad"),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }
+
+  /* =====================================================================
+     Pintar
+     ===================================================================== */
+  const TOUCH = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  let lastPending = -1;
+
+  function counts() {
+    const feed = state.feed;
+    if (!feed) return { pending: 0, holds: 0 };
+    const pending = feed.requests.filter((r) => r.state === "new" && ts(r.respondUntil) > now()).length;
+    return { pending, holds: feed.holds.length };
+  }
+
+  function renderChrome() {
+    const c = counts();
+    lastPending = c.pending;
+    const labels = {
+      solicitudes: [I.inbox, "Solicitudes", c.pending ? '<span class="badge num">' + c.pending + "</span>" : ""],
+      apartados: [I.box, "Apartados", c.holds ? '<span class="badge accent num">' + c.holds + "</span>" : ""],
+      entregadas: [I.check, "Entregadas hoy", ""],
+      estadisticas: [I.chart, "Estadísticas", ""],
+      tienda: [I.store, "Mi tienda", ""]
+    };
+    document.querySelectorAll("nav.side button[data-view]").forEach((b) => {
+      const [icon, label, badge] = labels[b.dataset.view];
+      b.innerHTML = icon + "<span>" + label + "</span>" + badge;
+      if (b.dataset.view === state.view) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    });
+    const s = state.settings;
+    const storeBox = $("#store-name");
+    if (state.memberships.length > 1) {
+      if (!storeBox.querySelector("select")) {
+        storeBox.innerHTML = '<select id="store-select" aria-label="Tienda">' + state.memberships.map((m) =>
+          '<option value="' + m.storeId + '">' + esc(m.storeName) + "</option>").join("") + "</select>";
+        $("#store-select").addEventListener("change", (e) => switchStore(Number(e.target.value)));
+      }
+      $("#store-select").value = String(state.storeId);
+    } else {
+      storeBox.textContent = s.name + (s.zone ? " · " + s.zone : "");
+    }
+    $("#switch").dataset.on = String(s.receiving);
+    $("#switch-btn").setAttribute("aria-checked", String(s.receiving));
+    $("#switch-label").textContent = s.receiving ? "Recibiendo solicitudes" : "En pausa";
+    const sb = $("#sound-btn");
+    sb.setAttribute("aria-pressed", String(state.sound));
+    sb.innerHTML = (state.sound ? I.bell : I.mute) + "<span>" + (state.sound ? "Sonido" : "Sin sonido") + "</span>";
+    $("#who").textContent = state.me && state.me.user ? state.me.user.fullName : "";
+    document.title = (c.pending ? "(" + c.pending + ") " : "") + "Mecanifique Mostrador";
+  }
+
+  async function switchStore(storeId) {
+    state.storeId = storeId;
+    saved.set("mostrador.store", String(storeId));
+    stopPanel();
+    state.feed = null; state.feedKey = ""; state.seenRequests = null; state.seenHolds = null; state.drafts = {}; state.holdUi = {};
+    await enterPanel();
+  }
+
+  function stats() { return state.feed ? state.feed.stats : { received: 0, answered: 0, avgResponseSeconds: 0, won: 0, salesTotal: 0, hourly: {}, categories: [], missing: [] }; }
+
+  function mechanicLine(r) {
+    const jobs = r.mechanicJobs ? r.mechanicJobs + (r.mechanicJobs === 1 ? " servicio" : " servicios") : "";
+    const rating = r.mechanicRating > 0
+      ? I.star + Number(r.mechanicRating).toFixed(1) + (jobs ? " · " + jobs : "")
+      : jobs || "Nuevo en la app";
+    return '<span>' + I.wrench + esc(r.mechanicName) + "</span><span>" + rating + "</span>" +
+      (r.distanceKm != null ? "<span>" + I.pin + "a " + Number(r.distanceKm).toFixed(1) + " km</span>" : "");
+  }
+
+  function viewSolicitudes() {
+    const st = stats();
+    const s = state.settings;
+    const requests = state.feed ? state.feed.requests : [];
+    // Pendientes: las nuevas que todavía se pueden contestar y las que contestó con precio (esperando al mecánico).
+    const isOpen = (r) => (r.state === "new" && ts(r.respondUntil) > now()) || (r.state === "answered" && !(r.response && r.response.available === "no"));
+    const open = requests.filter(isOpen).sort((a, b) => (a.state === "new" ? 0 : 1) - (b.state === "new" ? 0 : 1) || b.id - a.id);
+    const closed = requests.filter((r) => !isOpen(r)).slice(0, 8);
+    let html = '<div class="head"><div><h1>Solicitudes</h1><p class="sub">Mecánicos cerca de ti preguntando por una pieza. Contesta con precio y existencia.</p></div>' +
+      '<div class="strip"><span class="chip-stat">Contestadas <b class="num">' + st.answered + " de " + st.received + "</b></span>" +
+      (st.answered ? '<span class="chip-stat">Respondes en <b class="num">' + st.avgResponseSeconds + " s</b></span>" : "") +
+      '<span class="chip-stat">Ventas hoy <b class="num">' + money(st.salesTotal) + "</b></span></div></div>";
+    if (!state.connected) html += '<div class="banner bad"><span>Sin conexión con Mecanifique. Seguimos intentando; revisa el internet.</span></div>';
+    if (s.latitude == null || s.longitude == null) html += '<div class="banner warn"><span>Falta la ubicación de tu tienda: sin ella no te llegan solicitudes.</span><button class="btn soft" data-act="go" data-view="tienda" type="button">Ponerla</button></div>';
+    if (!state.sound) html += '<div class="banner">' + I.bell + '<span>Activa el sonido para escuchar cuando llega una solicitud, como en el mostrador.</span><button class="btn primary" data-act="sound-on" type="button">Activar sonido</button></div>';
+    else if (!state.soundReady) html += '<div class="banner">' + I.bell + '<span>Toca cualquier parte de la pantalla para que vuelva a sonar.</span><button class="btn soft" data-act="sound-on" type="button">Listo</button></div>';
+    if (!s.receiving) html += '<div class="banner warn"><span>Estás en pausa: no te llegan solicitudes nuevas.</span><button class="btn soft" data-act="resume" type="button">Reanudar</button></div>';
+    if (!state.feed) html += '<div class="card empty"><div class="spinner"></div><span>Cargando solicitudes…</span></div>';
+    else if (!open.length) html += '<div class="card empty">' + I.inbox + "<strong>Sin solicitudes por contestar</strong><span>Cuando un mecánico cerca de ti busque una pieza que surtes, te va a sonar aquí.</span></div>";
+    html += open.map(requestCard).join("");
+    if (closed.length) html += '<h2 style="margin-top:6px">Hace poco</h2>' + closed.map(requestCard).join("");
+    return html;
+  }
+
+  function requestCard(r) {
+    const deadline = ts(r.respondUntil);
+    const left = deadline - now();
+    const isNew = r.state === "new" && left > 0;
+    const shownState = r.state === "new" && !isNew ? "expired" : r.state;
+    const draft = isNew ? state.drafts[r.id] : null;
+    const done = !["new", "answered"].includes(shownState);
+    let cls = "card req";
+    if (isNew && !draft) cls += " new";
+    if (state.ringing.has(r.id)) cls += " ringing";
+    if (done) cls += " done";
+    const pills = {
+      new: '<span class="pill new">Nueva</span>',
+      answered: '<span class="pill wait">Esperando al mecánico…</span>',
+      won: '<span class="pill ok">' + I.check + " La apartó</span>",
+      lost: r.response ? '<span class="pill off">Eligió otra opción</span>' : '<span class="pill off">Otra tienda la ganó</span>',
+      expired: '<span class="pill off">Se venció sin contestar</span>',
+      cancelled: '<span class="pill off">Ya no la necesita</span>'
+    };
+    let status = pills[shownState] || "";
+    if (r.response && r.response.available === "no") status = '<span class="pill off">No la tenías · ' + esc(r.response.reason || "") + "</span>";
+    const timer = isNew
+      ? '<div class="timer' + (left < 60000 ? " urgent" : "") + '"><b class="num" data-deadline="' + deadline + '">' + mmss(left) + "</b><small>para contestar</small></div>"
+      : '<div class="timer"><small class="num">' + hhmm(ts(r.createdAt)) + "</small></div>";
+    let html = '<article class="' + cls + '" id="req-' + r.id + '">' +
+      '<div class="req-top"><div class="req-icon">' + I.car + '</div><div class="req-title">' +
+      '<div class="title-row"><h3>' + esc(r.part) + "</h3>" + status + (r.category ? '<span class="pill off">' + esc(r.category) + "</span>" : "") + "</div>" +
+      (r.vehicle ? '<div class="car">' + esc(r.vehicle) + "</div>" : "") +
+      '<div class="meta">' + mechanicLine(r) + "</div>" +
+      "</div>" + timer + "</div>";
+    if (r.note && !done) html += '<div class="note">«' + esc(r.note) + "»</div>";
+    if (isNew && !draft) {
+      html += '<div class="compete">' + I.users + (r.otherStores ? "También les llegó a " + r.otherStores + (r.otherStores === 1 ? " tienda" : " tiendas") + ". El mecánico ve primero la más barata." : "Solo te llegó a ti.") + "</div>" +
+        '<div class="actions"><button class="btn primary big" data-act="yes" data-id="' + r.id + '" type="button">Sí la tengo</button>' +
+        '<button class="btn soft big" data-act="order" data-id="' + r.id + '" type="button">La consigo</button>' +
+        '<button class="btn soft big" data-act="no" data-id="' + r.id + '" type="button">No la tengo</button></div>';
+    }
+    if (draft && draft.mode === "no") {
+      const reasons = (state.options && state.options.declineReasons) || [];
+      html += '<div class="answer"><b>¿Por qué no?</b><div class="reasons">' +
+        reasons.map((x) => '<button class="btn soft" data-act="decline" data-id="' + r.id + '" data-reason="' + esc(x) + '" type="button">' + esc(x) + "</button>").join("") +
+        '<button class="btn ghost" data-act="cancel" data-id="' + r.id + '" type="button">Regresar</button></div>' +
+        '<p class="hint">Lo que te piden y no tienes aparece en Estadísticas, para que decidas qué comprar.</p></div>';
+    }
+    if (draft && draft.mode !== "no") {
+      const active = Math.min(draft.active || 0, draft.options.length - 1);
+      const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "del"];
+      const keypad = '<div class="keypad-box"><p class="hint">Precio de la <b>opción ' + (active + 1) + '</b>: tócalo aquí o escríbelo con el teclado.</p><div class="keypad" role="group" aria-label="Teclado numérico">' +
+        keys.map((k) => '<button type="button" class="' + (k.length > 1 ? "fn" : "") + '" data-act="key" data-id="' + r.id + '" data-key="' + k + '" aria-label="' + (k === "del" ? "Borrar un número" : k === "clear" ? "Borrar el precio" : k) + '">' +
+          (k === "del" ? "⌫" : k === "clear" ? "Borrar" : k) + "</button>").join("") + "</div></div>";
+      html += '<div class="answer">' + draft.options.map((o, i) => optionForm(r, draft, o, i, i === active)).join("") + keypad +
+        (draft.options.length < 2 ? '<div class="actions"><button class="btn ghost" data-act="add-option" data-id="' + r.id + '" type="button">+ Agregar otra opción (por ejemplo, original y genérica)</button></div>' : "") +
+        '<div class="actions"><button class="btn primary big" data-act="send" data-id="' + r.id + '" type="button">Enviar respuesta</button>' +
+        '<button class="btn soft" data-act="cancel" data-id="' + r.id + '" type="button">Cancelar</button></div>' +
+        '<p class="hint">El mecánico ve tu precio, la marca, si la tienes y la distancia. Si la aparta, se la guardas ' + ((state.options && state.options.holdMinutes) || 30) + " minutos.</p></div>";
+    }
+    if (r.response && r.response.options && r.response.options.length) {
+      html += '<div class="items">' + r.response.options.map((o) => '<div class="item-row"><span>' + esc(o.text + (o.warranty ? " · Garantía " + o.warranty.toLowerCase() : "")) +
+        '</span><b class="num">' + money(o.price) + "</b></div>").join("") + "</div>";
+    }
+    if (shownState === "won") html += '<p class="hint">Está en Apartados, lista para entregar.</p>';
+    if (shownState === "lost" && r.response && r.response.available !== "no") html += '<p class="hint">Contestar rápido y con buen precio te ayuda a ganar las siguientes.</p>';
+    html += "</article>";
+    return html;
+  }
+
+  function optionForm(r, draft, o, i, typing) {
+    const stockValues = draft.mode === "order" ? ["Llega hoy", "Llega mañana"] : ["En mostrador", "Llega hoy", "Llega mañana"];
+    const seg = (field, values) => '<div class="seg" role="group">' + values.map((v) =>
+      '<button type="button" data-act="opt" data-id="' + r.id + '" data-i="' + i + '" data-field="' + field + '" data-value="' + esc(v) + '" aria-pressed="' + (o[field] === v) + '">' + esc(v) + "</button>").join("") + "</div>";
+    return '<div class="option' + (typing ? " typing" : "") + '"><div class="option-head"><span>Opción ' + (i + 1) + "</span>" +
+      (i > 0 ? '<button class="btn ghost" data-act="remove-option" data-id="' + r.id + '" data-i="' + i + '" type="button">Quitar</button>' : "") + "</div>" +
+      seg("kind", Object.keys(KIND)) +
+      '<div class="fields">' +
+      '<label class="f">Precio<div class="price-wrap"><span>$</span><input id="price-' + r.id + "-" + i + '" inputmode="' + (TOUCH ? "none" : "numeric") + '" data-input="price" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.price) + '" placeholder="850" autocomplete="off"></div></label>' +
+      '<label class="f">Marca (opcional)<input id="brand-' + r.id + "-" + i + '" data-input="brand" data-id="' + r.id + '" data-i="' + i + '" value="' + esc(o.brand) + '" placeholder="Ej. Bosch" maxlength="60" autocomplete="off"></label>' +
+      '<label class="f">Garantía<select id="warranty-' + r.id + "-" + i + '" data-input="warranty" data-id="' + r.id + '" data-i="' + i + '">' +
+      WARRANTIES.map((w) => "<option" + (o.warranty === w ? " selected" : "") + ">" + w + "</option>").join("") + "</select></label>" +
+      "</div>" + seg("stock", stockValues) + "</div>";
+  }
+
+  function viewApartados() {
+    const holds = state.feed ? state.feed.holds : [];
+    let html = '<div class="head"><div><h1>Apartados</h1><p class="sub">Piezas que un mecánico ya apartó. Se liberan solas si no pasa por ellas.</p></div></div>';
+    if (!holds.length) return html + '<div class="card empty">' + I.box + "<strong>Sin apartados</strong><span>Cuando un mecánico elija tu respuesta, la pieza aparece aquí.</span></div>";
+    const methods = (state.options && state.options.paymentMethods) || ["Efectivo", "Transferencia", "Tarjeta"];
+    return html + holds.map((h) => {
+      const ui = state.holdUi[h.id];
+      const method = h.method === "delivery"
+        ? '<div class="method">' + I.truck + "Mándasela" + (h.distanceKm != null ? " · a " + Number(h.distanceKm).toFixed(1) + " km" : "") +
+          (h.destination ? ' · <a href="' + mapsLink(h.destination.latitude, h.destination.longitude) + '" target="_blank" rel="noopener">Ver a dónde en el mapa</a>' : "") + "</div>"
+        : '<div class="method">' + I.walk + "Va a pasar por ella al mostrador</div>";
+      const contact = h.mechanicPhone
+        ? '<div class="contact">' + I.phone + "<span>" + esc(h.mechanicName) + ': <b class="num">' + esc(phoneText(h.mechanicPhone)) + '</b></span><a class="btn ghost" href="tel:' + esc(h.mechanicPhone) + '">Llamar</a></div>'
+        : "";
+      let actions;
+      if (ui === "paying") {
+        actions = '<div class="pay-form"><b>¿Cómo pagó?</b><div class="actions">' +
+          methods.map((p) => '<button class="btn soft" data-act="pay" data-id="' + h.id + '" data-pay="' + esc(p) + '" type="button">' + esc(p) + "</button>").join("") +
+          '<button class="btn ghost" data-act="hold-back" data-id="' + h.id + '" type="button">Regresar</button></div>' +
+          '<p class="hint">Con esto se genera el ticket y, si es para un servicio, le llega solo al cliente: ve el precio de tu tienda.</p></div>';
+      } else if (ui === "cancelling") {
+        actions = '<div class="cancel-form"><b>¿Por qué ya no puedes entregarla?</b><div class="reasons">' +
+          ["Se vendió en mostrador", "No la encontré en almacén", "El repartidor no puede ir"].map((x) =>
+            '<button class="btn soft" data-act="hold-cancel" data-id="' + h.id + '" data-reason="' + esc(x) + '" type="button">' + esc(x) + "</button>").join("") + "</div>" +
+          '<div class="inline-form"><label class="f">Otro motivo<input id="cancel-reason-' + h.id + '" maxlength="120" placeholder="Escribe el motivo"></label>' +
+          '<button class="btn soft" data-act="hold-cancel-custom" data-id="' + h.id + '" type="button">Enviar</button></div>' +
+          '<button class="btn ghost" data-act="hold-back" data-id="' + h.id + '" type="button">Regresar</button>' +
+          '<p class="hint">Le avisamos al mecánico para que aparte en otra tienda.</p></div>';
+      } else if (h.method === "delivery" && h.status === "held") {
+        actions = '<div class="actions"><button class="btn primary big" data-act="dispatch" data-id="' + h.id + '" type="button">Salió el repartidor</button>' +
+          '<button class="btn soft" data-act="deliver" data-id="' + h.id + '" type="button">Marcar entregada</button>' +
+          '<button class="btn danger" data-act="hold-cancel-open" data-id="' + h.id + '" type="button">No puedo entregarla</button></div>';
+      } else {
+        actions = '<div class="actions"><button class="btn ok big" data-act="deliver" data-id="' + h.id + '" type="button">' + I.check + "Marcar entregada</button>" +
+          (h.status === "held" ? '<button class="btn danger" data-act="hold-cancel-open" data-id="' + h.id + '" type="button">No puedo entregarla</button>' : "") + "</div>";
+      }
+      const timer = h.status === "held"
+        ? '<div class="timer"><b class="num" data-deadline="' + ts(h.expiresAt) + '">' + mmss(ts(h.expiresAt) - now()) + "</b><small>se libera en</small></div>"
+        : '<div class="timer"><span class="pill wait">El repartidor va en camino</span></div>';
+      return '<article class="card' + (state.ringing.has("hold-" + h.id) ? " req new ringing" : "") + '"><div class="req-top"><div class="req-icon">' + I.box + '</div><div class="req-title">' +
+        "<h3>" + esc(h.part) + "</h3>" + (h.vehicle ? '<div class="car">' + esc(h.vehicle) + "</div>" : "") +
+        '<div class="meta"><span>' + I.wrench + esc(h.mechanicName) + "</span></div></div>" + timer + "</div>" +
+        method + '<div class="items"><div class="item-row"><span>' + esc(h.text + (h.warranty ? " · Garantía " + h.warranty.toLowerCase() : "")) + '</span><b class="num">' + money(h.price) + "</b></div></div>" +
+        contact + actions + "</article>";
+    }).join("");
+  }
+
+  function viewEntregadas() {
+    const sales = state.feed ? state.feed.sales : [];
+    const total = sales.reduce((s, x) => s + x.price, 0);
+    let html = '<div class="head"><div><h1>Entregadas hoy</h1><p class="sub">Ventas a mecánicos de Mecanifique. Cada una tiene su número de ticket.</p></div>' +
+      '<div class="strip"><span class="chip-stat">' + sales.length + (sales.length === 1 ? " venta" : " ventas") + ' · <b class="num">' + money(total) + "</b></span></div></div>";
+    if (!sales.length) return html + '<div class="card empty"><strong>Todavía no hay ventas hoy</strong><span>Cuando marques un apartado como entregado, aparece aquí.</span></div>';
+    return html + '<div class="card table-wrap"><table><thead><tr><th>Hora</th><th>Pieza</th><th>Mecánico</th><th>Pago</th><th>Ticket</th><th>Total</th></tr></thead><tbody>' +
+      sales.map((s) => '<tr><td class="num">' + hhmm(ts(s.deliveredAt)) + "</td><td>" + esc(s.part + (s.vehicle ? " · " + s.vehicle : "")) + "</td><td>" + esc(s.mechanicName) +
+        "</td><td>" + esc(s.paymentMethod || "") + '</td><td class="num">' + esc(s.ticketCode || "") + '</td><td class="money num">' + money(s.price) + "</td></tr>").join("") +
+      "</tbody></table></div>";
+  }
+
+  function viewEstadisticas() {
+    const st = stats();
+    const sales = state.feed ? state.feed.sales : [];
+    const pct = st.received ? Math.round((st.answered / st.received) * 100) : 0;
+    const avgTicket = sales.length ? Math.round(st.salesTotal / sales.length) : 0;
+    const keys = Object.keys(st.hourly || {}).map(Number);
+    const from = Math.min(8, ...keys);
+    const to = Math.max(19, ...keys);
+    const hours = [];
+    for (let h = from; h <= to; h++) hours.push(h);
+    const max = Math.max(1, ...hours.map((h) => st.hourly[h] || 0));
+    const nowHour = Number(new Date().toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/Mexico_City" }));
+    const cats = (st.categories || []).slice(0, 6);
+    const catMax = Math.max(1, ...cats.map((c) => c.count));
+    return '<div class="head"><div><h1>Estadísticas de hoy</h1><p class="sub">Lo que te trae Mecanifique y qué te piden.</p></div></div>' +
+      '<div class="tiles">' +
+      '<div class="tile"><small>Solicitudes</small><b class="num">' + st.received + "</b><span>te llegaron hoy</span></div>" +
+      '<div class="tile"><small>Contestaste</small><b class="num">' + pct + "%</b><span>" + st.answered + " de " + st.received + "</span></div>" +
+      '<div class="tile"><small>Tiempo de respuesta</small><b class="num">' + (st.answered ? st.avgResponseSeconds + " s" : "—") + "</b><span>en promedio</span></div>" +
+      '<div class="tile"><small>Te eligieron</small><b class="num">' + st.won + "</b><span>apartados hoy</span></div>" +
+      '<div class="tile"><small>Ventas</small><b class="num">' + money(st.salesTotal) + "</b><span>" + (sales.length ? "ticket promedio " + money(avgTicket) : "sin ventas todavía") + "</span></div>" +
+      "</div>" +
+      '<div class="grid2">' +
+      '<div class="card"><h2>Solicitudes por hora</h2><div class="bars" style="grid-template-columns:repeat(' + hours.length + ',1fr)" role="img" aria-label="Solicitudes por hora">' +
+      hours.map((h) => { const v = st.hourly[h] || 0; return '<div class="bar' + (h === nowHour ? " now" : "") + '"><span class="num">' + (v || "") + '</span><i style="height:' + Math.round((v / max) * 110) + 'px"></i><span class="num">' + h + "</span></div>"; }).join("") +
+      '</div><p class="hint">La barra amarilla es la hora actual.</p></div>' +
+      '<div class="card"><h2>Lo que más te piden</h2><div class="rank">' +
+      (cats.length ? cats.map((c) => '<div class="rank-row"><span>' + esc(c.category) + '</span><b class="num">' + c.count + '</b><div class="track"><i style="width:' + Math.round((c.count / catMax) * 100) + '%"></i></div></div>').join("") : '<p class="hint">Todavía nada hoy.</p>') +
+      "</div></div>" +
+      '<div class="card"><h2>Te pidieron y no tenías</h2><p class="hint">Ventas que se fueron a otra tienda. Considera tenerlas en existencia.</p><div class="rank">' +
+      ((st.missing || []).length ? st.missing.map((m) => '<div class="missing-row"><span>' + esc(m.part) + '</span><b class="num">' + m.count + (m.count === 1 ? " vez" : " veces") + "</b></div>").join("") : '<p class="hint">Nada por ahora.</p>') +
+      "</div></div></div>";
+  }
+
+  function viewTienda() {
+    const s = state.settings;
+    const all = (state.options && state.options.categories) || [];
+    const radii = (state.options && state.options.radiusKm) || [3, 5, 10, 20];
+    const hasLocation = s.latitude != null && s.longitude != null;
+    return '<div class="head"><div><h1>Mi tienda</h1><p class="sub">Con esto decidimos qué solicitudes te llegan.</p></div></div>' +
+      '<div class="card"><h2>' + esc(s.name) + (s.zone ? " · " + esc(s.zone) : "") + "</h2>" + (s.address ? '<p class="hint">' + esc(s.address) + "</p>" : "") +
+      '<div class="inline-form"><label class="f">Horario<input id="hours-input" maxlength="120" value="' + esc(s.hours || "") + '" placeholder="Lun a sáb · 8:30 a 19:00"></label>' +
+      '<button class="btn soft" data-act="save-hours" type="button">Guardar horario</button></div></div>' +
+      '<div class="card"><h2>¿Dónde está tu tienda?</h2>' +
+      (hasLocation
+        ? '<p class="hint">Guardada: <span class="num">' + s.latitude.toFixed(5) + ", " + s.longitude.toFixed(5) + '</span> · <a href="' + mapsLink(s.latitude, s.longitude) + '" target="_blank" rel="noopener">Revisarla en el mapa</a></p>'
+        : '<p class="hint"><b>Sin ubicación no te llegan solicitudes.</b></p>') +
+      '<div class="actions"><button class="btn primary" data-act="locate" type="button">' + I.pin + "Usar mi ubicación actual</button></div>" +
+      '<p class="hint">Hazlo desde la tienda. En una computadora sin GPS puede salir aproximada: revísala en el mapa o pega las coordenadas.</p>' +
+      '<div class="inline-form"><label class="f">Coordenadas de Google Maps<input id="coords-input" placeholder="21.88234, -102.29143" autocomplete="off"></label>' +
+      '<button class="btn soft" data-act="save-coords" type="button">Guardar</button></div>' +
+      '<p class="hint">En Google Maps, mantén presionado (o clic derecho) sobre tu tienda y copia los números que salen.</p></div>' +
+      '<div class="card"><h2>¿Qué surtes?</h2><p class="hint">Solo te llegan solicitudes de estas categorías. Si no marcas ninguna, te llegan todas.</p><div class="chips">' +
+      all.map((c) => '<button type="button" data-act="cat" data-value="' + esc(c) + '" aria-pressed="' + s.categories.includes(c) + '">' + esc(c) + "</button>").join("") + "</div></div>" +
+      '<div class="card"><h2>¿Hasta dónde te llegan solicitudes?</h2><div class="seg">' +
+      radii.map((km) => '<button type="button" data-act="radius" data-value="' + km + '" aria-pressed="' + (s.radiusKm === km) + '">' + km + " km</button>").join("") +
+      '</div><p class="hint">Distancia entre tu tienda y donde está el auto o el mecánico.</p></div>' +
+      '<div class="card"><h2>¿Tienes repartidor?</h2><div class="seg">' +
+      '<button type="button" data-act="delivery" data-value="1" aria-pressed="' + s.delivery + '">Sí, mandamos a talleres</button>' +
+      '<button type="button" data-act="delivery" data-value="0" aria-pressed="' + !s.delivery + '">Solo en mostrador</button>' +
+      '</div><p class="hint">Si sí, el mecánico puede pedir que se la mandes.</p></div>';
+  }
+
+  // Pinta la sección actual sin perder lo que se está escribiendo.
+  function render() {
+    if (!$("#main")) return;
+    const active = document.activeElement;
+    const activeId = active && active.id;
+    const sel = active && "selectionStart" in active ? [active.selectionStart, active.selectionEnd] : null;
+    const typedValues = {};
+    ["hours-input", "coords-input"].concat(Object.keys(state.holdUi).map((id) => "cancel-reason-" + id)).forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.value) typedValues[id] = el.value;
+    });
+    renderChrome();
+    const views = { solicitudes: viewSolicitudes, apartados: viewApartados, entregadas: viewEntregadas, estadisticas: viewEstadisticas, tienda: viewTienda };
+    $("#main").innerHTML = views[state.view]();
+    Object.entries(typedValues).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
+    state.ringing.clear();
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch (e) {} }
+    }
+  }
+
+  /* ---------- Eventos ---------- */
+  document.addEventListener("click", (e) => {
+    const nav = e.target.closest("nav.side button[data-view]");
+    if (nav) { state.view = nav.dataset.view; render(); window.scrollTo({ top: 0 }); return; }
+    const b = e.target.closest("[data-act]");
+    if (!b || !state.settings) return;
+    const id = Number(b.dataset.id);
+    const act = b.dataset.act;
+    const draft = state.drafts[id];
+    if (act === "yes" || act === "order" || act === "no") startAnswer(id, act);
+    else if (act === "cancel") { delete state.drafts[id]; render(); }
+    else if (act === "decline") void respond(id, { available: "no", reason: b.dataset.reason }, "Listo. Lo anotamos en «Te pidieron y no tenías».");
+    else if (act === "send") sendAnswer(id);
+    else if (act === "add-option" && draft) { draft.options.push(newOption(draft.mode, "Original")); draft.active = draft.options.length - 1; render(); }
+    else if (act === "remove-option" && draft) { draft.options.splice(Number(b.dataset.i), 1); draft.active = 0; render(); }
+    else if (act === "key" && draft && draft.options) {
+      const o = draft.options[Math.min(draft.active || 0, draft.options.length - 1)];
+      const k = b.dataset.key;
+      if (k === "del") o.price = String(o.price).slice(0, -1);
+      else if (k === "clear") o.price = "";
+      else if (String(o.price).length < 6) o.price = (String(o.price) === "0" ? "" : String(o.price)) + k;
+      render();
+    }
+    else if (act === "opt" && draft) { draft.options[Number(b.dataset.i)][b.dataset.field] = b.dataset.value; render(); }
+    else if (act === "dispatch") void holdAction(id, "dispatch", {}, "Le avisamos al mecánico que su pieza va en camino.");
+    else if (act === "deliver") { state.holdUi[id] = "paying"; render(); }
+    else if (act === "hold-cancel-open") { state.holdUi[id] = "cancelling"; render(); }
+    else if (act === "hold-back") { delete state.holdUi[id]; render(); }
+    else if (act === "pay") {
+      state.delivered.add(id);
+      void holdAction(id, "deliver", { paymentMethod: b.dataset.pay }, (data) =>
+        "Venta registrada con el ticket " + data.ticketCode + (data.receiptCreated ? ". Ya está en el servicio del cliente." : "."));
+    }
+    else if (act === "hold-cancel" || act === "hold-cancel-custom") {
+      const reason = act === "hold-cancel" ? b.dataset.reason : ($("#cancel-reason-" + id) || {}).value || "";
+      if (reason.trim().length < 3) { toast("Escribe el motivo."); return; }
+      state.cancelledHolds.add(id);
+      void holdAction(id, "cancel", { reason: reason.trim() }, "Le avisamos al mecánico para que aparte en otra tienda.");
+    }
+    else if (act === "sound-on") setSound(true);
+    else if (act === "resume") void saveSettings({ receiving: true });
+    else if (act === "go") { state.view = b.dataset.view; render(); window.scrollTo({ top: 0 }); }
+    else if (act === "logout") logout();
+    else if (act === "cat") {
+      const c = b.dataset.value;
+      const cats = state.settings.categories.includes(c) ? state.settings.categories.filter((x) => x !== c) : state.settings.categories.concat(c);
+      void saveSettings({ categories: cats });
+    }
+    else if (act === "radius") void saveSettings({ radiusKm: Number(b.dataset.value) });
+    else if (act === "delivery") void saveSettings({ delivery: b.dataset.value === "1" });
+    else if (act === "save-hours") void saveSettings({ hours: $("#hours-input").value.trim() }, "Horario guardado.");
+    else if (act === "locate") useMyLocation();
+    else if (act === "save-coords") {
+      const match = ($("#coords-input").value || "").match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+      if (!match) { toast("Pega las coordenadas así: 21.88234, -102.29143", "bad"); return; }
+      const lat = Number(match[1]);
+      const lng = Number(match[2]);
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { toast("Esas coordenadas no son válidas.", "bad"); return; }
+      $("#coords-input").value = "";
+      void saveSettings({ latitude: lat, longitude: lng }, "Ubicación de la tienda guardada.");
+    }
+  });
+
+  document.addEventListener("input", (e) => {
+    const el = e.target.closest("[data-input]");
+    if (!el) return;
+    const draft = state.drafts[Number(el.dataset.id)];
+    if (!draft || !draft.options) return;
+    const o = draft.options[Number(el.dataset.i)];
+    o[el.dataset.input] = el.dataset.input === "price" ? el.value.replace(/[^0-9]/g, "").slice(0, 6) : el.value;
+    if (el.dataset.input === "price" && el.value !== o.price) el.value = o.price;
+  });
+  // Al tocar el precio o la marca de una opción, el teclado en pantalla escribe en esa.
+  document.addEventListener("focusin", (e) => {
+    const el = e.target.closest("[data-input]");
+    if (!el) return;
+    const id = Number(el.dataset.id);
+    const draft = state.drafts[id];
+    const i = Number(el.dataset.i);
+    if (draft && (draft.active || 0) !== i) {
+      draft.active = i;
+      document.querySelectorAll("#req-" + id + " .option").forEach((box, n) => box.classList.toggle("typing", n === i));
+      const label = document.querySelector("#req-" + id + " .keypad-box .hint b");
+      if (label) label.textContent = "opción " + (i + 1);
+    }
+  });
+  document.addEventListener("change", (e) => {
+    const el = e.target.closest("select[data-input]");
+    if (!el) return;
+    const draft = state.drafts[Number(el.dataset.id)];
+    if (draft && draft.options) draft.options[Number(el.dataset.i)].warranty = el.value;
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const el = e.target.closest("input[data-input]");
+    if (el) { e.preventDefault(); sendAnswer(Number(el.dataset.id)); }
+  });
+
+  // Que la pantalla no se apague mientras el Mostrador está abierto.
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      if ("wakeLock" in navigator && !wakeLock && state.settings) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      }
+    } catch (e) { /* si no se puede, la pantalla se apaga como siempre */ }
+  }
+  document.addEventListener("pointerdown", keepAwake);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { keepAwake(); void loadFeed(); }
+  });
+
+  /* ---------- Reloj: cuentas regresivas y volver a sonar ---------- */
+  function tick() {
+    const clock = $("#clock");
+    if (clock) clock.textContent = new Date().toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" });
+    const c = counts();
+    // Si una solicitud se venció mientras estaba en pantalla, se vuelve a pintar.
+    if (c.pending !== lastPending) { lastPending = c.pending; render(); return; }
+    if (c.pending && state.sound && Date.now() - state.lastRingAt > RING_AGAIN_MS) {
+      const unanswered = state.feed.requests.some((r) => r.state === "new" && ts(r.respondUntil) > now() && !state.drafts[r.id]);
+      if (unanswered) { play("new"); state.lastRingAt = Date.now(); }
+    }
+    document.querySelectorAll("[data-deadline]").forEach((el) => {
+      const left = Number(el.dataset.deadline) - now();
+      el.textContent = mmss(left);
+      const box = el.closest(".timer");
+      if (box && box.querySelector("small") && box.querySelector("small").textContent === "para contestar") box.classList.toggle("urgent", left < 60000);
+    });
+  }
+
+  /* ---------- Arranque ---------- */
+  const invitation = params.get("invitacion");
+  if (invitation) void showInvitation(invitation);
+  else if (session) void enterPanel();
+  else showLogin();
+})();
+</script>
+</body>
+</html>

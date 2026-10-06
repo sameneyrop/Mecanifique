@@ -169,7 +169,8 @@ export function createMostradorRouter(deps: MostradorDeps) {
 
   router.get("/mostrador/feed", requireAuth, wrap(async (req, res) => {
     const member = await requireMembership(req.auth!.user.id, storeIdFrom(req));
-    res.json(await storeFeed(member.storeId));
+    // serverTime: el panel corrige con él las cuentas regresivas si el reloj de la computadora va adelantado o atrasado.
+    res.json({ ...(await storeFeed(member.storeId)), serverTime: Date.now() });
   }));
 
   router.post("/mostrador/requests/:id/respond", requireAuth, wrap(async (req, res) => {

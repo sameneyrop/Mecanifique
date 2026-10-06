@@ -204,8 +204,14 @@ if (isProduction) {
   }
 }
 
+// El sitio (mecanifique.vercel.app) también llama a la API: el panel del
+// Mostrador vive ahí. Va siempre, aunque no esté en CORS_ORIGINS.
+const siteOrigin = new URL(process.env.SITE_URL || "https://mecanifique.vercel.app/").origin;
 app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : isProduction ? false : true
+  origin: allowedOrigins.length > 0 ? [...new Set([...allowedOrigins, siteOrigin])] : isProduction ? [siteOrigin] : true,
+  // El navegador guarda 10 min la verificación previa (OPTIONS): sin esto, el
+  // panel del Mostrador hacía dos peticiones en cada consulta.
+  maxAge: 600
 }));
 
 // Este webhook se registra ANTES de express.json() a propósito: la firma

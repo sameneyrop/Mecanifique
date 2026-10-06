@@ -438,6 +438,9 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
 - Disputas de clientes sobre un servicio ya realizado (categoría,
   descripción, revisión y resolución administrativa, con registro contable
   opcional de reembolso).
+- **Mostrador** (refaccionarias que contestan desde un panel web; ver
+  "Mostrador" abajo): servidor, app del mecánico, panel en `web/mostrador.html`
+  y tarjeta de admin.
 - Botón de emergencia (911) para clientes y mecánicos con registro de
   auditoría y notificación a administradores (`panic_alerts`, `POST
   /api/alerts/panic`).
@@ -722,9 +725,53 @@ sucursal por sucursal (tablas `parts_stores` y `parts_store_hits`):
   admins y se aprueba en Acciones → "Refaccionarias sugeridas", después de
   llamar para confirmar el número. No se aceptan teléfonos repetidos ni más de
   10 pendientes por mecánico.
-- Siguientes fases (no hechas): usar los tickets para saber precios y qué
-  surte cada tienda; tiendas dentro de la app contestando "sí/no + precio" y,
-  con eso, convenios.
+- La fase 2 es el **Mostrador** (abajo): las tiendas contestan "sí/no +
+  precio" desde un panel. Pendiente: usar los tickets para saber precios y qué
+  surte cada tienda, y convenios.
+
+### Mostrador (`src/mostrador.ts`, fase 2)
+
+Las refaccionarias invitadas contestan desde un panel web a los mecánicos que
+buscan una pieza, como los restaurantes con las apps de comida pero con
+piezas. **La pieza se paga en la tienda**: el dinero no pasa por Mecanifique.
+
+- **Entrada solo por invitación** (Acciones → "Mostrador", admin): se busca la
+  tienda en el directorio (o se da de alta), se escribe el correo de quien la
+  va a usar y sale un enlace `mecanifique.vercel.app/mostrador?invitacion=…`
+  (un solo uso, vence en 14 días, se puede cancelar). Con él crea su cuenta
+  (correo ya confirmado, necesita `SUPABASE_SERVICE_ROLE_KEY`) o liga la que
+  ya tenía. Las cuentas de tienda son usuarios normales ligados por
+  `store_members` (dueño o empleado); no hay rol nuevo.
+- **El mecánico pregunta** desde "Buscar la pieza" (servicio en curso o Mapa):
+  si hay tiendas de Mostrador que alcanzan el lugar, "Preguntarle a las N"
+  (categoría y nota opcionales). Les llega a las que están recibiendo,
+  surten esa categoría y tienen el auto dentro de su distancia (3, 5, 10 o
+  20 km). Máximo 5 piezas abiertas y 25 al día por mecánico.
+- **La tienda contesta en 5 minutos**: "Sí la tengo" o "La consigo" (hasta dos
+  opciones: original/genérica/remanufacturada, marca, precio, existencia,
+  garantía) o "No la tengo" con el motivo. Ninguna tienda ve los precios de
+  otra.
+- **El mecánico aparta** la que le convenga (la más barata arriba): pasa por
+  ella o, si la tienda tiene repartidor, se la mandan. El apartado dura 30
+  minutos (si nadie pasa, se libera solo). Con el apartado, la tienda ve el
+  teléfono del mecánico y, si se la manda, a dónde.
+- **Entregar**: la tienda marca cómo pagó y sale su número de ticket
+  (T-0001…). Si es para un servicio, el ticket entra solo a las refacciones
+  del servicio, sin foto ("precio de tienda"); se acepta solo si cabe en lo
+  cotizado, si no lo aprueba el cliente. Cuenta como "sí tenían la pieza".
+- Si la tienda ya no puede entregarla, la cancela con el motivo: el mecánico
+  lo ve y puede apartar en otra (a esa ya no).
+- **Panel** (`web/mostrador.html` → mecanifique.vercel.app/mostrador): pensado
+  para pantallas táctiles de mostrador (teclado numérico en pantalla, botones
+  grandes, pantalla completa, sin que se apague la pantalla), suena cuando
+  llega una solicitud, y tiene Apartados, Entregadas hoy, Estadísticas (qué
+  te piden, qué no tenías) y Mi tienda (qué surte, distancia, repartidor,
+  horario y ubicación). Se actualiza por el canal en tiempo real
+  `store:<id>` (solo un aviso, sin datos) y cada 10 segundos por si se cae.
+  La API acepta llamadas del sitio aunque no esté en `CORS_ORIGINS`.
+- Para probar el panel con el servidor local: `mostrador.html?api=http://localhost:3000`
+  (solo acepta localhost, para que un enlace no pueda mandar la contraseña a
+  otro servidor).
 
 ### Cancelaciones (`src/cancellations.ts`)
 
@@ -926,6 +973,8 @@ decididas y el cálculo del apartado ya funcionando**, pero el cobro real
    identidad.
 5. Marcar como pagadas las comisiones, resolver disputas, contactar la lista
    de espera y aprobar refaccionarias sugeridas (tarjetas en Acciones).
+6. Invitar refaccionarias al Mostrador y cancelar invitaciones (Acciones →
+   "Mostrador").
 
 No hay forma de volverse admin desde la app ni desde la API, a propósito. Se
 crea una cuenta aparte (cliente) y se promueve directo en Turso:
