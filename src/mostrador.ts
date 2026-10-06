@@ -42,10 +42,13 @@ export const PART_CATEGORIES = [
   "Transmisión",
   "Carrocería",
   "Diésel",
-  "Importados"
+  "Importados",
+  // Refacciones de moto: una pieza de un servicio de moto sale con esta
+  // categoría si el mecánico no elige otra (createPartRequest).
+  "Motos"
 ] as const;
 
-export const DECLINE_REASONS = ["No la manejo", "Se me acabó", "No es para ese auto"] as const;
+export const DECLINE_REASONS = ["No la manejo", "Se me acabó", "No es para ese vehículo"] as const;
 export const PAYMENT_METHODS = ["Efectivo", "Transferencia", "Tarjeta"] as const;
 
 const KIND_TEXT: Record<string, string> = { original: "Original", generic: "Genérica", remanufactured: "Remanufacturada" };
@@ -409,6 +412,7 @@ export async function createPartRequest(
   }
 
   let vehicle = data.vehicle ?? null;
+  let category: string | null = data.category ?? null;
   let latitude = data.latitude ?? null;
   let longitude = data.longitude ?? null;
   if (data.serviceRequestId) {
@@ -420,8 +424,10 @@ export async function createPartRequest(
       year: number;
       latitude: number | null;
       longitude: number | null;
+      vehicleType: string | null;
     }>(
-      `SELECT mechanic_id AS mechanicId, status, vehicle_make AS make, vehicle_model AS model, vehicle_year AS year, latitude, longitude
+      `SELECT mechanic_id AS mechanicId, status, vehicle_make AS make, vehicle_model AS model, vehicle_year AS year, latitude, longitude,
+              vehicle_type AS vehicleType
        FROM service_requests WHERE id = ?`,
       [data.serviceRequestId]
     );
@@ -431,7 +437,10 @@ export async function createPartRequest(
     if (service.status === "completed" || service.status === "cancelled") {
       throw new MostradorError(409, "Ese servicio ya terminó.");
     }
-    vehicle = `${service.make} ${service.model} ${service.year}`;
+    const isMoto = service.vehicleType === "moto";
+    vehicle = `${isMoto ? "Moto " : ""}${service.make} ${service.model} ${service.year}`;
+    // Pieza de moto sin categoría: solo les llega a las tiendas que surten motos (o todo).
+    if (isMoto && !category) category = "Motos";
     // Cerca del auto: es donde se necesita la pieza.
     if (service.latitude != null && service.longitude != null) {
       latitude = service.latitude;
@@ -454,7 +463,7 @@ export async function createPartRequest(
   const targets = stores
     .filter((store) => {
       const categories = parseCategories(store.categories);
-      return !data.category || categories.length === 0 || categories.includes(data.category);
+      return !category || categories.length === 0 || categories.includes(category);
     })
     .map((store) => ({
       id: store.id,
@@ -476,7 +485,7 @@ export async function createPartRequest(
       mechanicId,
       data.serviceRequestId ?? null,
       data.part,
-      data.category ?? null,
+      category,
       data.note || null,
       vehicle,
       latitude,
@@ -1134,7 +1143,7 @@ export async function storeFeed(storeId: number): Promise<StoreFeed> {
   const missing = await all<{ part: string; count: number }>(
     `SELECT r.part || COALESCE(' · ' || r.vehicle, '') AS part, COUNT(*) AS count
      FROM part_offers o JOIN part_requests r ON r.id = o.part_request_id
-     WHERE o.store_id = ? AND o.available = 'no' AND o.decline_reason <> 'No es para ese auto'
+     WHERE o.store_id = ? AND o.available = 'no' AND o.decline_reason NOT IN ('No es para ese vehículo', 'No es para ese auto')
        AND o.created_at > datetime('now', '-30 days')
      GROUP BY part ORDER BY count DESC LIMIT 10`,
     [storeId]

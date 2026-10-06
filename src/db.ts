@@ -951,6 +951,13 @@ export async function initDb(): Promise<void> {
   // Ticket que llegó del Mostrador de la tienda (sin foto: lo emitió la tienda).
   await ensureColumn("parts_receipts", "store_id", "ALTER TABLE parts_receipts ADD COLUMN store_id INTEGER");
 
+  // Autos y motos (src/vehicleTypes.ts): de qué tipo es cada solicitud y cada
+  // vehículo guardado, y qué atiende cada mecánico. Lo que ya existía es de
+  // autos; los mecánicos de antes quedan en "auto" hasta que digan otra cosa.
+  await ensureColumn("service_requests", "vehicle_type", "ALTER TABLE service_requests ADD COLUMN vehicle_type TEXT NOT NULL DEFAULT 'auto'");
+  await ensureColumn("vehicle_profiles", "vehicle_type", "ALTER TABLE vehicle_profiles ADD COLUMN vehicle_type TEXT NOT NULL DEFAULT 'auto'");
+  await ensureColumn("mechanics", "works_on", "ALTER TABLE mechanics ADD COLUMN works_on TEXT NOT NULL DEFAULT 'auto'");
+
   // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
   await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");
 

@@ -2,9 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import { all, get, run } from "../db";
 import { handleAsync, requireAnyAuth } from "../middleware";
+import { normalizeVehicleType, vehicleTypeSchema } from "../vehicleTypes";
 
 const vehicleFieldsSchema = z.object({
   nickname: z.string().trim().min(1).max(50).optional(),
+  // Auto o moto (src/vehicleTypes.ts); sin él, auto.
+  vehicleType: vehicleTypeSchema.optional(),
   make: z.string().trim().min(2).max(50),
   model: z.string().trim().min(1).max(50),
   year: z.number().int().gte(1886).lte(new Date().getFullYear() + 1),
@@ -42,10 +45,10 @@ function vehicleResponse(row: {
   id: number; customerId: number; nickname: string | null; make: string; model: string;
   year: number; engineType: string | null; transmissionType: string | null;
   licensePlate: string | null; color: string | null; mileage: number | null; isPrimary: number;
-  photoUrlsJson: string; metadataJson: string; createdAt: string; updatedAt: string;
+  photoUrlsJson: string; metadataJson: string; createdAt: string; updatedAt: string; vehicleType: string | null;
 }) {
   return {
-    id: row.id, customerId: row.customerId, nickname: row.nickname, make: row.make,
+    id: row.id, customerId: row.customerId, nickname: row.nickname, vehicleType: normalizeVehicleType(row.vehicleType), make: row.make,
     model: row.model, year: row.year, engineType: row.engineType, transmissionType: row.transmissionType,
     licensePlate: maskLicensePlate(row.licensePlate),
     color: row.color, mileage: row.mileage, isPrimary: row.isPrimary === 1,
@@ -69,7 +72,7 @@ const vehicleSelect = `
          engine_type AS engineType, transmission_type AS transmissionType,
          license_plate AS licensePlate, color, mileage, is_primary AS isPrimary,
          photo_urls_json AS photoUrlsJson, metadata_json AS metadataJson,
-         created_at AS createdAt, updated_at AS updatedAt
+         created_at AS createdAt, updated_at AS updatedAt, vehicle_type AS vehicleType
   FROM vehicle_profiles
 `;
 
@@ -100,13 +103,13 @@ vehiclesRouter.post(["/vehicles", "/customer/vehicles"], requireAnyAuth, handleA
 
   const result = await run(
     `INSERT INTO vehicle_profiles
-      (customer_id, nickname, make, model, year, engine_type, transmission_type, license_plate, color, mileage, is_primary, photo_urls_json, metadata_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (customer_id, nickname, make, model, year, engine_type, transmission_type, license_plate, color, mileage, is_primary, photo_urls_json, metadata_json, vehicle_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [customerId, payload.nickname ?? null, payload.make, payload.model, payload.year,
       payload.engineType ?? null, payload.transmissionType ?? null,
       payload.licensePlate?.toUpperCase() ?? null, payload.color ?? null, payload.mileage ?? null,
       isFirstVehicle ? 1 : 0,
-      JSON.stringify(payload.photoUrls ?? []), JSON.stringify(payload.metadata ?? {})]
+      JSON.stringify(payload.photoUrls ?? []), JSON.stringify(payload.metadata ?? {}), payload.vehicleType ?? "auto"]
   );
   const row = await get<any>(`${vehicleSelect} WHERE id = ? AND customer_id = ?`, [result.lastID, customerId]);
   res.status(201).json(vehicleResponse(row));
@@ -173,6 +176,7 @@ vehiclesRouter.patch(["/vehicles/:id", "/customer/vehicles/:id"], requireAnyAuth
   const sets: string[] = [];
   const add = (column: string, value: unknown) => { sets.push(`${column} = ?`); values.push(value); };
   if (payload.nickname !== undefined) add("nickname", payload.nickname);
+  if (payload.vehicleType !== undefined) add("vehicle_type", payload.vehicleType);
   if (payload.make !== undefined) add("make", payload.make);
   if (payload.model !== undefined) add("model", payload.model);
   if (payload.year !== undefined) add("year", payload.year);

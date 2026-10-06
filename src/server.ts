@@ -3,6 +3,17 @@ import cors from "cors";
 import http from "node:http";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
+import {
+  normalizeVehicleType,
+  normalizeWorksOn,
+  notServedMessage,
+  servesVehicle,
+  servesVehicleSql,
+  vehiclePrefix,
+  vehicleTypeSchema,
+  worksOnSchema,
+  type VehicleType
+} from "./vehicleTypes";
 import { z } from "zod";
 import { all, databaseKind, get, initDb, run } from "./db";
 import { requireAuth, requireRole, type AuthUser } from "./auth";
@@ -461,6 +472,8 @@ const mechanicRegistrationSchema = z.object({
   zone: z.string().min(2),
   yearsExperience: z.number().int().min(0),
   specialties: z.array(z.string().min(2)).min(1),
+  // Qué atiende (src/vehicleTypes.ts); sin él, autos.
+  worksOn: worksOnSchema.optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional()
 });
@@ -476,7 +489,9 @@ const serviceRequestSchema = z.object({
   zone: z.string().min(2),
   serviceAddress: z.string().min(5).optional().or(z.literal("")),
   latitude: z.number().optional(),
-  longitude: z.number().optional()
+  longitude: z.number().optional(),
+  // Auto o moto (src/vehicleTypes.ts); sin él, auto (versiones de antes de la app).
+  vehicleType: vehicleTypeSchema.optional()
 });
 
 // Contraseñas nuevas: al menos 8 caracteres, con letras y números (la app
@@ -1040,12 +1055,15 @@ const ELIGIBLE_MECHANIC_CONDITIONS = `
  * la solicitud sí tiene coordenadas, solo cuentan mecánicos sin ubicación
  * conocida: uno que sabemos que está lejos no se elige por el texto.
  * Si se pasa requestId, excluye a quienes ya no tomaron esa solicitud.
+ * Solo cuenta a quien atiende ese tipo de vehículo (src/vehicleTypes.ts):
+ * una solicitud de moto nunca le llega a un mecánico que solo atiende autos.
  */
 async function findAvailableMechanic(
   city: string,
   zone: string,
   requestId: number | null,
-  coords: { latitude: number; longitude: number } | null
+  coords: { latitude: number; longitude: number } | null,
+  vehicleType: VehicleType = "auto"
 ): Promise<number | null> {
   if (coords) {
     const candidates = await all<{ id: number; latitude: number; longitude: number; rating: number; serviceRadiusKm: number | null }>(
@@ -1055,8 +1073,9 @@ async function findAvailableMechanic(
       WHERE latitude IS NOT NULL
         AND longitude IS NOT NULL
         AND ${ELIGIBLE_MECHANIC_CONDITIONS}
+        AND ${servesVehicleSql()}
       `,
-      [requestId, requestId]
+      [requestId, requestId, vehicleType]
     );
     const nearest = candidates
       .map((mechanic) => ({
@@ -1077,10 +1096,11 @@ async function findAvailableMechanic(
     SELECT id, city, zone, service_areas AS serviceAreas
     FROM mechanics
     WHERE ${ELIGIBLE_MECHANIC_CONDITIONS}
+      AND ${servesVehicleSql()}
       ${coords ? "AND (latitude IS NULL OR longitude IS NULL)" : ""}
     ORDER BY rating DESC, jobs_completed DESC
     `,
-    [requestId, requestId]
+    [requestId, requestId, vehicleType]
   );
   // Primero los de esa zona, luego los que tienen su taller en esa ciudad y
   // al final los que la atienden desde otro municipio; entre iguales, el
@@ -1152,7 +1172,9 @@ async function offerRequestToMechanic(requestId: number, mechanicId: number): Pr
   );
   const mechanicUserId = await getUserIdByMechanicId(mechanicId);
   if (mechanicUserId) {
-    await createNotification(mechanicUserId, "Nueva solicitud", `Tienes una solicitud pendiente #${requestId}`, { requestId });
+    const typeRow = await get<{ vehicleType: string | null }>("SELECT vehicle_type AS vehicleType FROM service_requests WHERE id = ?", [requestId]);
+    const title = normalizeVehicleType(typeRow?.vehicleType) === "moto" ? "Nueva solicitud de moto" : "Nueva solicitud";
+    await createNotification(mechanicUserId, title, `Tienes una solicitud pendiente #${requestId}`, { requestId });
   }
   notifyRequest(requestId, "request.offered", { requestId, mechanicId });
   return true;
@@ -1177,9 +1199,11 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
     customerId: number;
     assignmentMode: string | null;
     status: string;
+    vehicleType: string | null;
   }>(
     `
-    SELECT city, zone, latitude, longitude, customer_id AS customerId, assignment_mode AS assignmentMode, status
+    SELECT city, zone, latitude, longitude, customer_id AS customerId, assignment_mode AS assignmentMode, status,
+           vehicle_type AS vehicleType
     FROM service_requests
     WHERE id = ?
     `,
@@ -1207,7 +1231,13 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
     return;
   }
 
-  const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId, requestCoords(request));
+  const nextMechanicId = await findAvailableMechanic(
+    request.city,
+    request.zone,
+    requestId,
+    requestCoords(request),
+    normalizeVehicleType(request.vehicleType)
+  );
   if (nextMechanicId && (await offerRequestToMechanic(requestId, nextMechanicId))) {
     return;
   }
@@ -2146,6 +2176,9 @@ app.post(
         payload.yearsExperience,
         payload.specialties
       );
+      if (payload.worksOn && payload.worksOn !== "auto" && result.mechanicId) {
+        await run("UPDATE mechanics SET works_on = ? WHERE id = ?", [payload.worksOn, result.mechanicId]);
+      }
       res.status(201).json({
         userId: result.userId,
         mechanicId: result.mechanicId,
@@ -2304,7 +2337,8 @@ const switchRoleSchema = z.object({
   city: z.string().trim().min(2).optional(),
   zone: z.string().trim().min(2).optional(),
   yearsExperience: z.number().int().min(0).optional(),
-  specialties: z.array(z.string().trim().min(2)).min(1).optional()
+  specialties: z.array(z.string().trim().min(2)).min(1).optional(),
+  worksOn: worksOnSchema.optional()
 });
 
 app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) => {
@@ -2351,8 +2385,8 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
       const initialStatus = (await isIdentityApproved(authUser.id)) ? "active" : "pending_verification";
       const phone = customerPhone && !(await isPhoneTaken("mechanics", customerPhone)) ? customerPhone : `sin-telefono-${authUser.id}`;
       const result = await run(
-        `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        `INSERT INTO mechanics (full_name, phone, city, zone, years_experience, specialties, status, is_available, works_on)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
         [
           authUser.fullName,
           phone,
@@ -2360,7 +2394,8 @@ app.post("/api/account/switch-role", requireAuth, handleAsync(async (req, res) =
           payload.zone,
           payload.yearsExperience,
           JSON.stringify(payload.specialties),
-          initialStatus
+          initialStatus,
+          payload.worksOn ?? "auto"
         ]
       );
       mechanicId = result.lastID;
@@ -3149,6 +3184,7 @@ app.post(
   handleAsync(async (req, res) => {
     const payload = apiServiceRequestSchema.parse(req.body);
     const customerId = req.auth?.user.role === "customer" ? req.auth.user.customerId : payload.customerId;
+    const vehicleType = normalizeVehicleType(payload.vehicleType);
 
     if (!customerId) {
       res.status(400).json({ error: "customerId requerido para crear la solicitud" });
@@ -3242,7 +3278,7 @@ app.post(
         payload.latitude != null && payload.longitude != null
           ? { latitude: payload.latitude, longitude: payload.longitude }
           : null;
-      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null, coords)) ?? undefined;
+      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null, coords, vehicleType)) ?? undefined;
     }
 
     const holdExpiresAt = requestedMechanicId
@@ -3251,9 +3287,9 @@ app.post(
     let requestedMechanicLaborRate: number | null = null;
     let requestedMechanicName: string | null = null;
     if (requestedMechanicId) {
-      const requestedMechanic = await get<{ id: number; status: string; is_online: number; is_available: number; labor_rate: number | null; full_name: string }>(
+      const requestedMechanic = await get<{ id: number; status: string; is_online: number; is_available: number; labor_rate: number | null; full_name: string; works_on: string | null }>(
         `
-        SELECT id, status, is_online, is_available, labor_rate, full_name
+        SELECT id, status, is_online, is_available, labor_rate, full_name, works_on
         FROM mechanics
         WHERE id = ?
         `,
@@ -3264,6 +3300,11 @@ app.post(
 
       if (!requestedMechanic || requestedMechanic.status !== "active" || requestedMechanic.is_online !== 1 || requestedMechanic.is_available !== 1) {
         res.status(404).json({ error: "Mecánico solicitado no disponible para recibir solicitudes" });
+        return;
+      }
+      // Que el mecánico escogido (o el dueño del turno) atienda ese tipo de vehículo.
+      if (!servesVehicle(requestedMechanic.works_on, vehicleType)) {
+        res.status(409).json({ error: notServedMessage(requestedMechanic.works_on, vehicleType) });
         return;
       }
 
@@ -3323,9 +3364,9 @@ app.post(
       INSERT INTO service_requests (
         customer_id, vehicle_make, vehicle_model, vehicle_year, issue_description,
         preferred_time, city, zone, service_address, latitude, longitude, mechanic_id, status, schedule_slot_id,
-        deposit_amount, assignment_mode, car_photo_url, spot_photo_url, location_source
+        deposit_amount, assignment_mode, car_photo_url, spot_photo_url, location_source, vehicle_type
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         customerId,
@@ -3348,7 +3389,8 @@ app.post(
         assignmentMode,
         payload.carPhotoUrl ?? null,
         payload.spotPhotoUrl ?? null,
-        payload.locationSource ?? null
+        payload.locationSource ?? null,
+        vehicleType
       ]
     );
 
@@ -3403,7 +3445,7 @@ app.post(
       if (mechanicUserId) {
         await createNotification(
           mechanicUserId,
-          "Nueva solicitud",
+          vehicleType === "moto" ? "Nueva solicitud de moto" : "Nueva solicitud",
           `Tienes una solicitud pendiente #${result.lastID}`,
           { requestId: result.lastID }
         );
@@ -3413,7 +3455,7 @@ app.post(
     const created = await get(
       `
       SELECT id, customer_id AS customerId, vehicle_make AS vehicleMake, vehicle_model AS vehicleModel,
-             vehicle_year AS vehicleYear, issue_description AS issueDescription, preferred_time AS preferredTime,
+             vehicle_year AS vehicleYear, vehicle_type AS vehicleType, issue_description AS issueDescription, preferred_time AS preferredTime,
              city, zone, latitude, longitude, status, mechanic_id AS mechanicId, schedule_slot_id AS scheduleSlotId, hold_expires_at AS holdExpiresAt,
              diagnosis_notes AS diagnosisNotes, repair_notes AS repairNotes,
              estimated_price AS estimatedPrice, final_price AS finalPrice, deposit_amount AS depositAmount,
@@ -3460,9 +3502,10 @@ app.post(
       zone: string;
       status: string;
       customerId: number;
+      vehicleType: string | null;
     }>(
       `
-      SELECT id, customer_id AS customerId, city, zone, status
+      SELECT id, customer_id AS customerId, city, zone, status, vehicle_type AS vehicleType
       FROM service_requests
       WHERE id = ?
       `,
@@ -3482,7 +3525,9 @@ app.post(
     let mechanicId = payload.mechanicId;
     if (!mechanicId) {
       // Por ciudad y zona escritas, con la misma comparación tolerante que el reparto.
-      mechanicId = (await findAvailableMechanic(serviceRequest.city, serviceRequest.zone, null, null)) ?? undefined;
+      mechanicId =
+        (await findAvailableMechanic(serviceRequest.city, serviceRequest.zone, null, null, normalizeVehicleType(serviceRequest.vehicleType))) ??
+        undefined;
     }
 
     if (!mechanicId) {
@@ -3595,7 +3640,7 @@ app.get(
              specialties, status, is_available AS isAvailable, is_online AS isOnline, rating, review_count AS reviewCount, jobs_completed AS jobsCompleted,
              latitude, longitude, bio, cover_photo_url AS coverPhotoUrl, profile_photo_url AS profilePhotoUrl,
              gallery_json AS galleryJson, labor_rate AS laborRate, created_at AS createdAt,
-             service_areas AS serviceAreas
+             service_areas AS serviceAreas, works_on AS worksOn
       FROM mechanics
       WHERE status = 'active'
     `;
@@ -3604,14 +3649,21 @@ app.get(
     if (availableOnly) {
       sql += " AND is_available = 1";
     }
+    // ?vehicleType=moto: solo quien atiende motos (src/vehicleTypes.ts).
+    const vehicleFilter = vehicleTypeSchema.safeParse(req.query.vehicleType);
+    if (vehicleFilter.success) {
+      sql += ` AND ${servesVehicleSql()}`;
+      params.push(vehicleFilter.data);
+    }
 
     sql += " ORDER BY rating DESC, jobs_completed DESC";
 
-    const mechanics = await all<MechanicRow & { serviceAreas: string | null }>(sql, params);
+    const mechanics = await all<MechanicRow & { serviceAreas: string | null; worksOn: string | null }>(sql, params);
     const normalized = mechanics.map(({ latitude: exactLatitude, longitude: exactLongitude, ...mechanic }) => {
       const shown = mechanic.isOnline === 1 ? approximateLocation(exactLatitude, exactLongitude) : null;
       return {
         ...mechanic,
+        worksOn: normalizeWorksOn(mechanic.worksOn),
         latitude: shown?.latitude ?? null,
         longitude: shown?.longitude ?? null,
         specialties: parseSpecialties(mechanic.specialties),
@@ -4400,7 +4452,7 @@ app.get(
 
     let sql = `
       SELECT sr.id, sr.customer_id AS customerId, sr.vehicle_make AS vehicleMake, sr.vehicle_model AS vehicleModel,
-             sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
+             sr.vehicle_year AS vehicleYear, sr.vehicle_type AS vehicleType, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt,
              sr.latitude, sr.longitude,
              m.full_name AS mechanicName, c.full_name AS customerName, ${contactPhoneSql("sr", "c.phone")} AS customerPhone,
@@ -4470,7 +4522,7 @@ app.get(
     const incoming = await get(
       `
       SELECT sr.id, sr.customer_id AS customerId, sr.vehicle_make AS vehicleMake, sr.vehicle_model AS vehicleModel,
-             sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
+             sr.vehicle_year AS vehicleYear, sr.vehicle_type AS vehicleType, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId,
               sr.service_address AS serviceAddress,
              sr.hold_expires_at AS holdExpiresAt, c.full_name AS customerName,
@@ -4675,9 +4727,11 @@ app.post(
       zone: string;
       latitude: number | null;
       longitude: number | null;
+      vehicleType: string | null;
     }>(
       `
-      SELECT customer_id AS customerId, status, mechanic_id AS mechanicId, city, zone, latitude, longitude
+      SELECT customer_id AS customerId, status, mechanic_id AS mechanicId, city, zone, latitude, longitude,
+             vehicle_type AS vehicleType
       FROM service_requests
       WHERE id = ?
       `,
@@ -4701,7 +4755,13 @@ app.post(
     // volver a ofrecer. Quien rechazó explícitamente no se vuelve a molestar.
     await run("DELETE FROM service_request_declines WHERE service_request_id = ? AND reason = 'expired'", [requestId]);
 
-    const nextMechanicId = await findAvailableMechanic(request.city, request.zone, requestId, requestCoords(request));
+    const nextMechanicId = await findAvailableMechanic(
+      request.city,
+      request.zone,
+      requestId,
+      requestCoords(request),
+      normalizeVehicleType(request.vehicleType)
+    );
     const found = nextMechanicId !== null && (await offerRequestToMechanic(requestId, nextMechanicId));
     res.status(200).json({ found });
   })
@@ -4965,7 +5025,7 @@ app.get(
     }>(
       `
       SELECT sr.id, sr.customer_id AS customerId, sr.vehicle_make AS vehicleMake, sr.vehicle_model AS vehicleModel,
-             sr.vehicle_year AS vehicleYear, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
+             sr.vehicle_year AS vehicleYear, sr.vehicle_type AS vehicleType, sr.issue_description AS issueDescription, sr.preferred_time AS preferredTime,
              sr.city, sr.zone, sr.service_address AS serviceAddress, sr.latitude, sr.longitude, sr.status, sr.mechanic_id AS mechanicId, sr.schedule_slot_id AS scheduleSlotId, sr.hold_expires_at AS holdExpiresAt, sr.diagnosis_notes AS diagnosisNotes,
              sr.repair_notes AS repairNotes, sr.estimated_price AS estimatedPrice, sr.final_price AS finalPrice,
              sr.assignment_mode AS assignmentMode,

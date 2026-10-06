@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { get, run } from "./db";
+import { normalizeWorksOn, worksOnSchema, type WorksOn } from "./vehicleTypes";
 
 /**
  * Dónde da servicio cada mecánico.
@@ -158,18 +159,22 @@ export type ServiceArea = {
   zone: string;
   serviceAreas: string[];
   serviceRadiusKm: number;
+  /** Qué atiende: autos, motos o los dos (src/vehicleTypes.ts). */
+  worksOn: WorksOn;
 };
 
 export const serviceAreaSchema = z.object({
   city: z.string().trim().min(2).max(60),
   zone: z.string().trim().min(2).max(60),
   serviceAreas: z.array(z.string().trim().min(2).max(60)).max(AGUASCALIENTES_MUNICIPALITIES.length * 2),
-  serviceRadiusKm: z.number().int()
+  serviceRadiusKm: z.number().int(),
+  // Opcional: las versiones de la app de antes no lo mandan y no lo cambian.
+  worksOn: worksOnSchema.optional()
 });
 
 export async function getServiceArea(mechanicId: number): Promise<ServiceArea | null> {
-  const row = await get<{ city: string; zone: string; serviceAreas: string | null; serviceRadiusKm: number | null }>(
-    `SELECT city, zone, service_areas AS serviceAreas, service_radius_km AS serviceRadiusKm FROM mechanics WHERE id = ?`,
+  const row = await get<{ city: string; zone: string; serviceAreas: string | null; serviceRadiusKm: number | null; worksOn: string | null }>(
+    `SELECT city, zone, service_areas AS serviceAreas, service_radius_km AS serviceRadiusKm, works_on AS worksOn FROM mechanics WHERE id = ?`,
     [mechanicId]
   );
   if (!row) return null;
@@ -177,7 +182,8 @@ export async function getServiceArea(mechanicId: number): Promise<ServiceArea | 
     city: row.city,
     zone: row.zone,
     serviceAreas: parseServiceAreas(row.serviceAreas),
-    serviceRadiusKm: row.serviceRadiusKm ?? DEFAULT_SERVICE_RADIUS_KM
+    serviceRadiusKm: row.serviceRadiusKm ?? DEFAULT_SERVICE_RADIUS_KM,
+    worksOn: normalizeWorksOn(row.worksOn)
   };
 }
 
@@ -186,7 +192,7 @@ export async function saveServiceArea(mechanicId: number, input: unknown): Promi
   if (!parsed.success) {
     throw new ServiceAreaError(400, "Escribe tu ciudad y tu zona, y elige hasta dónde vas.");
   }
-  const { city, zone, serviceAreas, serviceRadiusKm } = parsed.data;
+  const { city, zone, serviceAreas, serviceRadiusKm, worksOn } = parsed.data;
   if (!(SERVICE_RADIUS_OPTIONS as readonly number[]).includes(serviceRadiusKm)) {
     throw new ServiceAreaError(400, "Elige una de las distancias: 10, 25, 50 km o todo el estado.");
   }
@@ -198,19 +204,21 @@ export async function saveServiceArea(mechanicId: number, input: unknown): Promi
     }
     if (!areas.includes(municipality)) areas.push(municipality);
   }
+  const current = await get<{ worksOn: string | null }>("SELECT works_on AS worksOn FROM mechanics WHERE id = ?", [mechanicId]);
+  if (!current) {
+    throw new ServiceAreaError(404, "Mecánico no encontrado");
+  }
   const saved: ServiceArea = {
     city: canonicalCity(city),
     zone: zone.replace(/\s+/g, " "),
     // En el orden del catálogo, para que se lean igual en todos lados.
     serviceAreas: AGUASCALIENTES_MUNICIPALITIES.filter((name) => areas.includes(name)),
-    serviceRadiusKm
+    serviceRadiusKm,
+    worksOn: worksOn ?? normalizeWorksOn(current.worksOn)
   };
-  const result = await run(
-    "UPDATE mechanics SET city = ?, zone = ?, service_areas = ?, service_radius_km = ? WHERE id = ?",
-    [saved.city, saved.zone, JSON.stringify(saved.serviceAreas), saved.serviceRadiusKm, mechanicId]
+  await run(
+    "UPDATE mechanics SET city = ?, zone = ?, service_areas = ?, service_radius_km = ?, works_on = ? WHERE id = ?",
+    [saved.city, saved.zone, JSON.stringify(saved.serviceAreas), saved.serviceRadiusKm, saved.worksOn, mechanicId]
   );
-  if (result.changes === 0) {
-    throw new ServiceAreaError(404, "Mecánico no encontrado");
-  }
   return saved;
 }

@@ -2426,7 +2426,7 @@ test("zonas: guardar dónde da servicio valida municipios y distancia, y deja la
     serviceAreas: ["calvillo", "Jesús María", "jesus maria"],
     serviceRadiusKm: 50
   });
-  assert.deepEqual(saved, { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Calvillo", "Jesús María"], serviceRadiusKm: 50 });
+  assert.deepEqual(saved, { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Calvillo", "Jesús María"], serviceRadiusKm: 50, worksOn: "auto" });
   assert.deepEqual(await getServiceArea(mechanicId), saved);
 
   for (const bad of [
@@ -2736,4 +2736,66 @@ test("Mostrador: las rutas piden sesión y una invitación inexistente no revela
   }
   const { response } = await request("/api/mostrador/invitations/no-existe-este-token-de-invitacion");
   assert.equal(response.status, 404);
+});
+
+test("motos: una solicitud de moto solo pasa a quien atiende motos, y una de auto nunca a quien solo atiende motos", async () => {
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const first = await createOnlineMechanic(city, "Centro");
+  const autoOnly = await createOnlineMechanic(city, "Centro");
+  const motoOnly = await createOnlineMechanic(city, "Centro");
+  // El de motos tiene mejor calificación: si el filtro no existiera, se llevaría también la de auto.
+  await run("UPDATE mechanics SET works_on = 'auto', rating = 4.5 WHERE id = ?", [autoOnly]);
+  await run("UPDATE mechanics SET works_on = 'moto', rating = 4.9 WHERE id = ?", [motoOnly]);
+
+  const motoRequest = await createPendingRequestWithExpiredHold(city, "Centro", first, "auto");
+  await run("UPDATE service_requests SET vehicle_type = 'moto' WHERE id = ?", [motoRequest]);
+  await sweepExpiredHolds();
+  let row = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [motoRequest]);
+  assert.equal(row.mechanicId, motoOnly, "la de moto va al que atiende motos");
+
+  // Se libera al de motos (para que esté disponible) y llega una de auto.
+  await run("UPDATE service_requests SET status = 'cancelled', hold_expires_at = NULL WHERE id = ?", [motoRequest]);
+  const autoRequest = await createPendingRequestWithExpiredHold(city, "Centro", first, "auto");
+  await sweepExpiredHolds();
+  row = await get("SELECT mechanic_id AS mechanicId FROM service_requests WHERE id = ?", [autoRequest]);
+  assert.equal(row.mechanicId, autoOnly, "la de auto no va al que solo atiende motos aunque tenga mejor calificación");
+
+  // Quien atiende los dos puede recibir cualquiera.
+  const { servesVehicle, notServedMessage } = require("../src/vehicleTypes.ts");
+  assert.equal(servesVehicle("ambos", "moto"), true);
+  assert.equal(servesVehicle("ambos", "auto"), true);
+  assert.equal(servesVehicle("auto", "moto"), false);
+  assert.equal(servesVehicle(null, "auto"), true, "los mecánicos de antes atienden autos");
+  assert.match(notServedMessage("auto", "moto"), /no atiende motos/);
+  assert.match(notServedMessage("moto", "auto"), /solo atiende motos/);
+});
+
+test("motos: la lista de mecánicos dice qué atiende cada uno y se filtra por motos", async () => {
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const autoOnly = await createOnlineMechanic(city, "Sur");
+  const motoOnly = await createOnlineMechanic(city, "Sur");
+  const both = await createOnlineMechanic(city, "Sur");
+  await run("UPDATE mechanics SET works_on = 'moto' WHERE id = ?", [motoOnly]);
+  await run("UPDATE mechanics SET works_on = 'ambos' WHERE id = ?", [both]);
+
+  const { body: all } = await request(`/mechanics?city=${encodeURIComponent(city)}`);
+  assert.equal(all.length, 3);
+  assert.equal(all.find((m) => m.id === autoOnly).worksOn, "auto");
+  assert.equal(all.find((m) => m.id === motoOnly).worksOn, "moto");
+
+  const { body: motos } = await request(`/mechanics?city=${encodeURIComponent(city)}&vehicleType=moto`);
+  assert.deepEqual(motos.map((m) => m.id).sort(), [motoOnly, both].sort());
+  const { body: autos } = await request(`/mechanics?city=${encodeURIComponent(city)}&vehicleType=auto`);
+  assert.deepEqual(autos.map((m) => m.id).sort(), [autoOnly, both].sort());
+});
+
+test("motos: el mecánico guarda qué atiende en «Dónde das servicio» y la app de antes no lo borra", async () => {
+  const { saveServiceArea, getServiceArea } = require("../src/serviceAreas.ts");
+  const mechanicId = await createOnlineMechanic(`Ciudad-${crypto.randomUUID()}`, "Centro");
+  assert.equal((await getServiceArea(mechanicId)).worksOn, "auto", "los de antes quedan en autos");
+  const saved = await saveServiceArea(mechanicId, { city: "Aguascalientes", zone: "Sur", serviceAreas: [], serviceRadiusKm: 25, worksOn: "ambos" });
+  assert.equal(saved.worksOn, "ambos");
+  // Una versión de la app sin el campo no lo cambia.
+  await saveServiceArea(mechanicId, { city: "Aguascalientes", zone: "Sur", serviceAreas: [], serviceRadiusKm: 25 });
+  assert.equal((await getServiceArea(mechanicId)).worksOn, "ambos");
 });
