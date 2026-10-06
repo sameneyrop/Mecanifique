@@ -962,9 +962,11 @@
   function stats() { return state.feed ? state.feed.stats : { received: 0, answered: 0, avgResponseSeconds: 0, won: 0, salesTotal: 0, hourly: {}, categories: [], missing: [] }; }
 
   function mechanicLine(r) {
+    // Las estrellas solo con reseñas: todo mecánico nuevo empieza en 5.0 sin que nadie lo califique.
     const jobs = r.mechanicJobs ? r.mechanicJobs + (r.mechanicJobs === 1 ? " servicio" : " servicios") : "";
-    const rating = r.mechanicRating > 0
-      ? I.star + Number(r.mechanicRating).toFixed(1) + (jobs ? " · " + jobs : "")
+    const reviews = r.mechanicReviews ? r.mechanicReviews + (r.mechanicReviews === 1 ? " reseña" : " reseñas") : "";
+    const rating = r.mechanicRating != null && r.mechanicReviews > 0
+      ? I.star + Number(r.mechanicRating).toFixed(1) + " (" + reviews + ")" + (jobs ? " · " + jobs : "")
       : jobs || "Nuevo en la app";
     return '<span>' + I.wrench + esc(r.mechanicName) + "</span><span>" + rating + "</span>" +
       (r.distanceKm != null ? "<span>" + I.pin + "a " + Number(r.distanceKm).toFixed(1) + " km</span>" : "");

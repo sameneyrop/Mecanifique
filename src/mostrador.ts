@@ -923,7 +923,9 @@ export type StoreFeed = {
     note: string | null;
     vehicle: string | null;
     mechanicName: string;
+    /** Promedio de sus reseñas; null si nadie lo ha calificado (el 5.0 inicial no cuenta). */
     mechanicRating: number | null;
+    mechanicReviews: number;
     mechanicJobs: number;
     distanceKm: number | null;
     otherStores: number;
@@ -972,6 +974,7 @@ export async function storeFeed(storeId: number): Promise<StoreFeed> {
     vehicle: string | null;
     mechanicName: string;
     mechanicRating: number | null;
+    mechanicReviews: number;
     mechanicJobs: number;
     distanceKm: number | null;
     createdAt: string;
@@ -982,7 +985,7 @@ export async function storeFeed(storeId: number): Promise<StoreFeed> {
     otherStores: number;
     wonByMe: number;
   }>(
-    `SELECT r.id, r.part, r.category, r.note, r.vehicle, m.full_name AS mechanicName, m.rating AS mechanicRating,
+    `SELECT r.id, r.part, r.category, r.note, r.vehicle, m.full_name AS mechanicName, m.rating AS mechanicRating, m.review_count AS mechanicReviews,
             m.jobs_completed AS mechanicJobs, t.distance_km AS distanceKm, r.created_at AS createdAt, r.respond_until AS respondUntil,
             r.status, r.respond_until > CURRENT_TIMESTAMP AS canRespond, t.responded_at AS respondedAt,
             (SELECT COUNT(*) - 1 FROM part_request_targets x WHERE x.part_request_id = r.id) AS otherStores,
@@ -1016,7 +1019,8 @@ export async function storeFeed(storeId: number): Promise<StoreFeed> {
       note: row.note,
       vehicle: row.vehicle,
       mechanicName: communityAuthorName(row.mechanicName),
-      mechanicRating: row.mechanicRating,
+      mechanicRating: Number(row.mechanicReviews ?? 0) > 0 ? row.mechanicRating : null,
+      mechanicReviews: Number(row.mechanicReviews ?? 0),
       mechanicJobs: Number(row.mechanicJobs ?? 0),
       distanceKm: row.distanceKm,
       otherStores: Math.max(0, Number(row.otherStores ?? 0)),

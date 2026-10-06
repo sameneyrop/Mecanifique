@@ -2619,6 +2619,8 @@ test("Mostrador: invitación, solicitud a tiendas cercanas, respuestas, apartado
 
     let nearFeed = await mostrador.storeFeed(near);
     assert.equal(nearFeed.requests[0].state, "won");
+    assert.equal(nearFeed.requests[0].mechanicRating, null, "sin reseñas no se presume el 5.0 inicial");
+    assert.equal(nearFeed.requests[0].mechanicReviews, 0);
     assert.equal(nearFeed.holds[0].price, 650);
     assert.equal((await mostrador.storeFeed(second)).requests[0].state, "lost");
 

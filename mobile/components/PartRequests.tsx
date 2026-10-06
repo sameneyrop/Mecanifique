@@ -69,12 +69,12 @@ type Options = { categories: string[]; respondMinutes: number; holdMinutes: numb
 
 const POLL_MS = 5000;
 
-/** "11:42", hora del teléfono. */
+/** "09:42", hora del teléfono, como la de formatServerDate ("Hoy, 09:42"). */
 function clock(value: string): string {
   const ms = parseServerTimestamp(value);
   if (ms === null) return '';
   const date = new Date(ms);
-  return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 function isPast(value: string): boolean {
