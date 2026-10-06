@@ -50,7 +50,7 @@ export function MapScreen({
   return (
     <>
     <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-      <Card title="En este momento" subtitle="Solicitudes que te llegan y el trabajo que tienes en curso.">
+      <Card title="En este momento">
         <View style={styles.stack}>
           {mechanicConnection === 'online' && incomingRequest && (
             <View style={styles.item}>

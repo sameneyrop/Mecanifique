@@ -96,7 +96,7 @@ export function PhoneVerificationScreen({
         <Text style={styles.subtitle}>
           {isNewDevice
             ? 'Es la primera vez que entras desde este teléfono. Te mandamos un código por SMS para confirmarlo.'
-            : 'Te mandamos un código por SMS para confirmar tu número. Así tu mecánico o tu cliente siempre pueden localizarte.'}
+            : 'Te mandamos un código por SMS para confirmar tu número.'}
         </Text>
       </Animated.View>
 

@@ -284,7 +284,7 @@ function CustomerSearch({
         <Illustration source={ILLUSTRATIONS.homeHero} />
         <Text style={styles.title}>Tu auto, en buenas manos</Text>
         <Text style={styles.subtitle}>
-          Encuentra mecánicos verificados, cerca de ti o agenda para cuando lo necesites.
+          Mecánicos verificados que van hasta tu auto.
         </Text>
       </Animated.View>
 
@@ -299,11 +299,7 @@ function CustomerSearch({
       <Animated.View entering={FadeInDown.delay(180).duration(300)} needsOffscreenAlphaCompositing>
         <Card
           title="Busca un mecánico"
-          subtitle={
-            hasGpsLocation
-              ? 'Usamos tu ubicación actual para encontrarte al mecánico más cercano.'
-              : 'Permite tu ubicación o escribe tu ciudad y zona.'
-          }
+          subtitle={hasGpsLocation ? undefined : 'Escribe tu ciudad o permite tu ubicación.'}
         >
           <View style={styles.stack}>
             <View style={styles.row}>
@@ -465,8 +461,7 @@ function CustomerHome(props: HomeScreenProps) {
             detail={mechanicTrustLine(detail)}
           />
           <Text style={styles.smallText}>
-            Cuando llegue, revisa que sea la persona de la foto. Si no es, no le entregues el auto; si te sientes en
-            riesgo, usa el botón de emergencia.
+            Revisa que sea la persona de la foto antes de entregarle el auto.
           </Text>
         </Card>
       )}
@@ -527,7 +522,7 @@ function identityStepDescription(status: string | null): string {
     case 'approved':
       return 'Aprobada. Estamos activando tu cuenta…';
     default:
-      return 'Te pediremos una identificación oficial y una foto tuya. Tarda unos minutos.';
+      return 'Identificación oficial y una foto tuya. Tarda unos minutos.';
   }
 }
 
@@ -589,7 +584,7 @@ function MechanicOnboarding({
             number={2}
             done={photoDone}
             title="Tómate tu foto de perfil"
-            description="Una selfie donde se vea bien tu cara, sin lentes oscuros ni gorra. El cliente la ve al aceptar su solicitud, para saber quién va a llegar. Sin foto no puedes conectarte."
+            description="Selfie con la cara visible, sin lentes oscuros ni gorra. Sin foto no puedes conectarte."
           >
             <View style={styles.profilePhotoPreview}>
               <Avatar uri={profile.profilePhotoUrl} size={64} />
@@ -606,7 +601,7 @@ function MechanicOnboarding({
             number={3}
             done={rateDone}
             title="Pon el precio de tu visita y diagnóstico"
-            description="Lo que cobras por ir y revisar el auto, en pesos. La reparación se cotiza aparte, después del diagnóstico. Mecanifique cobra 10 % de la visita y la mano de obra; en tus primeros 30 días, desde tu primer servicio, nada."
+            description="La reparación se cotiza aparte. Mecanifique cobra 10 % de la visita y la mano de obra; los primeros 30 días, nada."
           >
             <Field label="Visita y diagnóstico (pesos)">
               <Input
@@ -864,11 +859,7 @@ function MechanicHome(props: HomeScreenProps) {
           <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
             <Illustration source={online ? ILLUSTRATIONS.newRequest : ILLUSTRATIONS.firstRequest} />
             <Text style={styles.title}>{online ? 'Estás conectado' : '¿Listo para trabajar?'}</Text>
-            <Text style={styles.subtitle}>
-              {online
-                ? 'Te avisamos con una notificación en cuanto un cliente cerca de ti pida un mecánico.'
-                : 'Conéctate y empieza a recibir solicitudes de clientes cerca de ti.'}
-            </Text>
+            {online && <Text style={styles.subtitle}>Te avisamos cuando llegue una solicitud.</Text>}
           </Animated.View>
           <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
             <View style={styles.trustRow}>
@@ -886,12 +877,10 @@ function MechanicHome(props: HomeScreenProps) {
           title="Tu estado"
           subtitle={
             connectBlocked
-              ? 'Podrás conectarte en cuanto tu cuenta esté activa.'
+              ? 'Podrás conectarte cuando tu cuenta esté activa.'
               : liveLocationRequest
                 ? `Compartiendo tu ubicación durante la solicitud #${liveLocationRequest.id}.`
-                : online
-                  ? 'Recibes solicitudes de clientes cerca de ti.'
-                  : 'Mientras estés desconectado no te llegan solicitudes.'
+                : undefined
           }
         >
           <View style={styles.stack}>

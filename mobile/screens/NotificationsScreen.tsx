@@ -52,13 +52,13 @@ export function NotificationsScreen({
     <Animated.View entering={FadeInDown.duration(300)} needsOffscreenAlphaCompositing>
       <Card
         title={unreadNotifications > 0 ? `${unreadNotifications} sin leer` : 'Estás al día'}
-        subtitle="Toca un aviso para ver el detalle."
+        
       >
         {notifications.length === 0 ? (
           <EmptyState
             icon="notifications-outline"
             title="Todavía no tienes avisos"
-            text="Aquí te avisamos cuando cambie algo en tus solicitudes o te respondan en la Comunidad."
+            text="Aquí verás los avisos de tus solicitudes y de la Comunidad."
           />
         ) : (
           <View style={styles.list}>

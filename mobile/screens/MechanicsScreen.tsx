@@ -170,7 +170,7 @@ export function MechanicsScreen({
                   ? 'Necesitamos tu ubicación para mostrarte quién está cerca.'
                   : nearbyMechanics.length > 0
                     ? `${nearbyMechanics.length === 1 ? '1 mecánico conectado' : `${nearbyMechanics.length} mecánicos conectados`} a menos de 25 km.`
-                    : 'Se actualiza solo cada pocos segundos.'
+                    : undefined
               }
             >
               <View style={styles.stack}>
@@ -225,7 +225,6 @@ export function MechanicsScreen({
           <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
             <Card
               title="Busca por zona"
-              subtitle="Escribe tu ciudad o municipio para ver a los mecánicos que atienden ahí. Si pones tu zona, primero salen los de esa zona."
             >
               <View style={styles.stack}>
                 <View style={styles.row}>
@@ -262,7 +261,6 @@ export function MechanicsScreen({
             ) : (
               <Card
                 title={mechanics.length === 1 ? '1 mecánico' : `${mechanics.length} mecánicos`}
-                subtitle="Toca uno para ver su perfil completo."
               >
                 <View style={styles.list}>
                   {mechanics.slice(0, visibleCount).map((mechanic, index) => (
@@ -307,7 +305,7 @@ export function MechanicsScreen({
                 <View style={styles.profilePhotoPreview}>
                   <Avatar uri={selected.profilePhotoUrl} name={selected.fullName} size={88} />
                   <Text style={[styles.smallText, styles.flex]}>
-                    Así se ve {selected.fullName.split(' ')[0]}: es quien llega si te acepta la solicitud.
+                    Es quien llega si te acepta la solicitud.
                   </Text>
                 </View>
               ) : null}

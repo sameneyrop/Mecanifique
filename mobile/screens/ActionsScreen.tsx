@@ -318,7 +318,7 @@ export function ActionsScreen({
 
           {mechanicView === 'profile' && (
             <Animated.View entering={FadeInDown.delay(60).duration(300)} style={styles.screenStack}>
-              <Card title="Tu perfil público" subtitle="Esto es lo que ven los clientes cuando te buscan.">
+              <Card title="Tu perfil público">
                 <View style={styles.stack}>
                   <Illustration source={ILLUSTRATIONS.mechanicDashboard} compact />
                   <Text style={styles.label}>Tu foto de perfil</Text>
@@ -326,8 +326,7 @@ export function ActionsScreen({
                     <Avatar uri={profilePhotoUrl} name={user.fullName} size={72} />
                     <View style={[styles.flex, styles.stack]}>
                       <Text style={styles.smallText}>
-                        Una selfie con tu cara bien visible. El cliente la ve al aceptar su solicitud. Es obligatoria para
-                        conectarte.
+                        Selfie con tu cara visible. Obligatoria para conectarte.
                       </Text>
                       <SecondaryButton
                         title={profilePhotoUrl ? 'Cambiar foto' : 'Tomar foto'}
@@ -367,7 +366,7 @@ export function ActionsScreen({
 
                   <Text style={styles.label}>Fotos de tus trabajos</Text>
                   <Text style={styles.smallText}>
-                    Hasta {MAX_GALLERY_PHOTOS}. Así los clientes ven la calidad de lo que haces.
+                    Hasta {MAX_GALLERY_PHOTOS}.
                   </Text>
                   <View style={styles.galleryRow}>
                     {galleryUrls.map((url) => (
@@ -397,7 +396,6 @@ export function ActionsScreen({
                       </Pressable>
                     )}
                   </View>
-                  <Text style={styles.smallText}>Las fotos se guardan en cuanto las agregas.</Text>
 
                   <Field label="Cuéntales sobre ti">
                     <Input
@@ -416,7 +414,7 @@ export function ActionsScreen({
                       placeholder="Ej. 400"
                       onChangeText={(value) => setPublicProfileForm({ ...publicProfileForm, laborRate: value.replace(/[^0-9.]/g, '') })}
                     />
-                    <Text style={styles.smallText}>Los clientes lo ven en tu perfil. Lo que cueste la reparación se lo mandas después, en la cotización.</Text>
+                    <Text style={styles.smallText}>La reparación se cotiza aparte.</Text>
                   </Field>
                   <RateSuggestion
                     api={api}
@@ -449,7 +447,7 @@ export function ActionsScreen({
 
           {mechanicView === 'schedule' && (
             <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
-              <Card title="Tu agenda" subtitle="Publica los horarios en que puedes atender. Los clientes pueden apartar los de los próximos 7 días.">
+              <Card title="Tu agenda" subtitle="Los clientes apartan turnos de los próximos 7 días.">
                 <View style={styles.stack}>
                   <Illustration source={ILLUSTRATIONS.settings} compact />
                   {calendar}
@@ -464,13 +462,13 @@ export function ActionsScreen({
           )}
 
           <Animated.View entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
-            <Card title="Comunidad" subtitle="Responde dudas de clientes: es una forma de que te conozcan y te contraten.">
+            <Card title="Comunidad" subtitle="Responde dudas y date a conocer.">
               <PrimaryButton title="Ver preguntas" onPress={onOpenCommunity} />
             </Card>
           </Animated.View>
 
           <Animated.View entering={FadeInDown.delay(150).duration(300)} needsOffscreenAlphaCompositing>
-            <Card title="Modo cliente" subtitle="¿Necesitas un mecánico para tu auto? Usa esta misma cuenta.">
+            <Card title="Modo cliente" subtitle="¿Necesitas un mecánico? Usa esta misma cuenta.">
               <PrimaryButton title="Cambiar a modo cliente" busy={busy} onPress={() => onSwitchRole({ targetRole: 'customer' })} />
             </Card>
           </Animated.View>

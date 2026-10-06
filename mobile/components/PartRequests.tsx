@@ -164,10 +164,7 @@ export function AskStoresBox({
       <Text style={styles.publicProfileTitle}>
         {stores === 1 ? 'Una refaccionaria cercana' : `${stores} refaccionarias cercanas`} te contesta aquí mismo
       </Text>
-      <Text style={styles.smallText}>
-        Te dicen si la tienen y a qué precio en máximo {options?.respondMinutes ?? 5} min. Apartas la que te convenga y la
-        pagas en la tienda.
-      </Text>
+      <Text style={styles.smallText}>Te contestan con precio en máximo {options?.respondMinutes ?? 5} min.</Text>
       {options && (
         <>
           <Text style={styles.label}>¿De qué es? (opcional)</Text>
@@ -188,7 +185,6 @@ export function AskStoresBox({
               );
             })}
           </View>
-          <Text style={styles.smallText}>Así solo les llega a las que manejan eso.</Text>
         </>
       )}
       <Field label="Nota para la tienda (opcional)">
@@ -300,7 +296,7 @@ export function MyPartRequests({
   }
 
   return (
-    <Card title="Piezas que preguntaste" subtitle="Lo que contestó cada refaccionaria. La pagas en la tienda.">
+    <Card title="Piezas que preguntaste">
       <View style={styles.list}>
         {requests.map((request) => {
           const hold = request.hold;

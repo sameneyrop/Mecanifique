@@ -202,7 +202,7 @@ export function RequestChat({ onSendMessage }: { onSendMessage: () => void }) {
   const { user, requestMessages, messageDraft, setMessageDraft, busy } = useAppContext();
 
   return (
-    <Card title="Chat" subtitle="Habla con el cliente o mecánico asignado">
+    <Card title="Chat">
       <View style={styles.stack}>
         {requestMessages.length === 0 ? (
           <Text style={styles.itemText}>Todavía no hay mensajes.</Text>

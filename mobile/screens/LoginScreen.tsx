@@ -235,7 +235,7 @@ export function LoginScreen({
         {authMode === 'login' && (
           <Card
             title="Inicia sesión"
-            subtitle={FACEBOOK_LOGIN_ENABLED ? 'Con tu correo y contraseña, o con Facebook.' : 'Con tu correo y contraseña.'}
+            subtitle={FACEBOOK_LOGIN_ENABLED ? 'Con tu correo o con Facebook.' : undefined}
           >
             <View style={styles.stack}>
               {biometricName !== null && (
@@ -478,8 +478,7 @@ export function LoginScreen({
                         </Field>
                       </View>
                       <Text style={styles.smallText}>
-                        La de tu taller o donde estás más seguido. ¿Trabajas en varios municipios? Después los eliges en Acciones →
-                        Mi perfil → Dónde das servicio.
+                        Después puedes agregar más municipios en tu perfil.
                       </Text>
                       <Field label="Años de experiencia">
                         <Input
@@ -495,7 +494,6 @@ export function LoginScreen({
                           onChangeText={(value) => setMechanicForm({ ...mechanicForm, specialties: value })}
                         />
                       </Field>
-                      <Text style={styles.smallText}>Tu ubicación se toma sola al abrir la app.</Text>
                       <SecondaryButton
                         title="Volver"
                         onPress={() => {

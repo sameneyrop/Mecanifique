@@ -143,9 +143,7 @@ export function PartsStoreFinder({
     }
   }
 
-  const subtitle = request
-    ? 'Refaccionarias más cercanas al auto: pregúntales por WhatsApp o llámales.'
-    : 'Refaccionarias cerca de ti: pregúntales por WhatsApp o llámales.';
+  const subtitle = request ? 'Las más cercanas al auto.' : 'Las más cercanas a ti.';
 
   const myRequests = <MyPartRequests api={api} serviceRequestId={request?.id} refreshKey={askedKey} />;
   const mostradorStores = stores?.filter((store) => store.mostrador).length ?? 0;
@@ -180,12 +178,6 @@ export function PartsStoreFinder({
             setAskedKey((key) => key + 1);
           }}
         />
-        {part.trim().length >= 3 && (
-          <Text style={styles.smallText}>
-            Mensaje: “Hola, ¿tienen {part.trim()}
-            {vehicle ? ` para ${vehicle}` : ''}? Soy mecánico de Mecanifique.”
-          </Text>
-        )}
 
         {stores === null ? (
           <Text style={styles.smallText}>Buscando refaccionarias…</Text>

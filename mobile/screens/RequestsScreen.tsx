@@ -255,11 +255,6 @@ export function RequestsScreen({
         <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
           <Card
             title="Tus solicitudes"
-            subtitle={
-              user.role === 'mechanic'
-                ? 'Trabajos que te ofrecieron o te asignaron.'
-                : 'Toca una solicitud para ver su avance.'
-            }
           >
             {myRequests.length === 0 ? (
               <EmptyState
@@ -300,8 +295,8 @@ export function RequestsScreen({
             title="Nueva solicitud"
             subtitle={
               requestCreateStep === 'vehicle'
-                ? 'Paso 1 de 2 · ¿Qué auto necesita ayuda?'
-                : 'Paso 2 de 2 · Cuéntanos qué le pasa y dónde está.'
+                ? 'Paso 1 de 2 · Tu auto'
+                : 'Paso 2 de 2 · Qué le pasa y dónde está'
             }
           >
             <View style={styles.stack}>
@@ -412,7 +407,7 @@ export function RequestsScreen({
                   </Field>
                   {!requestForm.requestedMechanicId && (
                     <Text style={styles.smallText}>
-                      ¿Quieres un mecánico o turno específico? Búscalo en la pestaña Mecánicos.
+                      ¿Un mecánico en especial? Búscalo en Mecánicos.
                     </Text>
                   )}
                   {requestMechanicIdNumber && requestMechanicSlots.length > 0 && (
@@ -509,7 +504,7 @@ export function RequestsScreen({
       {view === 'detail' && (
         <Animated.View entering={FadeInDown.delay(90).duration(300)} style={styles.screenStack}>
           {user.role === 'admin' && (
-            <Card title="Buscar por número" subtitle="Abre cualquier solicitud con su número.">
+            <Card title="Buscar por número">
               <View style={styles.stack}>
                 <Field label="Número de solicitud">
                   <Input value={requestLookupId} keyboardType="numeric" onChangeText={setRequestLookupId} />
@@ -609,7 +604,7 @@ export function RequestsScreen({
                 <PrimaryButton title="Ir a mi trabajo en curso" onPress={() => setCurrentScreen('home')} />
               )}
               {selectedRequest.status === 'completed' && user.role === 'customer' && selectedRequest.mechanicId && !selectedRequest.reviewed && (
-                <Card title="Califica el servicio" subtitle="Tu opinión ayuda a otros clientes a elegir.">
+                <Card title="Califica el servicio">
                   <View style={styles.stack}>
                     <Illustration source={ILLUSTRATIONS.completed} compact />
                     <Field label="Calificación">
@@ -631,7 +626,7 @@ export function RequestsScreen({
                 <TipCard api={api} requestId={selectedRequest.id} />
               )}
               {selectedRequest.status === 'completed' && user.role === 'customer' && (
-                <Card title="¿Algo salió mal?" subtitle="Reporta un problema con este servicio.">
+                <Card title="¿Algo salió mal?">
                   {!showDisputeForm ? (
                     <SecondaryButton title="Reportar un problema" onPress={() => setShowDisputeForm(true)} />
                   ) : (

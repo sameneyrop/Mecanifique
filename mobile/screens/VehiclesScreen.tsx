@@ -93,7 +93,7 @@ export function VehiclesScreen({
             <EmptyState
               icon="car-sport-outline"
               title="Todavía no tienes vehículos"
-              text="Guárdalo una vez y ya no tendrás que escribirlo cada vez que pidas un servicio."
+              text="Guárdalo para no escribirlo cada vez que pidas un servicio."
             >
               <PrimaryButton title="Agregar vehículo" onPress={() => setShowForm(true)} />
             </EmptyState>

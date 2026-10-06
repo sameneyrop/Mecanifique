@@ -732,7 +732,7 @@ export function IdentityVerificationCard({
         identityState.status === 'approved'
           ? 'Tu identidad ya está verificada.'
           : identityState.status === 'draft' || !identityState.status
-            ? 'Verifica tu identidad para poder usar la plataforma con confianza.'
+            ? 'Con tu identificación oficial y una selfie.'
             : identityState.status === 'rejected'
               ? 'Tu verificación fue rechazada. Puedes volver a intentarlo.'
               : 'Tu verificación está en revisión.'

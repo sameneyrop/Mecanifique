@@ -283,7 +283,7 @@ function NewQuestion({ api, setView }: { api: ApiCall; setView: (view: Community
 
   return (
     <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
-      <Card title="Nueva pregunta" subtitle="Los mecánicos verificados de Mecanifique te responden.">
+      <Card title="Nueva pregunta">
         <View style={styles.stack}>
           <Field label="¿Qué le pasa a tu auto?">
             <Input
@@ -529,7 +529,7 @@ function QuestionDetail({
 
       {user.role === 'mechanic' && !question.isMine && (
         <Animated.View entering={FadeInDown.delay(120).duration(300)} needsOffscreenAlphaCompositing>
-          <Card title="Tu respuesta" subtitle="Una buena respuesta es la mejor forma de que un cliente te contrate.">
+          <Card title="Tu respuesta">
             <View style={styles.stack}>
               <Input
                 value={answerDraft}

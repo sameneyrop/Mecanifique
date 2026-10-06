@@ -99,7 +99,6 @@ function PersonalInfoPanel({
         />
       </Field>
       <InfoRow icon="mail-outline" text={email} />
-      <Text style={styles.smallText}>El correo es con el que entras; no se puede cambiar aquí.</Text>
       <PrimaryButton
         title="Guardar mis datos"
         busy={busy}
@@ -173,7 +172,7 @@ function FavoritesPanel({
     <View style={[styles.publicProfileBox, styles.menuPanel]}>
       {favorites.length === 0 ? (
         <Text style={styles.smallText}>
-          Toca el corazón en el perfil de un mecánico (pestaña Mecánicos) para guardarlo aquí.
+          Toca el corazón en el perfil de un mecánico para guardarlo aquí.
         </Text>
       ) : (
         favorites.map((mechanic) => (
@@ -478,7 +477,6 @@ export function AccountScreen({
             {expanded === 'about' && (
               <View style={[styles.publicProfileBox, styles.menuPanel]}>
                 <Text style={styles.itemText}>Mecanifique v{APP_VERSION}</Text>
-                <Text style={styles.smallText}>Conecta clientes con mecánicos verificados.</Text>
               </View>
             )}
             <MenuRow icon="reader-outline" label="Términos y condiciones" onPress={() => void openTerms()} />
@@ -498,11 +496,7 @@ export function AccountScreen({
       <Animated.View entering={FadeInDown.delay(240).duration(300)} needsOffscreenAlphaCompositing>
         <Card
           title="Modo profesional"
-          subtitle={
-            user.mechanicId
-              ? 'Ya tienes perfil de mecánico. Cambia de modo cuando quieras.'
-              : 'Ofrece tus servicios como mecánico con esta misma cuenta.'
-          }
+          subtitle={user.mechanicId ? undefined : 'Ofrece tus servicios con esta misma cuenta.'}
         >
           <View style={styles.stack}>
             {showProForm ? (

@@ -69,7 +69,6 @@ export function RateSuggestion({ api, onUse }: { api: ApiCall; onUse?: (value: s
       {!suggestion.city && (
         <Text style={styles.smallText}>Todavía hay pocos datos de tu ciudad; esto es de toda la app.</Text>
       )}
-      <Text style={styles.smallText}>Es solo una referencia: tú decides tu precio.</Text>
       {onUse && (
         <SecondaryButton title={`Usar ${formatPesos(suggestion.median)}`} compact onPress={() => onUse(String(suggestion.median))} />
       )}
@@ -118,7 +117,6 @@ export function TrendsCard({ api }: { api: ApiCall }) {
   return (
     <Card
       title={`Tendencias${trends.city ? ` en ${trends.city}` : ''}`}
-      subtitle="Cuándo y dónde piden más mecánicos. Se actualiza cada minuto."
     >
       <View style={styles.stack}>
         <View style={styles.trendTiles}>
@@ -134,8 +132,7 @@ export function TrendsCard({ api }: { api: ApiCall }) {
 
         {!enough ? (
           <Text style={styles.smallText}>
-            Todavía hay pocas solicitudes en tu ciudad para ver tendencias. Conforme lleguen más, aquí verás a qué hora y
-            en qué zonas piden más.
+            Todavía hay pocas solicitudes en tu ciudad para ver tendencias.
           </Text>
         ) : (
           <>

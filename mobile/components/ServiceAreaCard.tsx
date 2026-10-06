@@ -126,7 +126,7 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
   );
 
   return (
-    <Card title="Dónde das servicio" subtitle="Dónde está tu taller, en qué municipios atiendes y hasta dónde vas.">
+    <Card title="Dónde das servicio">
       <View style={styles.stack}>
         <View style={styles.row}>
           <Field label="Ciudad o municipio" style={styles.flex}>
@@ -136,14 +136,12 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
             <Input value={form.zone} maxLength={60} placeholder="Ej. Sur" onChangeText={(value) => setForm({ ...form, zone: value })} />
           </Field>
         </View>
-        <Text style={styles.smallText}>La de tu taller o donde estás más seguido. Se ve en tu perfil.</Text>
 
         <Text style={styles.label}>¿En qué municipios atiendes?</Text>
         <View style={styles.chipWrap}>
           {chip('Todo el estado', wholeState, toggleWholeState)}
           {data.municipalities.map((name) => chip(name, covers(name), () => toggle(name), name === homeMunicipality))}
         </View>
-        <Text style={styles.smallText}>Los clientes de estos municipios te encuentran cuando buscan mecánico en la app.</Text>
 
         <Text style={styles.label}>¿Hasta dónde vas por un servicio de «Ahora mismo»?</Text>
         <Segmented
@@ -152,8 +150,7 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
           onChange={(value) => setForm({ ...form, radius: Number(value) })}
         />
         <Text style={styles.smallText}>
-          Cada solicitud le llega primero al mecánico conectado más cercano al auto. A ti solo te llegan las que estén a esta
-          distancia o menos de donde estás.
+          Te llegan las que estén a esta distancia o menos de donde estás.
         </Text>
 
         <PrimaryButton title="Guardar dónde das servicio" busy={busy} onPress={save} />

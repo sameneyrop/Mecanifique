@@ -76,7 +76,7 @@ export function PromotionsScreen({ api, onOpenMechanic }: { api: ApiCall; onOpen
     <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
       <Card
         title="Promociones de mecánicos"
-        subtitle={currentLocation ? 'Las más cercanas a ti primero.' : 'Activa tu ubicación para verlas por cercanía.'}
+        subtitle={currentLocation ? undefined : 'Activa tu ubicación para verlas por cercanía.'}
       >
         {promotions === null ? (
           <ActivityIndicator color={colors.primary} />
