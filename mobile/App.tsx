@@ -48,6 +48,8 @@ import {
   formatPesos,
   openServiceNavigation,
   parseServerTimestamp,
+  type VehicleType,
+  type WorksOn,
 } from './utils';
 import { serviceAmounts } from './components/ServiceGuide';
 import { CelebrationOverlay, celebrateServiceOnce } from './components/Celebration';
@@ -225,6 +227,7 @@ type MechanicReviewResponse = {
 
 type VehicleProfile = {
   id: number;
+  vehicleType?: VehicleType;
   nickname?: string | null;
   make: string;
   model: string;
@@ -599,11 +602,14 @@ export default function App() {
     zone: 'Norte',
     yearsExperience: '0',
     specialties: 'Motor,Electrico',
+    // Qué atiende (servidor: src/vehicleTypes.ts).
+    worksOn: 'auto' as WorksOn,
     latitude: '',
     longitude: '',
   });
 
   const [requestForm, setRequestForm] = useState({
+    vehicleType: 'auto' as VehicleType,
     vehicleMake: '',
     vehicleModel: '',
     vehicleYear: '2020',
@@ -1000,10 +1006,16 @@ export default function App() {
     if (requestsView !== 'create' || user?.role !== 'customer') {
       return;
     }
-    const primaryVehicle = vehicles.find((vehicle) => vehicle.isPrimary) ?? vehicles[0];
+    // Si ya escogió mecánico, solo cuentan los vehículos del tipo de la
+    // solicitud (a un mecánico de motos no se le rellena el auto).
+    const candidates = requestForm.requestedMechanicId
+      ? vehicles.filter((vehicle) => (vehicle.vehicleType ?? 'auto') === requestForm.vehicleType)
+      : vehicles;
+    const primaryVehicle = candidates.find((vehicle) => vehicle.isPrimary) ?? candidates[0];
     if (primaryVehicle && !requestForm.vehicleMake.trim()) {
       setRequestForm((current) => ({
         ...current,
+        vehicleType: primaryVehicle.vehicleType ?? 'auto',
         vehicleMake: primaryVehicle.make,
         vehicleModel: primaryVehicle.model,
         vehicleYear: String(primaryVehicle.year),
@@ -2835,6 +2847,7 @@ export default function App() {
         }
       }
       const payload = {
+        vehicleType: requestForm.vehicleType,
         vehicleMake: requestForm.vehicleMake,
         vehicleModel: requestForm.vehicleModel,
         vehicleYear: Number(requestForm.vehicleYear),
@@ -2963,6 +2976,7 @@ export default function App() {
   }
 
   async function handleAddVehicle(payload: {
+    vehicleType?: VehicleType;
     nickname?: string;
     make: string;
     model: string;
@@ -3011,6 +3025,7 @@ export default function App() {
         method: 'POST',
         token,
         body: {
+          vehicleType: requestForm.vehicleType,
           make: requestForm.vehicleMake,
           model: requestForm.vehicleModel,
           year: Number(requestForm.vehicleYear),

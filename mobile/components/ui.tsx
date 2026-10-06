@@ -30,7 +30,7 @@ import * as Haptics from 'expo-haptics';
 import { colors } from '../colors';
 import { ILLUSTRATIONS } from '../illustrations';
 import { styles } from '../styles';
-import { formatServerDate, getServiceRequestStatusLabel } from '../utils';
+import { formatServerDate, getServiceRequestStatusLabel, vehicleText } from '../utils';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -270,7 +270,7 @@ export function RequestCard({
         </View>
         <View style={styles.flex}>
           <Text style={styles.itemTitle}>
-            {request.vehicleMake} {request.vehicleModel} {request.vehicleYear}
+            {vehicleText(request)}
           </Text>
           <Text style={styles.smallText}>
             Solicitud #{request.id}

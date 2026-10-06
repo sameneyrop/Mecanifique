@@ -39,7 +39,7 @@ const RECOMMENDATIONS: Record<string, Recommendation> = {
     target: { account: 'personal' },
   },
   vehicle: {
-    title: 'Agrega tu auto',
+    title: 'Agrega tu vehículo',
     icon: 'car-sport-outline',
     target: { screen: 'vehicles' },
   },

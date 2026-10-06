@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import type { VehicleType, WorksOn } from '../utils';
 
 type Role = 'customer' | 'mechanic' | 'admin';
 type AppScreen =
@@ -42,11 +43,14 @@ type Mechanic = {
   laborRate?: number | null;
   /** Municipios donde también atiende, además de su ciudad (src/serviceAreas.ts). */
   serviceAreas?: string[];
+  /** Qué atiende: autos, motos o los dos (sin dato: autos). */
+  worksOn?: WorksOn;
 };
 
 type RequestSummary = {
   id: number;
   customerId: number;
+  vehicleType?: VehicleType;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: number;
@@ -129,6 +133,7 @@ export type ServiceQuote = {
 type ServiceRequest = {
   id: number;
   customerId: number;
+  vehicleType?: VehicleType;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: number;
@@ -230,6 +235,7 @@ type IdentityVerificationState = {
 
 type VehicleProfile = {
   id: number;
+  vehicleType?: VehicleType;
   nickname?: string | null;
   make: string;
   model: string;

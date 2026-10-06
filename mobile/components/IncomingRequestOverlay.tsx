@@ -7,7 +7,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Avatar, Card, SecondaryButton } from './ui';
-import { distanceKm, formatPesos, parseServerTimestamp } from '../utils';
+import { distanceKm, formatPesos, parseServerTimestamp, vehicleText } from '../utils';
 import { RequestPhotos } from './RequestPlace';
 import { CountdownRing, RingingBell } from './CountdownRing';
 
@@ -138,7 +138,7 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
           </View>
 
           <Card
-            title={`${incomingRequest.vehicleMake} ${incomingRequest.vehicleModel} ${incomingRequest.vehicleYear}`}
+            title={vehicleText(incomingRequest)}
             subtitle={incomingRequest.issueDescription}
           >
             <View style={styles.stack}>

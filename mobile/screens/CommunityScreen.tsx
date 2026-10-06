@@ -189,7 +189,7 @@ function QuestionList({ api, setView }: { api: ApiCall; setView: (view: Communit
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(60).duration(300)} needsOffscreenAlphaCompositing>
-        <Card title="Pregúntale a un mecánico" subtitle="Mecánicos verificados responden gratis las dudas de tu auto.">
+        <Card title="Pregúntale a un mecánico" subtitle="Mecánicos verificados responden gratis las dudas de tu auto o moto.">
           <View style={styles.stack}>
             <Input value={search} onChangeText={setSearch} placeholder="Buscar preguntas" returnKeyType="search" />
             <CategoryChips value={category} onChange={setCategory} includeAll />
@@ -250,7 +250,7 @@ function NewQuestion({ api, setView }: { api: ApiCall; setView: (view: Community
 
   async function publish() {
     if (form.title.trim().length < 5) {
-      setMessage('Escribe en pocas palabras qué le pasa a tu auto');
+      setMessage('Escribe en pocas palabras qué le pasa a tu auto o moto');
       return;
     }
     if (!form.category) {
@@ -285,7 +285,7 @@ function NewQuestion({ api, setView }: { api: ApiCall; setView: (view: Community
     <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
       <Card title="Nueva pregunta">
         <View style={styles.stack}>
-          <Field label="¿Qué le pasa a tu auto?">
+          <Field label="¿Qué le pasa a tu auto o moto?">
             <Input
               value={form.title}
               maxLength={120}

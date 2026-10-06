@@ -6,12 +6,21 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Avatar, Card, EmptyState, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from '../components/ui';
+import { Avatar, Card, EmptyState, Field, InfoRow, Input, PrimaryButton, Segmented, SecondaryButton } from '../components/ui';
 import { MechanicRadar } from '../components/MechanicRadar';
 import { ILLUSTRATIONS } from '../illustrations';
 import { PromotionItem, type Promotion } from './PromotionsScreen';
 import type { ApiCall } from '../App';
-import { formatError, formatPesos, getMechanicPublicStatus, formatCalendarDate, mechanicCoverageText } from '../utils';
+import {
+  formatError,
+  formatPesos,
+  getMechanicPublicStatus,
+  formatCalendarDate,
+  mechanicCoverageText,
+  servesVehicle,
+  WORKS_ON_LABEL,
+  type VehicleType,
+} from '../utils';
 
 type ScheduleSlot = {
   id: number;
@@ -34,6 +43,7 @@ type MechanicReview = {
 };
 
 type RequestFormShape = {
+  vehicleType: VehicleType;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: string;
@@ -137,6 +147,16 @@ export function MechanicsScreen({
     ? (selected.distanceKm ?? nearbyMechanics.find((mechanic) => mechanic.id === selected.id)?.distanceKm)
     : undefined;
 
+  // Autos o motos: solo salen los mecánicos que atienden el tipo elegido.
+  const vehicleType = requestForm.vehicleType;
+  const shownNearby = nearbyMechanics.filter((mechanic) => servesVehicle(mechanic.worksOn, vehicleType));
+  const shownMechanics = mechanics.filter((mechanic) => servesVehicle(mechanic.worksOn, vehicleType));
+  /** Para pedirle a un mecánico: si no atiende el tipo elegido, la solicitud va del tipo que sí atiende. */
+  function requestTypeFor(mechanic: { worksOn?: 'auto' | 'moto' | 'ambos' }) {
+    const type: VehicleType = servesVehicle(mechanic.worksOn, vehicleType) ? vehicleType : mechanic.worksOn === 'moto' ? 'moto' : 'auto';
+    return type === vehicleType ? { vehicleType: type } : { vehicleType: type, vehicleMake: '', vehicleModel: '' };
+  }
+
   async function searchByZone() {
     try {
       await onLoadMechanics();
@@ -162,23 +182,38 @@ export function MechanicsScreen({
     <>
       {!showProfile && (
         <>
+          <Segmented
+            value={vehicleType}
+            options={[
+              { key: 'auto', label: 'Autos' },
+              { key: 'moto', label: 'Motos' },
+            ]}
+            onChange={(value) =>
+              setRequestForm({
+                ...requestForm,
+                vehicleType: value as VehicleType,
+                ...(value !== vehicleType ? { vehicleMake: '', vehicleModel: '' } : {}),
+              })
+            }
+            onBackground
+          />
           <Animated.View entering={FadeInDown.delay(0).duration(300)} needsOffscreenAlphaCompositing>
             <Card
               title="Cerca de ti ahora"
               subtitle={
                 !currentLocation
                   ? 'Necesitamos tu ubicación para mostrarte quién está cerca.'
-                  : nearbyMechanics.length > 0
-                    ? `${nearbyMechanics.length === 1 ? '1 mecánico conectado' : `${nearbyMechanics.length} mecánicos conectados`} a menos de 25 km.`
+                  : shownNearby.length > 0
+                    ? `${shownNearby.length === 1 ? '1 mecánico conectado' : `${shownNearby.length} mecánicos conectados`} a menos de 25 km.`
                     : undefined
               }
             >
               <View style={styles.stack}>
-                {currentLocation && nearbyMechanics.length > 0 ? (
+                {currentLocation && shownNearby.length > 0 ? (
                   <>
-                    <MechanicRadar userLocation={currentLocation} mechanics={nearbyMechanics} maxDistanceKm={25} />
+                    <MechanicRadar userLocation={currentLocation} mechanics={shownNearby} maxDistanceKm={25} />
                     <View style={styles.list}>
-                      {nearbyMechanics.map((mechanic) => (
+                      {shownNearby.map((mechanic) => (
                         <Pressable
                           key={`nearby-${mechanic.id}`}
                           style={({ pressed }) => [styles.item, pressed && styles.buttonPressed]}
@@ -249,7 +284,7 @@ export function MechanicsScreen({
           </Animated.View>
     
           <Animated.View entering={FadeInDown.delay(90).duration(300)} needsOffscreenAlphaCompositing>
-            {mechanics.length === 0 ? (
+            {shownMechanics.length === 0 ? (
               <Card title="Resultados">
                 <EmptyState
                   icon="people-outline"
@@ -260,10 +295,10 @@ export function MechanicsScreen({
               </Card>
             ) : (
               <Card
-                title={mechanics.length === 1 ? '1 mecánico' : `${mechanics.length} mecánicos`}
+                title={shownMechanics.length === 1 ? '1 mecánico' : `${shownMechanics.length} mecánicos`}
               >
                 <View style={styles.list}>
-                  {mechanics.slice(0, visibleCount).map((mechanic, index) => (
+                  {shownMechanics.slice(0, visibleCount).map((mechanic) => (
                     <Pressable
                       key={mechanic.id}
                       style={({ pressed }) => [styles.item, pressed && styles.buttonPressed]}
@@ -284,7 +319,7 @@ export function MechanicsScreen({
                       <InfoRow icon="radio-button-on-outline" text={getMechanicPublicStatus(mechanic)} />
                     </Pressable>
                   ))}
-                  {mechanics.length > visibleCount && (
+                  {shownMechanics.length > visibleCount && (
                     <SecondaryButton title="Ver más" onPress={() => setVisibleCount((count) => count + PAGE_SIZE)} />
                   )}
                 </View>
@@ -310,6 +345,7 @@ export function MechanicsScreen({
                 </View>
               ) : null}
               {selected.coverPhotoUrl ? <Image source={{ uri: selected.coverPhotoUrl }} style={styles.coverPhoto} /> : null}
+              <InfoRow icon="construct-outline" text={`Atiende: ${WORKS_ON_LABEL[selected.worksOn ?? 'auto']}`} />
               {user.role === 'customer' && (
                 <Pressable
                   style={({ pressed }) => [
@@ -428,6 +464,7 @@ export function MechanicsScreen({
                               onPress={() => {
                                 setRequestForm({
                                   ...requestForm,
+                                  ...requestTypeFor(selected),
                                   requestedMechanicId: String(selected.id),
                                   scheduleSlotId: String(slot.id),
                                   preferredTime: `${slot.slotDate} ${slot.startTime}`,
@@ -450,7 +487,7 @@ export function MechanicsScreen({
                 <PrimaryButton
                   title="Pedir a este mecánico"
                   onPress={() => {
-                    setRequestForm({ ...requestForm, requestedMechanicId: String(selected.id) });
+                    setRequestForm({ ...requestForm, ...requestTypeFor(selected), requestedMechanicId: String(selected.id) });
                     setCurrentScreen('requests');
                     setRequestsView('create');
                     setRequestCreateStep('vehicle');

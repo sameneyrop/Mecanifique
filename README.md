@@ -773,6 +773,26 @@ piezas. **La pieza se paga en la tienda**: el dinero no pasa por Mecanifique.
   (solo acepta localhost, para que un enlace no pueda mandar la contraseña a
   otro servidor).
 
+### Autos y motos (`src/vehicleTypes.ts`)
+
+- Cada solicitud y cada vehículo guardado es de **auto o moto**
+  (`vehicle_type`; lo de antes es auto). El cliente lo elige en el primer paso
+  de «Nueva solicitud» y en «Mis vehículos».
+- Cada mecánico dice **qué atiende**: autos, motos o los dos (`works_on`), al
+  registrarse y en Acciones → Mi perfil → «Dónde das servicio». Los mecánicos
+  que ya existían quedan en autos: nadie recibe de golpe solicitudes de moto.
+- Una solicitud solo le llega a quien atiende su tipo: en el reparto
+  automático, la reasignación, «buscar otro» y la asignación del admin. Si el
+  cliente escoge a un mecánico (o su turno) que no atiende ese tipo, se le
+  dice por qué (409).
+- En «Mecánicos» el cliente filtra Autos/Motos y el perfil dice qué atiende;
+  `/mechanics?vehicleType=moto` filtra en el servidor.
+- El mecánico ve «Moto · …» en la solicitud y en el aviso («Nueva solicitud de
+  moto»). Los textos del servicio dicen «tu moto» cuando es moto.
+- Mostrador: categoría «Motos»; una pieza de un servicio de moto sale con
+  ella si el mecánico no elige otra.
+- La visita cuesta lo mismo para autos y motos (la reparación se cotiza aparte).
+
 ### Cancelaciones (`src/cancellations.ts`)
 
 El cargo por cancelar depende de cuándo aceptó, salió y llegó el mecánico

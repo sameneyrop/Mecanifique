@@ -16,6 +16,7 @@ import { formatPesos, parseServerTimestamp } from '../utils';
 type ReceiptRequest = {
   id: number;
   status: string;
+  vehicleType?: 'auto' | 'moto';
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: number | string;
@@ -50,7 +51,7 @@ function receiptLines(request: ReceiptRequest): string[] {
   const warrantyDays = acceptedWarranty(accepted);
   const lines = [
     `Servicio #${request.id} · ${shortDate(finishedMs)}`,
-    `Auto: ${request.vehicleMake} ${request.vehicleModel} ${request.vehicleYear}`,
+    `${request.vehicleType === 'moto' ? 'Moto' : 'Auto'}: ${request.vehicleMake} ${request.vehicleModel} ${request.vehicleYear}`,
     request.mechanicName ? `Mecánico: ${request.mechanicName}` : null,
     request.customerName ? `Cliente: ${request.customerName}` : null,
     `Falla reportada: ${request.issueDescription}`,

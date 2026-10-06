@@ -26,6 +26,7 @@ const TRANSMISSION_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 type NewVehicleForm = {
+  vehicleType: 'auto' | 'moto';
   nickname: string;
   make: string;
   model: string;
@@ -37,6 +38,7 @@ type NewVehicleForm = {
 };
 
 const EMPTY_FORM: NewVehicleForm = {
+  vehicleType: 'auto',
   nickname: '',
   make: '',
   model: '',
@@ -52,6 +54,7 @@ export function VehiclesScreen({
   onSetPrimaryVehicle,
 }: {
   onAddVehicle: (payload: {
+    vehicleType?: 'auto' | 'moto';
     nickname?: string;
     make: string;
     model: string;
@@ -71,13 +74,16 @@ export function VehiclesScreen({
 
   async function handleSave() {
     if (!canSave) return;
+    const isMoto = form.vehicleType === 'moto';
     await onAddVehicle({
+      vehicleType: form.vehicleType,
       nickname: form.nickname.trim() || undefined,
       make: form.make.trim(),
       model: form.model.trim(),
       year: Number(form.year),
       engineType: form.engineType,
-      transmissionType: form.transmissionType,
+      // Las opciones de transmisión son de auto: en una moto no se pregunta.
+      transmissionType: isMoto ? undefined : form.transmissionType,
       color: form.color.trim() || undefined,
       licensePlate: form.licensePlate.trim() || undefined,
     });
@@ -105,7 +111,7 @@ export function VehiclesScreen({
         <Animated.View key={vehicle.id} entering={FadeInDown.delay(index * 60).duration(300)}>
           <Card
             title={vehicle.nickname || `${vehicle.make} ${vehicle.model}`}
-            subtitle={`${vehicle.make} ${vehicle.model} ${vehicle.year}`}
+            subtitle={`${vehicle.vehicleType === 'moto' ? 'Moto · ' : ''}${vehicle.make} ${vehicle.model} ${vehicle.year}`}
           >
             <View style={styles.stack}>
               {vehicle.isPrimary && (
@@ -145,6 +151,14 @@ export function VehiclesScreen({
         <Animated.View entering={FadeInDown.duration(220)}>
           <Card title="Agregar vehículo" subtitle="Solo marca, modelo y año son obligatorios.">
             <View style={styles.stack}>
+              <Segmented
+                value={form.vehicleType}
+                options={[
+                  { key: 'auto', label: 'Auto' },
+                  { key: 'moto', label: 'Moto' },
+                ]}
+                onChange={(value) => setForm({ ...form, vehicleType: value as 'auto' | 'moto' })}
+              />
               <Field label="Alias (opcional)">
                 <Input
                   value={form.nickname}
@@ -154,10 +168,10 @@ export function VehiclesScreen({
               </Field>
               <View style={styles.row}>
                 <Field label="Marca" style={styles.flex}>
-                  <Input value={form.make} onChangeText={(value) => setForm({ ...form, make: value })} placeholder="Nissan" />
+                  <Input value={form.make} onChangeText={(value) => setForm({ ...form, make: value })} placeholder={form.vehicleType === 'moto' ? 'Italika' : 'Nissan'} />
                 </Field>
                 <Field label="Modelo" style={styles.flex}>
-                  <Input value={form.model} onChangeText={(value) => setForm({ ...form, model: value })} placeholder="Versa" />
+                  <Input value={form.model} onChangeText={(value) => setForm({ ...form, model: value })} placeholder={form.vehicleType === 'moto' ? 'FT150' : 'Versa'} />
                 </Field>
               </View>
               <Field label="Año">
@@ -176,13 +190,15 @@ export function VehiclesScreen({
                   onChange={(value) => setForm({ ...form, engineType: value })}
                 />
               </Field>
-              <Field label="Tipo de transmisión">
-                <Segmented
-                  value={form.transmissionType}
-                  options={TRANSMISSION_OPTIONS}
-                  onChange={(value) => setForm({ ...form, transmissionType: value })}
-                />
-              </Field>
+              {form.vehicleType === 'auto' && (
+                <Field label="Tipo de transmisión">
+                  <Segmented
+                    value={form.transmissionType}
+                    options={TRANSMISSION_OPTIONS}
+                    onChange={(value) => setForm({ ...form, transmissionType: value })}
+                  />
+                </Field>
+              )}
               <View style={styles.row}>
                 <Field label="Color" style={styles.flex}>
                   <Input value={form.color} onChangeText={(value) => setForm({ ...form, color: value })} placeholder="Blanco" />

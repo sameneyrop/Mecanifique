@@ -7,7 +7,7 @@ import { Card, InfoRow, SecondaryButton, Segmented } from './ui';
 import { PhotoThumbs } from './RequestPlace';
 import { acceptedWarranty, warrantyText } from './Quote';
 import { takeEvidencePhoto } from '../photos';
-import { formatError } from '../utils';
+import { formatError, vehicleWords } from '../utils';
 import type { ApiCall } from '../App';
 import type { ServiceQuote } from '../context/AppContext';
 
@@ -22,6 +22,7 @@ type Photo = { id: number; kind: 'before' | 'after'; photoUrl: string; createdAt
 type EvidenceRequest = {
   id: number;
   status: string;
+  vehicleType?: 'auto' | 'moto';
   servicePhotos?: Photo[];
   oldPartsStatus?: 'delivered' | 'declined' | 'none' | null;
   quotes?: ServiceQuote[];
@@ -90,7 +91,7 @@ export function MechanicEvidencePanel({
   }
 
   return (
-    <Card title="Fotos del servicio" subtitle="Cómo recibiste el auto y cómo quedó.">
+    <Card title="Fotos del servicio" subtitle={`Cómo recibiste ${vehicleWords(request.vehicleType).the} y cómo quedó.`}>
       <View style={styles.stack}>
         <Text style={styles.itemTitle}>Antes {before.length === 0 ? '· obligatoria para empezar a reparar' : `· ${before.length}`}</Text>
         <PhotoThumbs photos={before} />
@@ -145,7 +146,7 @@ export function ServiceEvidenceView({ request }: { request: EvidenceRequest }) {
   }
 
   return (
-    <Card title="Cómo quedó tu auto" subtitle="Quedan guardadas en tu servicio.">
+    <Card title={request.vehicleType === 'moto' ? 'Cómo quedó tu moto' : 'Cómo quedó tu auto'} subtitle="Quedan guardadas en tu servicio.">
       <View style={styles.stack}>
         {before.length > 0 && (
           <>

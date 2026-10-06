@@ -5,7 +5,7 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, Field, InfoRow, Input, PrimaryButton, SecondaryButton } from './ui';
 import { AskStoresBox, MyPartRequests } from './PartRequests';
-import { formatError, formatServerDate, openServiceNavigation } from '../utils';
+import { formatError, formatServerDate, openServiceNavigation, vehicleWords } from '../utils';
 import type { ApiCall } from '../App';
 
 /**
@@ -49,7 +49,7 @@ export function PartsStoreFinder({
 }: {
   api: ApiCall;
   /** El servicio en curso: busca cerca del auto y pone el auto en el mensaje. */
-  request?: { id: number; vehicleMake: string; vehicleModel: string; vehicleYear: number | string } | null;
+  request?: { id: number; vehicleType?: 'auto' | 'moto'; vehicleMake: string; vehicleModel: string; vehicleYear: number | string } | null;
   /** Sin servicio: cerca de dónde está el mecánico. */
   near?: { latitude: number; longitude: number } | null;
 }) {
@@ -65,7 +65,9 @@ export function PartsStoreFinder({
   const apiRef = useRef(api);
   apiRef.current = api;
 
-  const vehicle = request ? `${request.vehicleMake} ${request.vehicleModel} ${request.vehicleYear}` : '';
+  const vehicle = request
+    ? `${request.vehicleType === 'moto' ? 'moto ' : ''}${request.vehicleMake} ${request.vehicleModel} ${request.vehicleYear}`
+    : '';
 
   async function load() {
     const params = request
@@ -143,7 +145,7 @@ export function PartsStoreFinder({
     }
   }
 
-  const subtitle = request ? 'Las más cercanas al auto.' : 'Las más cercanas a ti.';
+  const subtitle = request ? `Las más cercanas ${vehicleWords(request.vehicleType).toThe}.` : 'Las más cercanas a ti.';
 
   const myRequests = <MyPartRequests api={api} serviceRequestId={request?.id} refreshKey={askedKey} />;
   const mostradorStores = stores?.filter((store) => store.mostrador).length ?? 0;

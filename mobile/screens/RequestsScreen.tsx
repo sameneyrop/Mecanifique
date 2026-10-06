@@ -37,7 +37,7 @@ import { ServiceEvidenceView } from '../components/ServiceEvidence';
 import { ServiceReceipt } from '../components/ServiceReceipt';
 import { ReceiptsCard } from '../components/PartsReceipts';
 import type { ApiCall } from '../App';
-import { formatError, formatCalendarDate, serviceFeeStatusText } from '../utils';
+import { formatError, formatCalendarDate, serviceFeeStatusText, vehicleText, type VehicleType } from '../utils';
 
 type ScheduleSlot = {
   id: number;
@@ -50,6 +50,7 @@ type ScheduleSlot = {
 
 type VehicleProfile = {
   id: number;
+  vehicleType?: VehicleType;
   nickname?: string | null;
   make: string;
   model: string;
@@ -57,6 +58,7 @@ type VehicleProfile = {
 };
 
 type RequestFormShape = {
+  vehicleType: VehicleType;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: string;
@@ -178,6 +180,9 @@ export function RequestsScreen({
     ? mechanics.find((mechanic) => String(mechanic.id) === requestForm.requestedMechanicId)?.fullName ?? 'Mecánico elegido'
     : null;
   const hasVehicle = Boolean(requestForm.vehicleMake.trim());
+  const isMoto = requestForm.vehicleType === 'moto';
+  // Los vehículos guardados del tipo elegido (Auto o Moto).
+  const savedOfType = vehicles.filter((vehicle: VehicleProfile) => (vehicle.vehicleType ?? 'auto') === requestForm.vehicleType);
   const hasGpsLocation = Boolean(requestForm.latitude && requestForm.longitude);
 
   function clearChosenMechanic() {
@@ -295,7 +300,7 @@ export function RequestsScreen({
             title="Nueva solicitud"
             subtitle={
               requestCreateStep === 'vehicle'
-                ? 'Paso 1 de 2 · Tu auto'
+                ? 'Paso 1 de 2 · Tu vehículo'
                 : 'Paso 2 de 2 · Qué le pasa y dónde está'
             }
           >
@@ -310,9 +315,25 @@ export function RequestsScreen({
               />
               {requestCreateStep === 'vehicle' ? (
                 <View style={styles.stack}>
-                  {user.role === 'customer' && vehicles.length > 0 && (
+                  {/* Auto o moto: una de moto solo les llega a los mecánicos que atienden motos. */}
+                  <Segmented
+                    value={requestForm.vehicleType}
+                    options={[
+                      { key: 'auto', label: 'Auto' },
+                      { key: 'moto', label: 'Moto' },
+                    ]}
+                    onChange={(value) =>
+                      setRequestForm({
+                        ...requestForm,
+                        vehicleType: value as VehicleType,
+                        // Otro tipo, otro vehículo: no se queda la marca del anterior.
+                        ...(value !== requestForm.vehicleType ? { vehicleMake: '', vehicleModel: '' } : {}),
+                      })
+                    }
+                  />
+                  {user.role === 'customer' && savedOfType.length > 0 && (
                     <View style={styles.row}>
-                      {vehicles.map((vehicle: VehicleProfile) => {
+                      {savedOfType.map((vehicle: VehicleProfile) => {
                         const selected =
                           requestForm.vehicleMake === vehicle.make &&
                           requestForm.vehicleModel === vehicle.model &&
@@ -320,7 +341,7 @@ export function RequestsScreen({
                         return (
                           <ChoiceTile
                             key={vehicle.id}
-                            icon="car-sport-outline"
+                            icon={isMoto ? 'speedometer-outline' : 'car-sport-outline'}
                             title={vehicle.nickname || `${vehicle.make} ${vehicle.model}`}
                             description={vehicle.nickname ? `${vehicle.make} ${vehicle.model} ${vehicle.year}` : String(vehicle.year)}
                             active={selected}
@@ -328,6 +349,7 @@ export function RequestsScreen({
                             onPress={() =>
                               setRequestForm({
                                 ...requestForm,
+                                vehicleType: vehicle.vehicleType ?? 'auto',
                                 vehicleMake: vehicle.make,
                                 vehicleModel: vehicle.model,
                                 vehicleYear: String(vehicle.year),
@@ -358,15 +380,23 @@ export function RequestsScreen({
                   ) : (
                     chosenMechanicRow
                   )}
-                  {user.role === 'customer' && vehicles.length > 0 && (
-                    <Text style={styles.smallText}>¿Es otro auto? Escríbelo aquí:</Text>
+                  {user.role === 'customer' && savedOfType.length > 0 && (
+                    <Text style={styles.smallText}>{isMoto ? '¿Es otra moto?' : '¿Es otro auto?'} Escríbelo aquí:</Text>
                   )}
                   <View style={styles.row}>
                     <Field label="Marca" style={styles.flex}>
-                      <Input value={requestForm.vehicleMake} onChangeText={(value) => setRequestForm({ ...requestForm, vehicleMake: value })} />
+                      <Input
+                        value={requestForm.vehicleMake}
+                        placeholder={isMoto ? 'Ej. Italika' : 'Ej. Nissan'}
+                        onChangeText={(value) => setRequestForm({ ...requestForm, vehicleMake: value })}
+                      />
                     </Field>
                     <Field label="Modelo" style={styles.flex}>
-                      <Input value={requestForm.vehicleModel} onChangeText={(value) => setRequestForm({ ...requestForm, vehicleModel: value })} />
+                      <Input
+                        value={requestForm.vehicleModel}
+                        placeholder={isMoto ? 'Ej. FT150' : 'Ej. Versa'}
+                        onChangeText={(value) => setRequestForm({ ...requestForm, vehicleModel: value })}
+                      />
                     </Field>
                   </View>
                   <Field label="Año">
@@ -387,9 +417,7 @@ export function RequestsScreen({
                     <View style={styles.selectionRow}>
                       <View style={styles.flex}>
                         <Text style={styles.smallText}>Vehículo</Text>
-                        <Text style={styles.itemTitle}>
-                          {requestForm.vehicleMake} {requestForm.vehicleModel} {requestForm.vehicleYear}
-                        </Text>
+                        <Text style={styles.itemTitle}>{vehicleText(requestForm)}</Text>
                       </View>
                       <SecondaryButton title="Cambiar" compact onPress={() => setRequestCreateStep('vehicle')} />
                     </View>
@@ -581,6 +609,7 @@ export function RequestsScreen({
                     requestId={selectedRequest.id}
                     status={selectedRequest.status}
                     mechanicName={selectedRequest.mechanicName}
+                    vehicleType={selectedRequest.vehicleType}
                   />
                   <CustomerQuoteCard
                     api={api}

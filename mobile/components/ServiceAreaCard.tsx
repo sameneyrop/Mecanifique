@@ -6,7 +6,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, Field, Input, PrimaryButton, Segmented } from './ui';
-import { formatError, placeKey } from '../utils';
+import { formatError, placeKey, WORKS_ON_LABEL, type WorksOn } from '../utils';
 import type { ApiCall } from '../App';
 
 /**
@@ -23,11 +23,12 @@ type ServiceArea = {
   zone: string;
   serviceAreas: string[];
   serviceRadiusKm: number;
+  worksOn?: WorksOn;
   municipalities: string[];
   radiusOptions: number[];
 };
 
-type Form = { city: string; zone: string; areas: string[]; radius: number };
+type Form = { city: string; zone: string; areas: string[]; radius: number; worksOn: WorksOn };
 
 const STATE_RADIUS_KM = 100;
 
@@ -44,7 +45,7 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
 
   function load(area: ServiceArea) {
     setData(area);
-    setForm({ city: area.city, zone: area.zone, areas: area.serviceAreas, radius: area.serviceRadiusKm });
+    setForm({ city: area.city, zone: area.zone, areas: area.serviceAreas, radius: area.serviceRadiusKm, worksOn: area.worksOn ?? 'auto' });
   }
 
   useEffect(() => {
@@ -99,6 +100,7 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
             // Si con su ciudad ya cubre todos, se guardan todos: así se lee "Todo el estado".
             serviceAreas: wholeState ? data?.municipalities ?? form.areas : form.areas,
             serviceRadiusKm: form.radius,
+            worksOn: form.worksOn,
           },
         }),
       );
@@ -128,6 +130,13 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
   return (
     <Card title="Dónde das servicio">
       <View style={styles.stack}>
+        {/* Qué atiende: una solicitud de moto solo le llega si atiende motos (servidor: src/vehicleTypes.ts). */}
+        <Text style={styles.label}>¿Qué atiendes?</Text>
+        <Segmented
+          value={form.worksOn}
+          options={(['auto', 'moto', 'ambos'] as const).map((key) => ({ key, label: WORKS_ON_LABEL[key] }))}
+          onChange={(value) => setForm({ ...form, worksOn: value as WorksOn })}
+        />
         <View style={styles.row}>
           <Field label="Ciudad o municipio" style={styles.flex}>
             <Input value={form.city} maxLength={60} onChangeText={(value) => setForm({ ...form, city: value })} />

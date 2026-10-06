@@ -7,7 +7,7 @@ import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext, type AmountDue, type PartsReceipt, type ServiceQuote } from '../context/AppContext';
 import { Card, InfoRow, PrimaryButton, SecondaryButton } from './ui';
-import { formatClabe, formatError, formatPesos, parseServerTimestamp } from '../utils';
+import { formatClabe, formatError, formatPesos, parseServerTimestamp, vehicleWords, type VehicleType } from '../utils';
 import type { ApiCall } from '../App';
 
 /**
@@ -23,6 +23,7 @@ type Role = 'customer' | 'mechanic';
 type GuideRequest = {
   id: number;
   status: string;
+  vehicleType?: VehicleType;
   preferredTime?: string;
   scheduleSlotId?: number | null;
   parentRequestId?: number | null;
@@ -153,13 +154,13 @@ function customerGuide(request: GuideRequest): Guide | null {
           .join(' '),
       };
     case 'en_route':
-      return { icon: 'car-outline', title: `${name} va en camino`, text: 'Síguelo en el mapa de abajo. Ten a la mano tu auto y las llaves.' };
+      return { icon: 'car-outline', title: `${name} va en camino`, text: `Síguelo en el mapa de abajo. Ten a la mano ${vehicleWords(request.vehicleType).your} y las llaves.` };
     case 'on_site':
     case 'in_progress':
       return {
         icon: 'hand-left-outline',
         title: `${name} llegó`,
-        text: 'Recíbelo (tienes 15 minutos) y cuéntale qué le pasa a tu auto. Primero lo revisa y después te dice cuánto costaría repararlo.',
+        text: `Recíbelo (tienes 15 minutos) y cuéntale qué le pasa a ${vehicleWords(request.vehicleType).your}. Primero lo revisa y después te dice cuánto costaría repararlo.`,
       };
     case 'diagnosing':
       if (pendingQuote) {
@@ -171,7 +172,7 @@ function customerGuide(request: GuideRequest): Guide | null {
       if (quotes[0]?.status === 'rejected') {
         return { icon: 'close-circle-outline', title: 'No aceptaste la cotización', text: `${name} puede mandarte otra. Si terminan aquí, solo pagas ${visitText}.` };
       }
-      return { icon: 'search-outline', title: `${name} está revisando tu auto`, text: 'Cuando termine te mandará aquí una cotización. No repara nada sin que la aceptes.' };
+      return { icon: 'search-outline', title: `${name} está revisando ${vehicleWords(request.vehicleType).your}`, text: 'Cuando termine te mandará aquí una cotización. No repara nada sin que la aceptes.' };
     case 'repairing':
     case 'awaiting_parts':
       if (hasPendingReceipt(request)) {
@@ -200,7 +201,7 @@ function customerGuide(request: GuideRequest): Guide | null {
       }
       return {
         icon: 'construct-outline',
-        title: `${name} está reparando tu auto`,
+        title: `${name} está reparando ${vehicleWords(request.vehicleType).your}`,
         text: `Lo acordado: ${agreedText(amounts, 'él')}. Se lo pagas a él al terminar.`,
       };
     default:
@@ -239,7 +240,7 @@ function mechanicGuide(request: GuideRequest): Guide | null {
     case 'in_progress':
       return {
         icon: 'search-outline',
-        title: 'Revisa el auto',
+        title: request.vehicleType === 'moto' ? 'Revisa la moto' : 'Revisa el auto',
         text: `Saluda a ${client} y toca «Empezar diagnóstico».${visitFee > 0 ? ` Por la visita cobras ${formatPesos(visitFee)}.` : ''} Si no aparece en 15 minutos, podrás marcar que no está.`,
       };
     case 'diagnosing':

@@ -51,9 +51,10 @@ import {
 } from '../components/ServiceGuide';
 import { SlideToConfirm } from '../components/SlideToConfirm';
 import type { ApiCall } from '../App';
-import { formatPesos, openServiceNavigation, serviceFeeStatusText } from '../utils';
+import { formatPesos, openServiceNavigation, serviceFeeStatusText, vehicleText, vehicleWords, type VehicleType } from '../utils';
 
 type RequestFormShape = {
+  vehicleType: VehicleType;
   vehicleMake: string;
   vehicleModel: string;
   vehicleYear: string;
@@ -284,7 +285,7 @@ function CustomerSearch({
         <Illustration source={ILLUSTRATIONS.homeHero} />
         <Text style={styles.title}>Tu auto, en buenas manos</Text>
         <Text style={styles.subtitle}>
-          Mecánicos verificados que van hasta tu auto.
+          Mecánicos verificados que van hasta tu auto o moto.
         </Text>
       </Animated.View>
 
@@ -419,7 +420,7 @@ function CustomerHome(props: HomeScreenProps) {
     <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>
       <Card
         title="Tu servicio"
-        subtitle={`${detail.vehicleMake} ${detail.vehicleModel} ${detail.vehicleYear} · ${detail.issueDescription}`}
+        subtitle={`${vehicleText(detail)} · ${detail.issueDescription}`}
       >
         <View style={styles.stack}>
           <NextStepGuide request={detail} role="customer" />
@@ -433,7 +434,7 @@ function CustomerHome(props: HomeScreenProps) {
           )}
         </View>
       </Card>
-      <MechanicTracker api={props.api} requestId={detail.id} status={detail.status} mechanicName={detail.mechanicName} />
+      <MechanicTracker api={props.api} requestId={detail.id} status={detail.status} mechanicName={detail.mechanicName} vehicleType={detail.vehicleType} />
       <CustomerQuoteCard
         api={props.api}
         requestId={detail.id}
@@ -461,7 +462,7 @@ function CustomerHome(props: HomeScreenProps) {
             detail={mechanicTrustLine(detail)}
           />
           <Text style={styles.smallText}>
-            Revisa que sea la persona de la foto antes de entregarle el auto.
+            Revisa que sea la persona de la foto antes de entregarle {vehicleWords(detail.vehicleType).the}.
           </Text>
         </Card>
       )}
@@ -733,7 +734,7 @@ function MechanicHome(props: HomeScreenProps) {
         <Animated.View entering={FadeInDown.duration(300)} style={styles.stack}>
           <Card
             title="Trabajo en curso"
-            subtitle={`${detail.vehicleMake} ${detail.vehicleModel} ${detail.vehicleYear} · ${detail.issueDescription}`}
+            subtitle={`${vehicleText(detail)} · ${detail.issueDescription}`}
           >
             <View style={styles.stack}>
               <ContactRow

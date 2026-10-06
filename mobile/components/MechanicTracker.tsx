@@ -5,6 +5,7 @@ import { styles } from '../styles';
 import type { ApiCall } from '../App';
 import { Card, InfoRow, SecondaryButton } from './ui';
 import { MechanicRadar } from './MechanicRadar';
+import { vehicleWords } from '../utils';
 
 // Seguimiento del mecánico para el cliente: mientras va en camino o fue por
 // refacciones, su posición en el radar (con el auto al centro), a qué
@@ -60,12 +61,15 @@ export function MechanicTracker({
   requestId,
   status,
   mechanicName,
+  vehicleType,
 }: {
   api: ApiCall;
   requestId: number;
   status: string;
   mechanicName?: string | null;
+  vehicleType?: 'auto' | 'moto';
 }) {
+  const yourVehicle = vehicleWords(vehicleType).your;
   const [location, setLocation] = useState<MechanicLocation | null>(null);
   const tracking = TRACKING_STATUSES.has(status);
   // api cambia en cada render de App; el sondeo no debe reiniciarse por eso.
@@ -105,7 +109,7 @@ export function MechanicTracker({
     ? 'Buscando su ubicación…'
     : !mechanic
       ? 'Todavía no recibimos su ubicación. Aparecerá aquí en cuanto la comparta.'
-      : `${distanceKm != null ? `A ${formatDistance(distanceKm)} de tu auto · ` : ''}${
+      : `${distanceKm != null ? `A ${formatDistance(distanceKm)} de ${yourVehicle} · ` : ''}${
           distanceKm != null && status === 'en_route' ? `${etaText(distanceKm)} · ` : ''
         }Actualizado ${formatSecondsAgo(mechanic.secondsAgo)}`;
 
@@ -122,7 +126,7 @@ export function MechanicTracker({
               maxDistanceKm={radarScaleKm(distanceKm)}
               live
             />
-            <Text style={styles.smallText}>El punto oscuro es tu auto; el azul, tu mecánico. Se actualiza solo.</Text>
+            <Text style={styles.smallText}>El punto oscuro es {yourVehicle}; el azul, tu mecánico. Se actualiza solo.</Text>
           </>
         ) : null}
         {mechanic && mechanic.secondsAgo != null && mechanic.secondsAgo >= STALE_SECONDS ? (

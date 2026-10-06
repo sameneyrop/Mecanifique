@@ -7,7 +7,7 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { ChoiceTile, Field, Input, SecondaryButton } from './ui';
 import { pickRequestPhoto } from '../photos';
-import { formatError } from '../utils';
+import { formatError, vehicleWords } from '../utils';
 import type { ApiCall } from '../App';
 
 /**
@@ -22,6 +22,7 @@ import type { ApiCall } from '../App';
  */
 
 type PlaceForm = {
+  vehicleType?: 'auto' | 'moto';
   serviceAddress: string;
   city: string;
   zone: string;
@@ -60,7 +61,7 @@ export function RequestPlace<T extends PlaceForm>({
 
   return (
     <View style={styles.publicProfileBox}>
-      <Text style={styles.publicProfileTitle}>¿Dónde está tu auto?</Text>
+      <Text style={styles.publicProfileTitle}>¿Dónde está {vehicleWords(form.vehicleType).your}?</Text>
       <View style={styles.row}>
         <ChoiceTile
           icon="navigate-outline"
@@ -91,7 +92,7 @@ export function RequestPlace<T extends PlaceForm>({
           )}
         </>
       )}
-      <Field label={elsewhere ? 'Dirección donde está el auto' : 'Número y referencias (opcional)'}>
+      <Field label={elsewhere ? `Dirección donde está ${vehicleWords(form.vehicleType).the}` : 'Número y referencias (opcional)'}>
         <Input
           value={form.serviceAddress}
           onChangeText={(value) => setForm((current) => ({ ...current, serviceAddress: value }))}

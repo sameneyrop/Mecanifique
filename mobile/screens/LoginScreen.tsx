@@ -8,7 +8,7 @@ import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
 import { Card, ChoiceTile, Field, Illustration, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
-import { PASSWORD_RULE_TEXT, isValidPassword, openPrivacyNotice, openTerms } from '../utils';
+import { PASSWORD_RULE_TEXT, isValidPassword, openPrivacyNotice, openTerms, WORKS_ON_LABEL, type WorksOn } from '../utils';
 
 type AuthMode = 'login' | 'customer' | 'mechanic';
 type MechanicSignupStep = 'account' | 'work';
@@ -24,6 +24,7 @@ type MechanicForm = {
   zone: string;
   yearsExperience: string;
   specialties: string;
+  worksOn: WorksOn;
   latitude: string;
   longitude: string;
 };
@@ -480,6 +481,13 @@ export function LoginScreen({
                       <Text style={styles.smallText}>
                         Después puedes agregar más municipios en tu perfil.
                       </Text>
+                      <Field label="¿Qué atiendes?">
+                        <Segmented
+                          value={mechanicForm.worksOn}
+                          options={(['auto', 'moto', 'ambos'] as const).map((key) => ({ key, label: WORKS_ON_LABEL[key] }))}
+                          onChange={(value) => setMechanicForm({ ...mechanicForm, worksOn: value as WorksOn })}
+                        />
+                      </Field>
                       <Field label="Años de experiencia">
                         <Input
                           value={mechanicForm.yearsExperience}

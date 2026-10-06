@@ -130,6 +130,39 @@ export function mechanicCoverageText(mechanic: { city: string; serviceAreas?: st
   return `${places.slice(0, -1).join(', ')} y ${places[places.length - 1]}`;
 }
 
+/** Autos y motos (servidor: src/vehicleTypes.ts). Lo que no dice nada es auto. */
+export type VehicleType = 'auto' | 'moto';
+/** Qué atiende un mecánico. */
+export type WorksOn = 'auto' | 'moto' | 'ambos';
+
+export const WORKS_ON_LABEL: Record<WorksOn, string> = { auto: 'Autos', moto: 'Motos', ambos: 'Autos y motos' };
+
+export function servesVehicle(worksOn: WorksOn | null | undefined, vehicleType: VehicleType | null | undefined): boolean {
+  const works = worksOn ?? 'auto';
+  return works === 'ambos' || works === (vehicleType ?? 'auto');
+}
+
+/** Para escribir de un auto o de una moto: «el auto»/«la moto», «tu auto»/«tu moto»… */
+export function vehicleWords(vehicleType?: VehicleType | null) {
+  const moto = vehicleType === 'moto';
+  return {
+    the: moto ? 'la moto' : 'el auto',
+    your: moto ? 'tu moto' : 'tu auto',
+    ofThe: moto ? 'de la moto' : 'del auto',
+    toThe: moto ? 'a la moto' : 'al auto',
+  };
+}
+
+/** "Moto · Italika FT150 2021" o "Nissan Versa 2018" (los autos van sin prefijo). */
+export function vehicleText(vehicle: {
+  vehicleType?: VehicleType | null;
+  vehicleMake: string;
+  vehicleModel: string;
+  vehicleYear: number | string;
+}): string {
+  return `${vehicle.vehicleType === 'moto' ? 'Moto · ' : ''}${vehicle.vehicleMake} ${vehicle.vehicleModel} ${vehicle.vehicleYear}`;
+}
+
 export function formatPesos(amount: number): string {
   return `$${String(Math.round(amount)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 }
