@@ -1246,15 +1246,172 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
     "INSERT INTO service_request_updates (service_request_id, source, message) VALUES (?, 'system', ?)",
     [requestId, "No hay otro mecánico disponible en la zona por ahora."]
   );
+  const alerted = await alertNearbyOfflineMechanics(requestId);
   if (customerUserId) {
     await createNotification(
       customerUserId,
-      "No hay mecánicos disponibles ahora",
-      `No encontramos otro mecánico en tu zona para la solicitud #${requestId}. Puedes intentar de nuevo en unos minutos.`,
+      alerted > 0 ? "Seguimos buscando mecánico" : "No hay mecánicos disponibles ahora",
+      alerted > 0
+        ? `Avisamos a mecánicos cerca de ti. Te decimos en cuanto uno tome tu solicitud #${requestId}.`
+        : `No encontramos otro mecánico en tu zona para la solicitud #${requestId}. Puedes intentar de nuevo en unos minutos.`,
       { requestId }
     );
   }
   notifyRequest(requestId, "request.unassigned", { requestId });
+}
+
+// ============================================================================
+// Solicitudes que esperan mecánico.
+//
+// Antes, si nadie estaba conectado, la solicitud se quedaba esperando para
+// siempre: conectarse después no la repartía. Ahora:
+// - alertNearbyOfflineMechanics: a los mecánicos cercanos desconectados les
+//   llega "Alguien busca mecánico cerca de ti" (sin datos del cliente: el
+//   auto, la zona y una distancia redondeada).
+// - offerWaitingRequests: en cuanto alguien se conecta (y cada 20 s, por si
+//   alguien se desocupó), se le ofrece la solicitud que estaba esperando.
+// ============================================================================
+const NEARBY_ALERT_MAX_MECHANICS = 5;
+const NEARBY_ALERT_COOLDOWN_MINUTES = 15;
+/** Entre las 22:00 y las 7:00 (hora del centro de México) no se manda: despertar a alguien hace que apague los avisos. */
+const NEARBY_ALERT_QUIET_HOURS = { from: 22, to: 7 };
+/** Hasta cuándo se sigue repartiendo una solicitud de "Ahora" que nadie tomó (las agendadas, un día). */
+const WAITING_NOW_REQUEST_HOURS = 3;
+const WAITING_SCHEDULED_REQUEST_HOURS = 24;
+
+function mexicoHour(now: Date): number {
+  const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: "America/Mexico_City" }).format(now));
+  return Number.isFinite(hour) ? hour : now.getUTCHours() - 6;
+}
+
+function roughDistanceText(km: number): string {
+  if (km < 1) return "a menos de 1 km";
+  return `a unos ${Math.round(km)} km`;
+}
+
+/**
+ * Avisa a los mecánicos desconectados que podrían tomar la solicitud: que
+ * atienden ese vehículo, están activos y sin trabajo en curso, no la
+ * rechazaron, y la tienen dentro de su distancia (o atienden esa ciudad si no
+ * se sabe dónde están). Los más cercanos, hasta 5; a cada uno una sola vez por
+ * solicitud y no más de un aviso cada 15 minutos. Devuelve a cuántos avisó.
+ */
+export async function alertNearbyOfflineMechanics(requestId: number, now: Date = new Date()): Promise<number> {
+  const hour = mexicoHour(now);
+  if (hour >= NEARBY_ALERT_QUIET_HOURS.from || hour < NEARBY_ALERT_QUIET_HOURS.to) {
+    return 0;
+  }
+  const request = await get<{
+    status: string;
+    mechanicId: number | null;
+    city: string;
+    zone: string;
+    latitude: number | null;
+    longitude: number | null;
+    vehicleType: string | null;
+    make: string;
+    model: string;
+    year: number;
+  }>(
+    `SELECT status, mechanic_id AS mechanicId, city, zone, latitude, longitude, vehicle_type AS vehicleType,
+            vehicle_make AS make, vehicle_model AS model, vehicle_year AS year
+     FROM service_requests WHERE id = ?`,
+    [requestId]
+  );
+  if (!request || request.status !== "pending" || request.mechanicId) {
+    return 0;
+  }
+  const vehicleType = normalizeVehicleType(request.vehicleType);
+  const candidates = await all<{
+    id: number;
+    city: string;
+    zone: string;
+    serviceAreas: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    serviceRadiusKm: number | null;
+  }>(
+    `SELECT m.id, m.city, m.zone, m.service_areas AS serviceAreas, m.latitude, m.longitude, m.service_radius_km AS serviceRadiusKm
+     FROM mechanics m
+     WHERE m.status = 'active'
+       AND m.profile_photo_url IS NOT NULL
+       AND m.is_online = 0
+       AND m.alert_when_offline = 1
+       AND ${servesVehicleSql("m.works_on")}
+       AND NOT EXISTS (SELECT 1 FROM service_request_declines d WHERE d.service_request_id = ? AND d.mechanic_id = m.id)
+       AND NOT EXISTS (SELECT 1 FROM nearby_alerts a WHERE a.service_request_id = ? AND a.mechanic_id = m.id)
+       AND NOT EXISTS (
+         SELECT 1 FROM nearby_alerts a
+         WHERE a.mechanic_id = m.id AND a.created_at > datetime('now', '-${NEARBY_ALERT_COOLDOWN_MINUTES} minutes')
+       )
+       AND NOT EXISTS (SELECT 1 FROM service_requests job WHERE job.mechanic_id = m.id AND job.status IN ${ACTIVE_JOB_STATUSES_SQL})`,
+    [vehicleType, requestId, requestId]
+  );
+  const coords = requestCoords(request);
+  const ranked = candidates
+    .map((mechanic) => {
+      if (coords && mechanic.latitude != null && mechanic.longitude != null) {
+        const km = calculateDistanceKm(coords.latitude, coords.longitude, mechanic.latitude, mechanic.longitude);
+        return km <= (mechanic.serviceRadiusKm ?? DEFAULT_SERVICE_RADIUS_KM) ? { id: mechanic.id, km } : null;
+      }
+      // Sin ubicación de alguno de los dos: cuenta si atiende esa ciudad.
+      const covers = coversCity({ city: mechanic.city, serviceAreas: parseServiceAreas(mechanic.serviceAreas) }, request.city);
+      return covers ? { id: mechanic.id, km: null as number | null } : null;
+    })
+    .filter((entry): entry is { id: number; km: number | null } => entry !== null)
+    .sort((a, b) => (a.km ?? Infinity) - (b.km ?? Infinity));
+
+  const vehicle = `${request.make} ${request.model} ${request.year}`;
+  const title = vehicleType === "moto" ? "Alguien busca mecánico para su moto cerca de ti" : "Alguien busca mecánico cerca de ti";
+  let alerted = 0;
+  for (const mechanic of ranked) {
+    if (alerted >= NEARBY_ALERT_MAX_MECHANICS) break;
+    // Con un corte vencido no puede conectarse: avisarle solo lo frustra.
+    if (await overdueStatement(mechanic.id)) continue;
+    const userId = await getUserIdByMechanicId(mechanic.id);
+    if (!userId) continue;
+    const claimed = await run("INSERT OR IGNORE INTO nearby_alerts (service_request_id, mechanic_id) VALUES (?, ?)", [requestId, mechanic.id]);
+    if (claimed.changes === 0) continue;
+    const where = [request.zone?.trim() || null, mechanic.km != null ? roughDistanceText(mechanic.km) : null].filter(Boolean).join(" · ");
+    await createNotification(userId, title, `${vehicle}${where ? ` · ${where}` : ""}. Conéctate para tomarla.`, { nearby: true });
+    alerted += 1;
+  }
+  return alerted;
+}
+
+/**
+ * Reparte las solicitudes automáticas que siguen esperando mecánico (de las
+ * últimas horas) entre quienes ya están conectados y libres. Se llama cuando
+ * alguien se conecta y en el barrido de cada 20 s.
+ */
+export async function offerWaitingRequests(): Promise<number> {
+  const waiting = await all<{
+    id: number;
+    city: string;
+    zone: string;
+    latitude: number | null;
+    longitude: number | null;
+    vehicleType: string | null;
+  }>(
+    `SELECT id, city, zone, latitude, longitude, vehicle_type AS vehicleType
+     FROM service_requests
+     WHERE status = 'pending'
+       AND mechanic_id IS NULL
+       AND COALESCE(assignment_mode, 'auto') = 'auto'
+       AND created_at > datetime('now', CASE WHEN COALESCE(preferred_time, 'Ahora') = 'Ahora'
+                                             THEN '-${WAITING_NOW_REQUEST_HOURS} hours'
+                                             ELSE '-${WAITING_SCHEDULED_REQUEST_HOURS} hours' END)
+     ORDER BY created_at ASC
+     LIMIT 20`
+  );
+  let offered = 0;
+  for (const request of waiting) {
+    const mechanicId = await findAvailableMechanic(request.city, request.zone, request.id, requestCoords(request), normalizeVehicleType(request.vehicleType));
+    if (mechanicId && (await offerRequestToMechanic(request.id, mechanicId))) {
+      offered += 1;
+    }
+  }
+  return offered;
 }
 
 /** Libera un turno reservado por una solicitud que perdió a su mecánico. */
@@ -1359,6 +1516,7 @@ function startHoldSweep(): void {
     }
     holdSweepRunning = true;
     sweepExpiredHolds()
+      .then(() => offerWaitingRequests())
       .then(() => sweepMostradorHolds())
       .catch((error) => console.error("Hold sweep failed:", error))
       .finally(() => {
@@ -3429,12 +3587,15 @@ app.post(
           { requestId: result.lastID }
         );
       } else {
-        // Antes esto era silencioso: la solicitud quedaba "Pendiente" sin
-        // mecánico y el cliente no sabía que nadie la iba a recibir.
+        // Nadie conectado: se avisa a los mecánicos cercanos desconectados y,
+        // en cuanto uno se conecta, se le ofrece (offerWaitingRequests).
+        const alerted = await alertNearbyOfflineMechanics(result.lastID);
         await createNotification(
           customerUserId,
-          "No hay mecánicos disponibles ahora",
-          `Registramos tu solicitud #${result.lastID}, pero no hay mecánicos disponibles en tu zona en este momento. Puedes intentar de nuevo en unos minutos.`,
+          alerted > 0 ? "Buscando mecánico" : "No hay mecánicos disponibles ahora",
+          alerted > 0
+            ? `Registramos tu solicitud #${result.lastID} y avisamos a mecánicos cerca de ti. Te decimos en cuanto uno la tome.`
+            : `Registramos tu solicitud #${result.lastID}, pero no hay mecánicos disponibles en tu zona en este momento. Puedes intentar de nuevo en unos minutos.`,
           { requestId: result.lastID }
         );
       }
@@ -4067,6 +4228,10 @@ app.patch(
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
+    }
+    // Recién conectado y libre: si había una solicitud esperando, se le ofrece ya.
+    if (payload.isOnline && result.isAvailable) {
+      await offerWaitingRequests().catch((error) => console.error("No se pudieron repartir las solicitudes en espera:", error));
     }
 
     res.status(200).json({ ok: true, isOnline: payload.isOnline, isAvailable: result.isAvailable });
@@ -4763,7 +4928,8 @@ app.post(
       normalizeVehicleType(request.vehicleType)
     );
     const found = nextMechanicId !== null && (await offerRequestToMechanic(requestId, nextMechanicId));
-    res.status(200).json({ found });
+    const alerted = found ? 0 : await alertNearbyOfflineMechanics(requestId);
+    res.status(200).json({ found, alerted });
   })
 );
 

@@ -104,10 +104,12 @@ export function SearchingStatus({
         <Ionicons name="search-outline" size={22} color={colors.primary} />
         <View style={[styles.flex, styles.stack]}>
           <Text style={styles.itemTitle}>
-            {direct ? 'El mecánico no pudo tomar tu solicitud' : 'No hay mecánicos disponibles ahora'}
+            {direct ? 'El mecánico no pudo tomar tu solicitud' : 'Buscando mecánico'}
           </Text>
           <Text style={styles.smallText}>
-            {direct ? 'Podemos buscarte otro mecánico disponible en tu zona.' : 'Puedes intentar de nuevo en unos minutos.'}
+            {direct
+              ? 'Podemos buscarte otro mecánico disponible en tu zona.'
+              : 'Ahorita no hay nadie conectado cerca. En cuanto un mecánico se conecte, le llega tu solicitud y te avisamos.'}
           </Text>
           <PrimaryButton
             title={direct ? 'Buscar otro mecánico' : 'Buscar de nuevo'}

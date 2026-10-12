@@ -125,6 +125,10 @@ async function cleanupCreatedRows() {
   for (const mechanicId of createdRows.mechanics) {
     await run("DELETE FROM commission_charges WHERE mechanic_id = ?", [mechanicId]);
     await run("DELETE FROM commission_statements WHERE mechanic_id = ?", [mechanicId]);
+    await run("DELETE FROM nearby_alerts WHERE mechanic_id = ?", [mechanicId]);
+    // Cuentas de prueba ligadas al mecánico (pruebas de avisos): primero sus avisos, luego la cuenta.
+    await run("DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE mechanic_id = ?)", [mechanicId]);
+    await run("DELETE FROM users WHERE mechanic_id = ?", [mechanicId]);
     await run("DELETE FROM mechanics WHERE id = ?", [mechanicId]);
   }
 }
@@ -2426,7 +2430,7 @@ test("zonas: guardar dónde da servicio valida municipios y distancia, y deja la
     serviceAreas: ["calvillo", "Jesús María", "jesus maria"],
     serviceRadiusKm: 50
   });
-  assert.deepEqual(saved, { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Calvillo", "Jesús María"], serviceRadiusKm: 50, worksOn: "auto" });
+  assert.deepEqual(saved, { city: "Aguascalientes", zone: "Sur", serviceAreas: ["Calvillo", "Jesús María"], serviceRadiusKm: 50, worksOn: "auto", alertWhenOffline: true });
   assert.deepEqual(await getServiceArea(mechanicId), saved);
 
   for (const bad of [
@@ -2798,4 +2802,81 @@ test("motos: el mecánico guarda qué atiende en «Dónde das servicio» y la ap
   // Una versión de la app sin el campo no lo cambia.
   await saveServiceArea(mechanicId, { city: "Aguascalientes", zone: "Sur", serviceAreas: [], serviceRadiusKm: 25 });
   assert.equal((await getServiceArea(mechanicId)).worksOn, "ambos");
+});
+
+test("cerca de ti: sin nadie conectado, avisa a los mecánicos cercanos desconectados y respeta sus reglas", async () => {
+  const { alertNearbyOfflineMechanics } = require("../src/server.ts");
+  const noon = new Date("2026-10-12T18:00:00Z"); // 12:00 en el centro de México
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  // Un punto al azar en cada corrida: lo que dejara una corrida interrumpida no cae cerca.
+  const base = { latitude: -30 - Math.random() * 20, longitude: 100 + Math.random() * 40 };
+  const at = (dLat) => ({ latitude: base.latitude + dLat, longitude: base.longitude });
+  const car = at(0);
+  async function offline(coords, extra = "") {
+    const id = await createOnlineMechanic(city, "Sur", coords);
+    await run(`UPDATE mechanics SET is_online = 0, is_available = 0 ${extra} WHERE id = ?`, [id]);
+    const user = await run(
+      "INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id) VALUES ('mechanic', ?, ?, 'Mecánico', 'x', 'x', ?)",
+      [`${crypto.randomUUID()}@example.test`, crypto.randomUUID(), id]
+    );
+    return { id, userId: user.lastID };
+  }
+  const near = await offline(at(0.01)); // ~1 km
+  const far = await offline(at(0.45)); // ~50 km, fuera de sus 25 km
+  const motoOnly = await offline(at(0.005), ", works_on = 'moto'");
+  const optedOut = await offline(at(0.001), ", alert_when_offline = 0");
+  const noLocation = await offline(null); // sin ubicación conocida: cuenta por atender la ciudad
+
+  const requestId = await createPendingRequestWithExpiredHold(city, "Sur", null, "auto", car);
+  await run("UPDATE service_requests SET mechanic_id = NULL, hold_expires_at = NULL, vehicle_type = 'auto' WHERE id = ?", [requestId]);
+
+  const alerted = await alertNearbyOfflineMechanics(requestId, noon);
+  assert.equal(alerted, 2, "el cercano y el que no tiene ubicación pero atiende la ciudad");
+  const titleFor = async (userId) => (await get("SELECT title, body, data_json AS data FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 1", [userId]));
+  const nearNote = await titleFor(near.userId);
+  assert.equal(nearNote.title, "Alguien busca mecánico cerca de ti");
+  assert.match(nearNote.body, /Nissan Versa 2020 · Sur · a unos 1 km|Nissan Versa 2020 · Sur · a menos de 1 km/);
+  assert.match(nearNote.body, /Conéctate para tomarla/);
+  assert.equal(JSON.parse(nearNote.data).nearby, true);
+  assert.ok(!/requestId/.test(nearNote.data), "el aviso no abre la solicitud: el mecánico todavía no la tiene");
+  assert.ok(await titleFor(noLocation.userId));
+  for (const skipped of [far, motoOnly, optedOut]) {
+    assert.equal(await titleFor(skipped.userId), undefined);
+  }
+
+  // Una sola vez por solicitud, y no más de un aviso cada 15 minutos aunque llegue otra.
+  assert.equal(await alertNearbyOfflineMechanics(requestId, noon), 0);
+  const second = await createPendingRequestWithExpiredHold(city, "Sur", null, "auto", car);
+  await run("UPDATE service_requests SET mechanic_id = NULL, hold_expires_at = NULL WHERE id = ?", [second]);
+  assert.equal(await alertNearbyOfflineMechanics(second, noon), 0, "acaban de recibir uno");
+
+  // De noche no se manda nada.
+  await run("DELETE FROM nearby_alerts WHERE mechanic_id IN (?, ?)", [near.id, noLocation.id]);
+  assert.equal(await alertNearbyOfflineMechanics(second, new Date("2026-10-12T05:00:00Z")), 0, "23:00 en México");
+});
+
+test("cerca de ti: al conectarse, el mecánico recibe la solicitud que estaba esperando", async () => {
+  const { offerWaitingRequests } = require("../src/server.ts");
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const mechanicId = await createOnlineMechanic(city, "Centro");
+  await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id = ?", [mechanicId]);
+  const requestId = await createPendingRequestWithExpiredHold(city, "Centro", null, "auto");
+  await run("UPDATE service_requests SET mechanic_id = NULL, hold_expires_at = NULL WHERE id = ?", [requestId]);
+
+  await offerWaitingRequests();
+  assert.equal((await get("SELECT mechanic_id AS m FROM service_requests WHERE id = ?", [requestId])).m, null, "desconectado: nada");
+
+  await applyMechanicConnection(mechanicId, true, false);
+  await offerWaitingRequests();
+  const row = await get("SELECT mechanic_id AS m, hold_expires_at > CURRENT_TIMESTAMP AS hold FROM service_requests WHERE id = ?", [requestId]);
+  assert.equal(row.m, mechanicId, "se le ofrece en cuanto se conecta");
+  assert.equal(row.hold, 1, "con su tiempo para aceptarla");
+
+  // Una solicitud de "Ahora" de hace más de 3 horas ya no se reparte.
+  const stale = await createPendingRequestWithExpiredHold(city, "Centro", null, "auto");
+  await run("UPDATE service_requests SET mechanic_id = NULL, hold_expires_at = NULL, created_at = datetime('now', '-4 hours') WHERE id = ?", [stale]);
+  await run("UPDATE service_requests SET status = 'cancelled' WHERE id = ?", [requestId]);
+  await run("UPDATE mechanics SET is_available = 1 WHERE id = ?", [mechanicId]);
+  await offerWaitingRequests();
+  assert.equal((await get("SELECT mechanic_id AS m FROM service_requests WHERE id = ?", [stale])).m, null);
 });

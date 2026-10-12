@@ -773,6 +773,27 @@ piezas. **La pieza se paga en la tienda**: el dinero no pasa por Mecanifique.
   (solo acepta localhost, para que un enlace no pueda mandar la contraseña a
   otro servidor).
 
+### Solicitudes sin nadie conectado (`alertNearbyOfflineMechanics`, `offerWaitingRequests`)
+
+Antes, si nadie estaba conectado, la solicitud se quedaba esperando para
+siempre: conectarse después no la repartía.
+
+- **Aviso «Alguien busca mecánico cerca de ti»** a los mecánicos
+  desconectados que podrían tomarla: activos, con foto, sin trabajo en curso
+  ni corte vencido, que atienden ese vehículo, no la rechazaron y la tienen
+  dentro de su distancia (por su última ubicación) o atienden esa ciudad. Los
+  5 más cercanos; a cada uno una vez por solicitud y no más de uno cada 15
+  minutos; nunca de 22:00 a 7:00 (hora del centro). El aviso solo dice el
+  auto, la zona y una distancia redondeada; tocarlo abre Inicio
+  («Conectarme»). Se manda al crear la solicitud, cuando todos la rechazan o
+  dejan vencer, y en «Buscar de nuevo». El mecánico lo apaga en «Dónde das
+  servicio» (`mechanics.alert_when_offline`; registro en `nearby_alerts`).
+- **Al conectarse** (y en el barrido de cada 20 s, por si alguien se
+  desocupó) se le ofrece la solicitud automática que esperaba: las de «Ahora»
+  de las últimas 3 horas y las agendadas de las últimas 24.
+- El cliente ve «Buscando mecánico… En cuanto un mecánico se conecte, le llega
+  tu solicitud y te avisamos».
+
 ### Autos y motos (`src/vehicleTypes.ts`)
 
 - Cada solicitud y cada vehículo guardado es de **auto o moto**

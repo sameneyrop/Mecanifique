@@ -21,6 +21,16 @@ type AppNotification = {
 const PAGE_SIZE = 15;
 
 /** Adónde lleva tocar un aviso, según lo que trae (solicitud o pregunta). */
+/** «Alguien busca mecánico cerca de ti» (para un mecánico desconectado): lleva a «Conectarme». */
+export function isNearbyAlert(notification: AppNotification): boolean {
+  try {
+    const data = notification.dataJson ? (JSON.parse(notification.dataJson) as Record<string, unknown>) : {};
+    return data.nearby === true || data.nearby === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export function notificationTarget(notification: AppNotification): { requestId: number } | { questionId: number } | null {
   try {
     const data = notification.dataJson ? (JSON.parse(notification.dataJson) as Record<string, unknown>) : {};

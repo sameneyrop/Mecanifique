@@ -24,11 +24,12 @@ type ServiceArea = {
   serviceAreas: string[];
   serviceRadiusKm: number;
   worksOn?: WorksOn;
+  alertWhenOffline?: boolean;
   municipalities: string[];
   radiusOptions: number[];
 };
 
-type Form = { city: string; zone: string; areas: string[]; radius: number; worksOn: WorksOn };
+type Form = { city: string; zone: string; areas: string[]; radius: number; worksOn: WorksOn; alert: boolean };
 
 const STATE_RADIUS_KM = 100;
 
@@ -45,7 +46,7 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
 
   function load(area: ServiceArea) {
     setData(area);
-    setForm({ city: area.city, zone: area.zone, areas: area.serviceAreas, radius: area.serviceRadiusKm, worksOn: area.worksOn ?? 'auto' });
+    setForm({ city: area.city, zone: area.zone, areas: area.serviceAreas, radius: area.serviceRadiusKm, worksOn: area.worksOn ?? 'auto', alert: area.alertWhenOffline ?? true });
   }
 
   useEffect(() => {
@@ -101,6 +102,7 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
             serviceAreas: wholeState ? data?.municipalities ?? form.areas : form.areas,
             serviceRadiusKm: form.radius,
             worksOn: form.worksOn,
+            alertWhenOffline: form.alert,
           },
         }),
       );
@@ -161,6 +163,18 @@ export function ServiceAreaCard({ api }: { api: ApiCall }) {
         <Text style={styles.smallText}>
           Te llegan las que estén a esta distancia o menos de donde estás.
         </Text>
+
+        {/* «Alguien busca mecánico cerca de ti» aunque esté desconectado (servidor: alertNearbyOfflineMechanics). */}
+        <Text style={styles.label}>¿Te avisamos cuando alguien pida cerca y estés desconectado?</Text>
+        <Segmented
+          value={form.alert ? 'on' : 'off'}
+          options={[
+            { key: 'on', label: 'Sí, avísame' },
+            { key: 'off', label: 'No' },
+          ]}
+          onChange={(value) => setForm({ ...form, alert: value === 'on' })}
+        />
+        <Text style={styles.smallText}>Nunca entre las 10 de la noche y las 7 de la mañana.</Text>
 
         <PrimaryButton title="Guardar dónde das servicio" busy={busy} onPress={save} />
       </View>

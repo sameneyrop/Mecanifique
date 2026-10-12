@@ -958,6 +958,21 @@ export async function initDb(): Promise<void> {
   await ensureColumn("vehicle_profiles", "vehicle_type", "ALTER TABLE vehicle_profiles ADD COLUMN vehicle_type TEXT NOT NULL DEFAULT 'auto'");
   await ensureColumn("mechanics", "works_on", "ALTER TABLE mechanics ADD COLUMN works_on TEXT NOT NULL DEFAULT 'auto'");
 
+  // "Alguien busca mecánico cerca de ti" (alertNearbyOfflineMechanics en
+  // server.ts): a quién se le avisó de qué solicitud, para no repetir el
+  // aviso ni mandar más de uno cada 15 minutos. El mecánico puede apagarlos.
+  await run(`
+    CREATE TABLE IF NOT EXISTS nearby_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      service_request_id INTEGER NOT NULL,
+      mechanic_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(service_request_id, mechanic_id)
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_nearby_alerts_mechanic ON nearby_alerts(mechanic_id, created_at)");
+  await ensureColumn("mechanics", "alert_when_offline", "ALTER TABLE mechanics ADD COLUMN alert_when_offline INTEGER NOT NULL DEFAULT 1");
+
   // Foto del cliente (opcional): el mecánico sabe a quién busca al llegar.
   await ensureColumn("customers", "photo_url", "ALTER TABLE customers ADD COLUMN photo_url TEXT");
 

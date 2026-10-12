@@ -161,6 +161,8 @@ export type ServiceArea = {
   serviceRadiusKm: number;
   /** Qué atiende: autos, motos o los dos (src/vehicleTypes.ts). */
   worksOn: WorksOn;
+  /** "Alguien busca mecánico cerca de ti" aunque esté desconectado (server.ts). */
+  alertWhenOffline: boolean;
 };
 
 export const serviceAreaSchema = z.object({
@@ -169,12 +171,15 @@ export const serviceAreaSchema = z.object({
   serviceAreas: z.array(z.string().trim().min(2).max(60)).max(AGUASCALIENTES_MUNICIPALITIES.length * 2),
   serviceRadiusKm: z.number().int(),
   // Opcional: las versiones de la app de antes no lo mandan y no lo cambian.
-  worksOn: worksOnSchema.optional()
+  worksOn: worksOnSchema.optional(),
+  alertWhenOffline: z.boolean().optional()
 });
 
 export async function getServiceArea(mechanicId: number): Promise<ServiceArea | null> {
-  const row = await get<{ city: string; zone: string; serviceAreas: string | null; serviceRadiusKm: number | null; worksOn: string | null }>(
-    `SELECT city, zone, service_areas AS serviceAreas, service_radius_km AS serviceRadiusKm, works_on AS worksOn FROM mechanics WHERE id = ?`,
+  const row = await get<{ city: string; zone: string; serviceAreas: string | null; serviceRadiusKm: number | null; worksOn: string | null; alertWhenOffline: number | null }>(
+    `SELECT city, zone, service_areas AS serviceAreas, service_radius_km AS serviceRadiusKm, works_on AS worksOn,
+            alert_when_offline AS alertWhenOffline
+     FROM mechanics WHERE id = ?`,
     [mechanicId]
   );
   if (!row) return null;
@@ -183,7 +188,8 @@ export async function getServiceArea(mechanicId: number): Promise<ServiceArea | 
     zone: row.zone,
     serviceAreas: parseServiceAreas(row.serviceAreas),
     serviceRadiusKm: row.serviceRadiusKm ?? DEFAULT_SERVICE_RADIUS_KM,
-    worksOn: normalizeWorksOn(row.worksOn)
+    worksOn: normalizeWorksOn(row.worksOn),
+    alertWhenOffline: row.alertWhenOffline !== 0
   };
 }
 
@@ -192,7 +198,7 @@ export async function saveServiceArea(mechanicId: number, input: unknown): Promi
   if (!parsed.success) {
     throw new ServiceAreaError(400, "Escribe tu ciudad y tu zona, y elige hasta dónde vas.");
   }
-  const { city, zone, serviceAreas, serviceRadiusKm, worksOn } = parsed.data;
+  const { city, zone, serviceAreas, serviceRadiusKm, worksOn, alertWhenOffline } = parsed.data;
   if (!(SERVICE_RADIUS_OPTIONS as readonly number[]).includes(serviceRadiusKm)) {
     throw new ServiceAreaError(400, "Elige una de las distancias: 10, 25, 50 km o todo el estado.");
   }
@@ -204,7 +210,10 @@ export async function saveServiceArea(mechanicId: number, input: unknown): Promi
     }
     if (!areas.includes(municipality)) areas.push(municipality);
   }
-  const current = await get<{ worksOn: string | null }>("SELECT works_on AS worksOn FROM mechanics WHERE id = ?", [mechanicId]);
+  const current = await get<{ worksOn: string | null; alertWhenOffline: number | null }>(
+    "SELECT works_on AS worksOn, alert_when_offline AS alertWhenOffline FROM mechanics WHERE id = ?",
+    [mechanicId]
+  );
   if (!current) {
     throw new ServiceAreaError(404, "Mecánico no encontrado");
   }
@@ -214,11 +223,12 @@ export async function saveServiceArea(mechanicId: number, input: unknown): Promi
     // En el orden del catálogo, para que se lean igual en todos lados.
     serviceAreas: AGUASCALIENTES_MUNICIPALITIES.filter((name) => areas.includes(name)),
     serviceRadiusKm,
-    worksOn: worksOn ?? normalizeWorksOn(current.worksOn)
+    worksOn: worksOn ?? normalizeWorksOn(current.worksOn),
+    alertWhenOffline: alertWhenOffline ?? current.alertWhenOffline !== 0
   };
   await run(
-    "UPDATE mechanics SET city = ?, zone = ?, service_areas = ?, service_radius_km = ?, works_on = ? WHERE id = ?",
-    [saved.city, saved.zone, JSON.stringify(saved.serviceAreas), saved.serviceRadiusKm, saved.worksOn, mechanicId]
+    "UPDATE mechanics SET city = ?, zone = ?, service_areas = ?, service_radius_km = ?, works_on = ?, alert_when_offline = ? WHERE id = ?",
+    [saved.city, saved.zone, JSON.stringify(saved.serviceAreas), saved.serviceRadiusKm, saved.worksOn, saved.alertWhenOffline ? 1 : 0, mechanicId]
   );
   return saved;
 }

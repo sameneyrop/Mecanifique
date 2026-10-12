@@ -30,7 +30,7 @@ import { loadColorScheme, toggleColorScheme, useColorScheme } from './theme';
 import { LoginScreen } from './screens/LoginScreen';
 import { CommunityScreen, type CommunityView } from './screens/CommunityScreen';
 import { PromotionsScreen } from './screens/PromotionsScreen';
-import { NotificationsScreen, notificationTarget } from './screens/NotificationsScreen';
+import { NotificationsScreen, isNearbyAlert, notificationTarget } from './screens/NotificationsScreen';
 import { PhoneVerificationScreen, type PhoneVerificationStatus } from './screens/PhoneVerificationScreen';
 import { BottomNavButton, ServerWakingBanner, Toast } from './components/ui';
 import * as Haptics from 'expo-haptics';
@@ -2514,6 +2514,11 @@ export default function App() {
 
   async function handleOpenNotification(notification: AppNotification) {
     markNotificationRead(notification);
+    // «Alguien busca mecánico cerca de ti»: a Inicio, donde está «Conectarme».
+    if (isNearbyAlert(notification)) {
+      setCurrentScreen('home');
+      return;
+    }
     const target = notificationTarget(notification);
     if (!target) {
       return;
