@@ -113,8 +113,24 @@ export type VerificationStatus = {
   phoneHint: string | null;
 };
 
+/**
+ * Cuentas que nunca piden el código por SMS: la que se le da al revisor de
+ * Google Play, que entra desde sus propios teléfonos y no puede recibir el
+ * código. Se configuran en el servidor (PHONE_VERIFICATION_EXEMPT_EMAILS,
+ * correos separados por comas), nunca en el código.
+ */
+async function isExemptFromVerification(viewer: Viewer): Promise<boolean> {
+  const exempt = (process.env.PHONE_VERIFICATION_EXEMPT_EMAILS ?? "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  if (exempt.length === 0) return false;
+  const user = await get<{ login: string }>("SELECT login FROM users WHERE id = ?", [viewer.id]);
+  return Boolean(user && exempt.includes(user.login.trim().toLowerCase()));
+}
+
 export async function getVerificationStatus(viewer: Viewer, deviceId: string | undefined): Promise<VerificationStatus> {
-  if (!isPhoneVerificationEnabled()) {
+  if (!isPhoneVerificationEnabled() || (await isExemptFromVerification(viewer))) {
     return { required: false, reason: null, needsPhoneNumber: false, phoneHint: null };
   }
   const phone = await currentPhone(viewer);

@@ -311,7 +311,10 @@ mantener informadas a ambas partes.
   falte, todo responde 403 `PHONE_VERIFICATION_REQUIRED` salvo `/auth/*`,
   `/api/account/verification*` y eliminar la cuenta. Sin esas variables queda
   apagada. **Encenderla solo cuando todos tengan un APK con esta pantalla**:
-  uno viejo se quedaría bloqueado sin forma de verificarse.
+  uno viejo se quedaría bloqueado sin forma de verificarse. Las cuentas en
+  `PHONE_VERIFICATION_EXEMPT_EMAILS` (correos separados por comas, en Render)
+  nunca piden el código: es para la cuenta del revisor de Google Play, que
+  entra desde sus propios teléfonos y no puede recibir el SMS.
 - **Registro**: casilla obligatoria de mayoría de edad y aceptación de
   Términos y Aviso de privacidad; contraseñas de al menos 8 caracteres con
   letras y números (app y servidor); límite de intentos. El servidor confía
@@ -1062,6 +1065,24 @@ El perfil `preview` genera un APK que apunta al servidor de Render;
 `production` genera el AAB para Play Store y sube solo el `versionCode`
 (`appVersionSource: remote` en `eas.json`).
 
+**Google Play.** La versión de Play se compila con:
+
+```bash
+npx eas-cli build -p android --profile production
+```
+
+El AAB escucha el canal `production`, que en EAS apunta a la rama `preview`
+(`eas channel:edit production --branch preview`): un solo
+`eas update --channel preview` actualiza a la vez los APK y la versión de
+Play. Para separarlos algún día basta con apuntar `production` a otra rama.
+Los dos usan la misma `version` (runtime 1.0.2) a propósito: si la de Play
+tuviera otra, los APK dejarían de recibir actualizaciones. `app.json` bloquea
+los permisos que la app no usa (`blockedPermissions`: almacenamiento, ventana
+flotante y micrófono); quitar permisos no rompe las actualizaciones de los
+APK viejos, por eso ese cambio no subió la `version`. La ficha, las
+declaraciones de Play Console y la firma de la app están en
+`marketing/google-play/README.md`.
+
 **Actualizaciones sin reinstalar (EAS Update, gratis hasta 1,000 usuarios al
 mes).** Mientras la app se instala a mano, los APK del perfil `preview`
 escuchan el canal `preview`:
@@ -1077,7 +1098,8 @@ desarrollo la app usa siempre `https://mecanifique.onrender.com`, porque una
 actualización no trae las variables del build. `runtimeVersion` sigue a
 `version` de `app.json`: si un cambio agrega un módulo nativo o un permiso,
 hay que subir `version` (1.0.1, 1.0.2…) y compilar un APK nuevo; los APK
-viejos no reciben actualizaciones de otro runtime.
+viejos no reciben actualizaciones de otro runtime. Quitar un permiso no
+cuenta: el código de JavaScript sigue siendo compatible.
 
 **Notificaciones push (Firebase Cloud Messaging).** Desde el SDK 53, Expo Go
 ya no recibe avisos push en Android: se prueban con el APK. Se necesitan dos

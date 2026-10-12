@@ -632,7 +632,14 @@ test("verificación por teléfono: confirmar el número, confiar en el teléfono
     // Cambió su número: hay que confirmarlo de nuevo, aun en el teléfono de confianza.
     await sendVerificationCode(viewer, `449${crypto.randomInt(1_000_000, 9_999_999)}`);
     assert.equal((await getVerificationStatus(viewer, "telefono-a")).reason, "phone");
+
+    // La cuenta del revisor de Google Play (configurada en el servidor) no pide código en ningún teléfono.
+    process.env.PHONE_VERIFICATION_EXEMPT_EMAILS = ` otro@example.test , ${supabaseUserId.toUpperCase()}@EXAMPLE.TEST `;
+    assert.equal((await getVerificationStatus(viewer, "telefono-del-revisor")).required, false);
+    process.env.PHONE_VERIFICATION_EXEMPT_EMAILS = "otro@example.test";
+    assert.equal((await getVerificationStatus(viewer, "telefono-del-revisor")).required, true, "solo las cuentas de la lista");
   } finally {
+    delete process.env.PHONE_VERIFICATION_EXEMPT_EMAILS;
     setVerifyGatewayForTests(undefined);
     await run("DELETE FROM trusted_devices WHERE user_id = ?", [created.lastID]);
     await run("DELETE FROM users WHERE id = ?", [created.lastID]);
