@@ -16,8 +16,58 @@ const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CONTENT_TYPES = { jpg: "image/jpeg", png: "image/png" } as const;
 const FILE_NAME_PATTERN = /^([0-9a-f-]{36})\.(jpg|png)$/;
+const PHOTO_PATH_PATTERN = /^\/uploads\/[0-9a-f-]{36}\.(jpg|png)$/;
 
 export class PhotoUploadError extends Error {}
+
+/**
+ * Tope de fotos por cuenta en 24 horas. Cada una pesa hasta 4 MB y vive en la
+ * base: sin tope, una sola cuenta podría llenarla subiendo fotos sin parar.
+ * Un servicio normal usa menos de 20.
+ */
+export const MAX_PHOTOS_PER_DAY = 150;
+
+export async function hasReachedDailyPhotoLimit(userId: number): Promise<boolean> {
+  const row = await get<{ count: number }>(
+    "SELECT COUNT(*) AS count FROM uploaded_photos WHERE uploaded_by_user_id = ? AND created_at > datetime('now', '-1 day')",
+    [userId]
+  );
+  return Number(row?.count ?? 0) >= MAX_PHOTOS_PER_DAY;
+}
+
+/**
+ * Dirección pública fija del servidor (PUBLIC_BASE_URL, o la que Render pone
+ * en RENDER_EXTERNAL_URL). Las fotos y los enlaces de los correos salen de
+ * aquí y no del encabezado Host, que lo manda el cliente. En desarrollo no
+ * hay ninguna y se usa la de la petición.
+ */
+export function configuredPublicBaseUrl(): string | null {
+  const base = process.env.PUBLIC_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
+  return base ? base.replace(/\/+$/, "") : null;
+}
+
+/**
+ * Una foto subida a este servidor (PHOTO_UPLOAD_PATH), no una dirección
+ * cualquiera: si no, alguien podría poner en su perfil una imagen de otro
+ * sitio (o un enlace raro) que verían los demás. Con dirección pública fija,
+ * además tiene que ser de ese mismo servidor.
+ */
+export function isOwnPhotoUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash) {
+    return false;
+  }
+  if (!PHOTO_PATH_PATTERN.test(url.pathname)) {
+    return false;
+  }
+  const base = configuredPublicBaseUrl();
+  return !base || url.origin === new URL(base).origin;
+}
 
 /**
  * Decodifica la foto en base64 y confirma, por sus primeros bytes y no por

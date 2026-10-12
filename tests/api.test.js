@@ -301,6 +301,67 @@ test("una foto guardada se sirve en /uploads con su tipo, y un nombre inválido 
   }
 });
 
+test("fotos: solo se aceptan las subidas a este servidor, nunca direcciones de otros sitios", () => {
+  const { isOwnPhotoUrl } = require("../src/uploads.ts");
+  const own = "https://mecanifique.onrender.com/uploads/0f8e2c1a-5b3d-4c7e-9a10-1234567890ab.jpg";
+  const previous = process.env.PUBLIC_BASE_URL;
+  try {
+    delete process.env.PUBLIC_BASE_URL;
+    assert.equal(isOwnPhotoUrl(own), true);
+    assert.equal(isOwnPhotoUrl("https://ejemplo.com/foto.jpg"), false, "otra ruta");
+    assert.equal(isOwnPhotoUrl("javascript:alert(1)//uploads/x.jpg"), false);
+    assert.equal(isOwnPhotoUrl(`${own}?x=1`), false, "con parámetros");
+    assert.equal(isOwnPhotoUrl(own.replace(".jpg", ".svg")), false);
+
+    // Con dirección pública fija, tiene que ser de este mismo servidor.
+    process.env.PUBLIC_BASE_URL = "https://mecanifique.onrender.com/";
+    assert.equal(isOwnPhotoUrl(own), true);
+    assert.equal(isOwnPhotoUrl(own.replace("mecanifique.onrender.com", "otro-sitio.com")), false);
+    assert.equal(isOwnPhotoUrl(own.replace("mecanifique.onrender.com", "mecanifique.onrender.com.otro-sitio.com")), false);
+  } finally {
+    if (previous === undefined) delete process.env.PUBLIC_BASE_URL;
+    else process.env.PUBLIC_BASE_URL = previous;
+  }
+});
+
+test("tiempo real: sin sesión de una tienda no se escucha nada, y ya no hay canales de usuarios", async () => {
+  const { authorizeStoreChannel } = require("../src/realtime.ts");
+  const memberOf7 = async (token, storeId) => token === "sesion-buena" && storeId === 7;
+  assert.equal(await authorizeStoreChannel("store:7", "sesion-buena", memberOf7), "store:7");
+  assert.equal(await authorizeStoreChannel("store:8", "sesion-buena", memberOf7), null, "otra tienda");
+  assert.equal(await authorizeStoreChannel("store:7", undefined, memberOf7), null, "sin sesión");
+  assert.equal(await authorizeStoreChannel("user:1", "sesion-buena", async () => true), null, "canal de usuario");
+  assert.equal(await authorizeStoreChannel("service-request:1", "sesion-buena", async () => true), null);
+  assert.equal(await authorizeStoreChannel("store:7", "x", async () => { throw new Error("sesión inválida"); }), null);
+
+  // Contra el servidor real: suscribirse a los avisos de alguien más responde "No autorizado".
+  const { WebSocket } = require("ws");
+  const socket = new WebSocket(`${baseUrl.replace(/^http/, "ws")}/ws`);
+  const replies = [];
+  await new Promise((resolve, reject) => {
+    socket.once("error", reject);
+    socket.once("open", resolve);
+  });
+  socket.on("message", (data) => replies.push(JSON.parse(String(data))));
+  socket.send(JSON.stringify({ type: "subscribe", channel: "user:1" }));
+  socket.send(JSON.stringify({ type: "subscribe", channel: "store:1", token: "no-es-una-sesion" }));
+  const deadline = Date.now() + 20_000; // la sesión falsa se revisa con Supabase
+  while (replies.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+  socket.close();
+  assert.deepEqual(replies.map((reply) => reply.type), ["error", "error"]);
+
+  const health = await fetch(`${baseUrl}/realtime/health`);
+  assert.equal(health.status, 404, "ya no publica la lista de canales");
+});
+
+test("updates de una solicitud: la ruta vieja sin /api ya no existe", async () => {
+  const { response } = await request("/service-requests/1/updates", {
+    method: "POST",
+    body: JSON.stringify({ source: "mechanic", message: "hola" })
+  });
+  assert.equal(response.status, 404);
+});
+
 test("rutas de cuenta, favoritos y soporte sin token devuelven 401", async () => {
   const cases = [
     ["GET", "/api/account/profile"],

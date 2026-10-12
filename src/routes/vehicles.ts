@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { all, get, run } from "../db";
 import { handleAsync, requireAnyAuth } from "../middleware";
+import { isOwnPhotoUrl } from "../uploads";
 import { normalizeVehicleType, vehicleTypeSchema } from "../vehicleTypes";
 
 const vehicleFieldsSchema = z.object({
@@ -16,8 +17,12 @@ const vehicleFieldsSchema = z.object({
   licensePlate: z.string().trim().min(2).max(12).regex(/^[A-Za-z0-9 -]+$/).optional(),
   color: z.string().trim().min(1).max(30).optional(),
   mileage: z.number().int().nonnegative().max(2_000_000).optional(),
-  photoUrls: z.array(z.string().url().refine((url) => /^https?:\/\//i.test(url), "La foto debe ser una URL HTTP(S)")).max(10).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional()
+  // Solo fotos subidas a este servidor (src/uploads.ts), no direcciones de otros sitios.
+  photoUrls: z.array(z.string().max(300).refine(isOwnPhotoUrl, "Foto inválida")).max(10).optional(),
+  metadata: z
+    .record(z.string(), z.unknown())
+    .refine((value) => JSON.stringify(value).length <= 2_000, "Demasiados datos extra")
+    .optional()
 });
 const vehicleCreateSchema = vehicleFieldsSchema;
 const vehicleUpdateSchema = vehicleFieldsSchema.partial().refine(

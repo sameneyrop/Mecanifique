@@ -2,7 +2,7 @@ import "dotenv/config";
 import cors from "cors";
 import http from "node:http";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { WebSocketServer, type WebSocket } from "ws";
+import { attachRealtime, sendRealtimeEvent } from "./realtime";
 import {
   normalizeVehicleType,
   normalizeWorksOn,
@@ -50,10 +50,12 @@ import {
   SignupError,
   isPhoneTaken,
   createConfirmedSupabaseUser,
-  ensureLocalUser
+  ensureLocalUser,
+  pruneVerifiedTokenCache,
+  verifySupabaseToken
 } from "./supabaseAuth";
 import { createMostradorRouter, type StoreAccountResult } from "./routes/mostrador";
-import { sweepMostrador } from "./mostrador";
+import { requireMembership, sweepMostrador } from "./mostrador";
 import {
   anonymizeAccount,
   deletionRequestErrorPage,
@@ -153,7 +155,17 @@ import {
   getTipInfoForRequest,
   saveMechanicTipInfo
 } from "./tips";
-import { PHOTO_UPLOAD_PATH, PhotoUploadError, decodePhoto, deletePhotoByUrl, findPhoto, savePhoto } from "./uploads";
+import {
+  PHOTO_UPLOAD_PATH,
+  PhotoUploadError,
+  configuredPublicBaseUrl,
+  decodePhoto,
+  deletePhotoByUrl,
+  findPhoto,
+  hasReachedDailyPhotoLimit,
+  isOwnPhotoUrl,
+  savePhoto
+} from "./uploads";
 import { CustomerReviewError, customerRating, hasCustomerReview, reviewCustomer } from "./customerReviews";
 import { profileChecklist } from "./profileChecklist";
 import {
@@ -189,7 +201,6 @@ const app = express();
 app.set("trust proxy", 1);
 const port = Number(process.env.PORT ?? "4000");
 const httpServer = http.createServer(app);
-const realtimeChannels = new Map<string, Set<WebSocket>>();
 const allowedOrigins = (process.env.CORS_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
@@ -224,6 +235,14 @@ app.use(cors({
   // panel del Mostrador hacía dos peticiones en cada consulta.
   maxAge: 600
 }));
+// Encabezados de seguridad en todas las respuestas (antes de cualquier ruta:
+// así también las fotos y las páginas de correo los llevan).
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  next();
+});
 
 // Este webhook se registra ANTES de express.json() a propósito: la firma
 // HMAC de Didit se valida contra el body crudo (texto), no contra el objeto
@@ -281,9 +300,11 @@ app.post(
       [nextStatus, verification.id]
     );
 
+    // Solo activa a quien esperaba verificación: un reintento del aviso de
+    // Didit no debe reactivar a un mecánico que un admin suspendió después.
     if (nextStatus === "approved") {
       await run(
-        "UPDATE mechanics SET status = 'active' WHERE id = (SELECT mechanic_id FROM users WHERE id = ?)",
+        "UPDATE mechanics SET status = 'active' WHERE id = (SELECT mechanic_id FROM users WHERE id = ?) AND status = 'pending_verification'",
         [userId]
       );
     }
@@ -393,103 +414,43 @@ app.get("/supabase/health", handleAsync(async (_req, res) => {
  res.status(200).json(health);
 }));
 
-app.get("/realtime/health", (_req, res) => {
- res.status(200).json({
-   ok: true,
-   connectedClients: Array.from(realtimeChannels.values()).reduce((total, sockets) => total + sockets.size, 0),
-   channels: Array.from(realtimeChannels.keys())
- });
+// Tiempo real del panel del Mostrador (src/realtime.ts): solo miembros de la
+// tienda, con su sesión.
+attachRealtime(httpServer, async (token, storeId) => {
+  const supabaseUser = await verifySupabaseToken(token);
+  const user = await get<{ id: number }>("SELECT id FROM users WHERE supabase_user_id = ?", [supabaseUser.id]);
+  if (!user) return false;
+  await requireMembership(user.id, storeId);
+  return true;
 });
 
-const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
-
-wss.on("connection", (socket) => {
- socket.on("message", (rawMessage) => {
-   try {
-     const text = typeof rawMessage === "string" ? rawMessage : rawMessage.toString("utf8");
-     const message = JSON.parse(text);
-
-     if (message?.type === "ping") {
-       socket.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
-       return;
-     }
-
-     if (message?.type === "subscribe" && typeof message.channel === "string") {
-       const channel = message.channel.trim();
-       if (!channel) {
-         socket.send(JSON.stringify({ type: "error", message: "channel requerido" }));
-         return;
-       }
-
-       let channelSockets = realtimeChannels.get(channel);
-       if (!channelSockets) {
-         channelSockets = new Set<WebSocket>();
-         realtimeChannels.set(channel, channelSockets);
-       }
-       channelSockets.add(socket);
-       socket.send(JSON.stringify({ type: "subscribed", channel }));
-       return;
-     }
-
-     if (message?.type === "unsubscribe" && typeof message.channel === "string") {
-       const channel = message.channel.trim();
-       const channelSockets = realtimeChannels.get(channel);
-       if (channelSockets) {
-         channelSockets.delete(socket);
-         if (channelSockets.size === 0) {
-           realtimeChannels.delete(channel);
-         }
-       }
-     }
-   } catch {
-     socket.send(JSON.stringify({ type: "error", message: "Mensaje WebSocket inválido" }));
-   }
- });
-
- socket.on("close", () => {
-   for (const channelSockets of realtimeChannels.values()) {
-     channelSockets.delete(socket);
-   }
-   for (const [channel, channelSockets] of Array.from(realtimeChannels.entries())) {
-     if (channelSockets.size === 0) {
-       realtimeChannels.delete(channel);
-     }
-   }
- });
-});
-
-app.use((_req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
-  res.setHeader("Referrer-Policy", "no-referrer");
-  next();
-});
 
 const mechanicRegistrationSchema = z.object({
-  fullName: z.string().min(3),
-  phone: z.string().min(10),
-  city: z.string().min(2),
-  zone: z.string().min(2),
-  yearsExperience: z.number().int().min(0),
-  specialties: z.array(z.string().min(2)).min(1),
+  fullName: z.string().min(3).max(120),
+  phone: z.string().min(10).max(20),
+  city: z.string().min(2).max(80),
+  zone: z.string().min(2).max(80),
+  yearsExperience: z.number().int().min(0).max(80),
+  specialties: z.array(z.string().min(2).max(60)).min(1).max(20),
   // Qué atiende (src/vehicleTypes.ts); sin él, autos.
   worksOn: worksOnSchema.optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional()
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional()
 });
 
 const serviceRequestSchema = z.object({
   customerId: z.number().int().positive(),
-  vehicleMake: z.string().min(2),
-  vehicleModel: z.string().min(1),
+  // Con tope: estos textos llegan a los avisos de los mecánicos cercanos.
+  vehicleMake: z.string().min(2).max(50),
+  vehicleModel: z.string().min(1).max(50),
   vehicleYear: z.number().int().gte(1970).lte(new Date().getFullYear() + 1),
   issueDescription: z.string().min(10).max(1_000),
-  preferredTime: z.string().min(3).optional().or(z.literal("")),
-  city: z.string().min(2),
-  zone: z.string().min(2),
-  serviceAddress: z.string().min(5).optional().or(z.literal("")),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
+  preferredTime: z.string().min(3).max(120).optional().or(z.literal("")),
+  city: z.string().min(2).max(80),
+  zone: z.string().min(2).max(80),
+  serviceAddress: z.string().min(5).max(300).optional().or(z.literal("")),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   // Auto o moto (src/vehicleTypes.ts); sin él, auto (versiones de antes de la app).
   vehicleType: vehicleTypeSchema.optional()
 });
@@ -505,9 +466,9 @@ const newPasswordSchema = z
   .regex(/\d/, "La contraseña necesita al menos un número");
 
 const customerRegistrationSchema = z.object({
-  fullName: z.string().min(3),
-  email: z.string().email(),
-  phone: z.string().min(10),
+  fullName: z.string().min(3).max(120),
+  email: z.string().email().max(254),
+  phone: z.string().min(10).max(20),
   password: newPasswordSchema
 });
 
@@ -517,15 +478,12 @@ const mechanicRegistrationAuthSchema = mechanicRegistrationSchema.extend({
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8)
+  email: z.string().email().max(254),
+  password: z.string().min(8).max(200)
 });
 
 // Una foto subida a este servidor (PHOTO_UPLOAD_PATH), no cualquier dirección.
-const uploadedPhotoUrlSchema = z
-  .string()
-  .max(300)
-  .regex(/^https?:\/\/[^\s]+\/uploads\/[0-9a-f-]{36}\.(jpg|png)$/, "Foto inválida");
+const uploadedPhotoUrlSchema = z.string().max(300).refine(isOwnPhotoUrl, "Foto inválida");
 
 const apiServiceRequestSchema = serviceRequestSchema.omit({ customerId: true }).extend({
   customerId: z.number().int().positive().optional(),
@@ -541,9 +499,14 @@ const apiServiceRequestSchema = serviceRequestSchema.omit({ customerId: true }).
 
 // Dirección pública de este servidor. Detrás del proxy de Render
 // req.protocol es "http"; el original viene en x-forwarded-proto.
+// La dirección fija (src/uploads.ts) y, solo sin ella (en desarrollo), la de
+// la petición. Los enlaces de los correos salen de aquí: no deben poder
+// apuntar a otro sitio cambiando el encabezado Host.
 function publicBaseUrl(req: Request): string {
+  const configured = configuredPublicBaseUrl();
+  if (configured) return configured;
   const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
-  return process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`;
+  return `${protocol}://${req.get("host")}`;
 }
 
 const authRateLimitWindowMs = 60_000;
@@ -663,7 +626,7 @@ const allowedRequestTransitions: Record<string, string[]> = {
 };
 
 const mechanicScheduleSlotSchema = z.object({
-  slotDate: z.string().min(8),
+  slotDate: z.string().min(8).max(20),
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
   note: z.string().min(1).max(500).optional()
@@ -671,8 +634,8 @@ const mechanicScheduleSlotSchema = z.object({
 
 const mechanicPublicProfileSchema = z.object({
   bio: z.string().max(500).optional(),
-  coverPhotoUrl: z.string().url().optional().or(z.literal("")),
-  galleryUrls: z.array(z.string().url()).max(6).optional(),
+  coverPhotoUrl: uploadedPhotoUrlSchema.optional().or(z.literal("")),
+  galleryUrls: z.array(uploadedPhotoUrlSchema).max(6).optional(),
   laborRate: z.number().positive().max(50000).optional()
   // Tarifa fija de mano de obra en MXN. También sirve como apartado mínimo
   // por defecto — ver el modelo de pagos en README.md.
@@ -686,7 +649,7 @@ const mechanicReviewSchema = z.object({
 });
 
 const pushTokenSchema = z.object({
-  pushToken: z.string().min(10)
+  pushToken: z.string().min(10).max(200)
 });
 
 const identityDocumentTypeSchema = z.enum([
@@ -885,37 +848,6 @@ async function sendExpoPushNotifications(
   }
 }
 
-function sendRealtimeEvent(channel: string, event: string, payload: Record<string, unknown> = {}): void {
-  const sockets = realtimeChannels.get(channel);
-  if (!sockets || sockets.size === 0) {
-    return;
-  }
-
-  const envelope = {
-    type: "event",
-    channel,
-    event,
-    payload
-  };
-
-  for (const socket of sockets) {
-    if (socket.readyState !== socket.OPEN) {
-      sockets.delete(socket);
-      continue;
-    }
-
-    socket.send(JSON.stringify(envelope));
-  }
-}
-
-function notifyUser(userId: number, event: string, payload: Record<string, unknown> = {}): void {
-  sendRealtimeEvent(`user:${userId}`, event, payload);
-}
-
-function notifyRequest(requestId: number, event: string, payload: Record<string, unknown> = {}): void {
-  sendRealtimeEvent(`service-request:${requestId}`, event, payload);
-}
-
 async function createNotification(
   userId: number,
   title: string,
@@ -929,14 +861,6 @@ async function createNotification(
     `,
     [userId, title, body, JSON.stringify(data)]
   );
-
-  notifyUser(userId, "notification", {
-    id: result.lastID,
-    title,
-    body,
-    data,
-    createdAt: new Date().toISOString()
-  });
 
   // Con el id, tocar el push en el teléfono abre lo que avisa y lo marca como leído.
   void sendExpoPushNotifications(userId, title, body, { ...data, notificationId: result.lastID }).catch((error) => {
@@ -1176,7 +1100,6 @@ async function offerRequestToMechanic(requestId: number, mechanicId: number): Pr
     const title = normalizeVehicleType(typeRow?.vehicleType) === "moto" ? "Nueva solicitud de moto" : "Nueva solicitud";
     await createNotification(mechanicUserId, title, `Tienes una solicitud pendiente #${requestId}`, { requestId });
   }
-  notifyRequest(requestId, "request.offered", { requestId, mechanicId });
   return true;
 }
 
@@ -1227,7 +1150,6 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
         { requestId }
       );
     }
-    notifyRequest(requestId, "request.unassigned", { requestId });
     return;
   }
 
@@ -1257,7 +1179,6 @@ async function handleMechanicDeclined(requestId: number, mechanicId: number, rea
       { requestId }
     );
   }
-  notifyRequest(requestId, "request.unassigned", { requestId });
 }
 
 // ============================================================================
@@ -1632,8 +1553,22 @@ function startPresenceSweep(): void {
   presenceSweepTimer = setInterval(() => {
     sweepStaleMechanics().catch((error) => console.error("Presence sweep failed:", error));
     sweepArrivalReminders().catch((error) => console.error("Arrival reminder sweep failed:", error));
+    pruneMemoryCaches();
   }, PRESENCE_SWEEP_INTERVAL_MS);
   presenceSweepTimer.unref();
+}
+
+// Los límites de intentos y las cachés de sesiones y teléfonos verificados
+// viven en memoria: sin limpiarlas crecerían con cada IP y cada sesión.
+export function pruneMemoryCaches(now = Date.now()): void {
+  const oldest = now - 60 * 60 * 1000; // la ventana más larga de los límites es de 10 min
+  for (const [key, attempts] of authRateLimitBuckets) {
+    if (!attempts.some((timestamp) => timestamp >= oldest)) authRateLimitBuckets.delete(key);
+  }
+  for (const [key, until] of verifiedDevicesCache) {
+    if (until <= now) verifiedDevicesCache.delete(key);
+  }
+  pruneVerifiedTokenCache(now);
 }
 
 function stopHoldSweep(): void {
@@ -1970,7 +1905,8 @@ const diditSessionRequestSchema = z.object({
       url.startsWith("mecanifique://") ||
       url.startsWith("exp://") ||
       url.startsWith("exp+mecanifique://") ||
-      url.startsWith("https://mecanifique.onrender.com"),
+      // Con la diagonal: "https://mecanifique.onrender.com.otro-sitio.com" no cuenta.
+      url.startsWith("https://mecanifique.onrender.com/"),
     "callbackUrl debe ser un deep link de la app o del dominio de Mecanifique"
   )
 });
@@ -2371,8 +2307,8 @@ app.post(
     }
 
     const payload = z.object({
-      email: z.string().email(),
-      password: z.string().min(8)
+      email: z.string().email().max(254),
+      password: z.string().min(8).max(200)
     }).parse(req.body);
 
     try {
@@ -2416,7 +2352,7 @@ app.post(
       return;
     }
 
-    const payload = z.object({ refreshToken: z.string().min(10) }).parse(req.body);
+    const payload = z.object({ refreshToken: z.string().min(10).max(4_000) }).parse(req.body);
 
     try {
       res.status(200).json(await refreshSupabaseSession(payload.refreshToken));
@@ -2492,10 +2428,10 @@ const switchRoleSchema = z.object({
   targetRole: z.enum(["customer", "mechanic"]),
   // Solo se piden si el usuario todavía no tiene perfil de mecánico —
   // si ya lo tiene, se ignoran y se reutiliza el que ya existe.
-  city: z.string().trim().min(2).optional(),
-  zone: z.string().trim().min(2).optional(),
-  yearsExperience: z.number().int().min(0).optional(),
-  specialties: z.array(z.string().trim().min(2)).min(1).optional(),
+  city: z.string().trim().min(2).max(80).optional(),
+  zone: z.string().trim().min(2).max(80).optional(),
+  yearsExperience: z.number().int().min(0).max(80).optional(),
+  specialties: z.array(z.string().trim().min(2).max(60)).min(1).max(20).optional(),
   worksOn: worksOnSchema.optional()
 });
 
@@ -3187,7 +3123,10 @@ app.post("/api/admin/commission-statements/:id/mark-paid", requireAuth, requireR
 // exp:// en desarrollo): nunca a otro sitio.
 app.get("/pagos/regreso", (req, res) => {
   const destino = typeof req.query.destino === "string" ? req.query.destino : "";
-  if (!isAllowedAppReturnUrl(destino)) {
+  // Es pública: en producción solo regresa a la app instalada. Con exp://
+  // cualquiera podría armar un enlace de mecanifique que abre Expo Go con un
+  // proyecto ajeno que se hace pasar por la app.
+  if (!isAllowedAppReturnUrl(destino) || (isProduction && !destino.startsWith("mecanifique://"))) {
     res.redirect(302, SITE_URL);
     return;
   }
@@ -3959,7 +3898,7 @@ app.patch(
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== mechanicId)) {
       res.status(403).json({ error: "Solo puedes editar tu propio perfil público" });
       return;
     }
@@ -3994,6 +3933,10 @@ app.post(
   requireRole("mechanic", "customer", "admin"),
   handleAsync(async (req, res) => {
     if (applyRateLimit("photo-upload", req, res, 30)) {
+      return;
+    }
+    if (await hasReachedDailyPhotoLimit(req.auth!.user.id)) {
+      res.status(429).json({ error: "Subiste muchas fotos hoy. Intenta de nuevo mañana." });
       return;
     }
 
@@ -4056,11 +3999,10 @@ app.put(
 
 /** Dirección pública de una foto guardada con savePhoto. */
 function publicPhotoUrl(req: Request, fileName: string): string {
-  // Detrás del proxy de Render req.protocol es "http"; el original viene
-  // en x-forwarded-proto. Android bloquea imágenes por http en producción.
-  const protocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol;
-  const baseUrl = process.env.PUBLIC_BASE_URL || `${protocol}://${req.get("host")}`;
-  return `${baseUrl}/uploads/${fileName}`;
+  // Detrás del proxy de Render req.protocol es "http"; publicBaseUrl usa la
+  // dirección fija (https) o x-forwarded-proto. Android bloquea imágenes por
+  // http en producción.
+  return `${publicBaseUrl(req)}/uploads/${fileName}`;
 }
 
 app.post(
@@ -4109,7 +4051,7 @@ app.post(
       return;
     }
 
-    if (req.auth?.user.role === "customer" && req.auth.user.customerId !== serviceRequest.customerId) {
+    if (req.auth?.user.role === "customer" && (!req.auth.user.customerId || req.auth.user.customerId !== serviceRequest.customerId)) {
       res.status(403).json({ error: "Solo puedes reseñar tus propias solicitudes" });
       return;
     }
@@ -4183,7 +4125,7 @@ app.patch(
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== mechanicId)) {
       res.status(403).json({ error: "Solo puedes actualizar tu propia disponibilidad" });
       return;
     }
@@ -4219,7 +4161,7 @@ app.patch(
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== mechanicId)) {
       res.status(403).json({ error: "Solo puedes cambiar tu propio estado de conexión" });
       return;
     }
@@ -4406,7 +4348,7 @@ app.patch(
       res.status(400).json({ error: "mechanicId inválido" });
       return;
     }
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== mechanicId)) {
       res.status(403).json({ error: "Solo puedes actualizar tu propia ubicación" });
       return;
     }
@@ -4467,7 +4409,7 @@ app.post(
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== mechanicId)) {
       res.status(403).json({ error: "Solo puedes crear turnos para tu propio perfil" });
       return;
     }
@@ -4524,85 +4466,6 @@ app.patch(
     }
 
     res.status(200).json({ ok: true });
-  })
-);
-
-app.post(
-  "/service-requests/:id/updates",
-  requireAuth,
-  requireRole("mechanic", "admin"),
-  handleAsync(async (req, res) => {
-    const requestId = Number(req.params.id);
-    const payload = updateSchema.parse(req.body);
-
-    if (!Number.isInteger(requestId) || requestId <= 0) {
-      res.status(400).json({ error: "requestId inválido" });
-      return;
-    }
-
-    const serviceRequest = await get<{ id: number; customerId: number; mechanicId: number | null }>(
-      `
-      SELECT id, customer_id AS customerId, mechanic_id AS mechanicId
-      FROM service_requests
-      WHERE id = ?
-      `,
-      [requestId]
-    );
-
-    if (!serviceRequest) {
-      res.status(404).json({ error: "Solicitud no encontrada" });
-      return;
-    }
-
-    const result = await run(
-      `
-      INSERT INTO service_request_updates (service_request_id, source, message)
-      VALUES (?, ?, ?)
-      `,
-      [requestId, payload.source, payload.message]
-    );
-
-    const created = await get(
-      `
-      SELECT id, service_request_id AS serviceRequestId, source, message, created_at AS createdAt
-      FROM service_request_updates
-      WHERE id = ?
-      `,
-      [result.lastID]
-    );
-
-    const updateCustomerUserId = await getUserIdByCustomerId(serviceRequest.customerId);
-    const updateMechanicUserId = serviceRequest.mechanicId ? await getUserIdByMechanicId(serviceRequest.mechanicId) : null;
-    if (updateCustomerUserId) {
-      await createNotification(
-        updateCustomerUserId,
-        "Nuevo update",
-        `Tu solicitud #${requestId} recibió una actualización`,
-        { requestId, updateId: result.lastID }
-      );
-    }
-    if (updateMechanicUserId) {
-      await createNotification(
-        updateMechanicUserId,
-        "Update publicado",
-        `Publicaste un update en la solicitud #${requestId}`,
-        { requestId, updateId: result.lastID }
-      );
-    }
-
-    notifyRequest(requestId, "update-posted", {
-      requestId,
-      updateId: result.lastID,
-      update: created
-    });
-    if (updateCustomerUserId) {
-      notifyUser(updateCustomerUserId, "update-posted", { requestId, updateId: result.lastID });
-    }
-    if (updateMechanicUserId) {
-      notifyUser(updateMechanicUserId, "update-posted", { requestId, updateId: result.lastID });
-    }
-
-    res.status(201).json(created);
   })
 );
 
@@ -4958,7 +4821,7 @@ app.post(
       return;
     }
 
-    if (req.auth?.user.role === "customer" && req.auth.user.customerId !== request.customer_id) {
+    if (req.auth?.user.role === "customer" && (!req.auth.user.customerId || req.auth.user.customerId !== request.customer_id)) {
       res.status(403).json({ error: "Solo puedes cancelar tus propias solicitudes" });
       return;
     }
@@ -5222,12 +5085,12 @@ app.get(
       return;
     }
 
-    if (req.auth?.user.role === "customer" && req.auth.user.customerId !== request.customerId) {
+    if (req.auth?.user.role === "customer" && (!req.auth.user.customerId || req.auth.user.customerId !== request.customerId)) {
       res.status(403).json({ error: "Solo puedes ver tus propias solicitudes" });
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== request.mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== request.mechanicId)) {
       res.status(403).json({ error: "Solo puedes ver solicitudes asignadas a ti" });
       return;
     }
@@ -5381,12 +5244,12 @@ app.get(
       return;
     }
 
-    if (req.auth?.user.role === "customer" && req.auth.user.customerId !== serviceRequest.customerId) {
+    if (req.auth?.user.role === "customer" && (!req.auth.user.customerId || req.auth.user.customerId !== serviceRequest.customerId)) {
       res.status(403).json({ error: "Solo puedes ver mensajes de tus propias solicitudes" });
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== serviceRequest.mechanicId) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== serviceRequest.mechanicId)) {
       res.status(403).json({ error: "Solo puedes ver mensajes de solicitudes asignadas a ti" });
       return;
     }
@@ -5440,7 +5303,7 @@ app.post(
     }
 
     const isCustomerOwner = user.role === "customer" && user.customerId === serviceRequest.customerId;
-    const isAssignedMechanic = user.role === "mechanic" && user.mechanicId === serviceRequest.mechanicId;
+    const isAssignedMechanic = user.role === "mechanic" && Boolean(user.mechanicId) && user.mechanicId === serviceRequest.mechanicId;
     const isAdmin = user.role === "admin";
     if (!isCustomerOwner && !isAssignedMechanic && !isAdmin) {
       res.status(403).json({ error: "No puedes enviar mensajes en esta solicitud" });
@@ -5604,7 +5467,7 @@ app.patch(
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== existing.mechanic_id) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== existing.mechanic_id)) {
       res.status(403).json({ error: "Solo el mecánico asignado puede actualizar esta solicitud" });
       return;
     }
@@ -6313,7 +6176,7 @@ app.post(
       return;
     }
 
-    if (req.auth?.user.role === "mechanic" && req.auth.user.mechanicId !== serviceRequest.mechanic_id) {
+    if (req.auth?.user.role === "mechanic" && (!req.auth.user.mechanicId || req.auth.user.mechanicId !== serviceRequest.mechanic_id)) {
       res.status(403).json({ error: "Solo el mecánico asignado puede publicar updates" });
       return;
     }

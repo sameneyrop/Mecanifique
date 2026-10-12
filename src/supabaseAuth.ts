@@ -36,6 +36,13 @@ const supabaseRequestTimeoutMs = 15_000;
 const verifiedTokenCache = new Map<string, { user: SupabaseAuthUser; expiresAt: number }>();
 const tokenCacheTtlMs = 60_000;
 
+/** Borra de la memoria las sesiones verificadas que ya vencieron (lo llama el barrido del servidor). */
+export function pruneVerifiedTokenCache(now = Date.now()): void {
+  for (const [token, entry] of verifiedTokenCache) {
+    if (entry.expiresAt <= now) verifiedTokenCache.delete(token);
+  }
+}
+
 function getSupabaseError(data: Record<string, unknown>, fallback: string): string {
   return String(data.error_description || data.msg || data.message || data.error || fallback);
 }

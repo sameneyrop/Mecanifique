@@ -420,9 +420,9 @@ con sub-vistas nuevas, hay que sumarla a ese handler.
 
 ### Implementado localmente y validado, pendiente de publicar
 
-- Canal WebSocket básico para eventos en tiempo real y endpoints de salud de
-  tiempo real/Supabase.
-- Las pruebas cierran correctamente el servidor WebSocket al terminar.
+- Canal WebSocket (`/ws`, `src/realtime.ts`) solo para el panel del
+  Mostrador: cada tienda escucha `store:<id>` mandando su sesión, y solo
+  entran sus miembros. Endpoint de salud de Supabase.
 - Flujo interno de verificación de identidad:
   - consentimiento explícito;
   - estado `draft`, `submitted`, `under_review`, `approved` o `rejected`;
@@ -1199,6 +1199,41 @@ Qué se muestra de una persona a otras (`src/privacy.ts`):
   inicial (`communityAuthorName`), sin el id del cliente.
 - Las fotos (`/uploads/:fileName`) se sirven sin sesión, pero su nombre lleva
   un UUID aleatorio que no se puede adivinar.
+
+Revisión de seguridad (octubre de 2026), lo que quedó cerrado:
+
+- **Tiempo real** (`src/realtime.ts`): antes cualquiera, sin sesión, podía
+  suscribirse a `user:<id>` o `service-request:<id>` y leer los avisos de
+  otras personas al momento, y `/realtime/health` publicaba la lista de
+  canales. Ahora solo existe `store:<id>`, con sesión de un miembro de esa
+  tienda; mensajes de hasta 8 KB y 3 canales por conexión.
+- **Fotos**: perfil público (portada y galería), vehículos y fotos de la
+  solicitud solo aceptan fotos subidas a este servidor (`isOwnPhotoUrl`), no
+  direcciones de otros sitios. Máximo 150 fotos por cuenta en 24 horas
+  (`MAX_PHOTOS_PER_DAY`).
+- **Direcciones fijas**: las fotos y los enlaces de los correos (nueva
+  contraseña) salen de `PUBLIC_BASE_URL` o `RENDER_EXTERNAL_URL`, nunca del
+  encabezado `Host` que manda el cliente.
+- **Permisos por solicitud**: se quitó `POST /service-requests/:id/updates`
+  (sin `/api`), que dejaba a cualquier mecánico publicar en solicitudes
+  ajenas; las revisiones de dueño fallan cerrado si la cuenta no tiene
+  perfil de cliente o de mecánico.
+- **Didit**: un aviso repetido ya no reactiva a un mecánico suspendido, y la
+  dirección de regreso exige la diagonal (`https://mecanifique.onrender.com/`).
+- **`/pagos/regreso`**: en producción solo regresa a `mecanifique://`.
+- Topes de longitud en registro, solicitudes y coordenadas; limpieza
+  periódica de los límites de intentos y cachés en memoria; encabezados de
+  seguridad en todas las respuestas del servidor y del sitio (`vercel.json`).
+
+Configuración externa que hay que revisar a mano:
+
+- **Supabase → Authentication → URL Configuration → Redirect URLs**: solo
+  `mecanifique://**`, `https://mecanifique.onrender.com/**` y el sitio. Un
+  comodín `exp://**` permitiría que un enlace de inicio de sesión mande la
+  sesión a un proyecto de Expo Go ajeno.
+- **Google Cloud → Credenciales**: restringir la clave de
+  `mobile/google-services.json` a la app Android (paquete y huella SHA-1) y a
+  las API de Firebase.
 
 ## Documentación relacionada
 
