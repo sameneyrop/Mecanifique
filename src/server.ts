@@ -966,6 +966,11 @@ const ELIGIBLE_MECHANIC_CONDITIONS = `
         AND declined.mechanic_id = mechanics.id
     )
   )
+  AND (
+    ? IS NULL OR NOT EXISTS (
+      SELECT 1 FROM users self WHERE self.mechanic_id = mechanics.id AND self.customer_id = ?
+    )
+  )
 `;
 
 /**
@@ -981,14 +986,23 @@ const ELIGIBLE_MECHANIC_CONDITIONS = `
  * Si se pasa requestId, excluye a quienes ya no tomaron esa solicitud.
  * Solo cuenta a quien atiende ese tipo de vehículo (src/vehicleTypes.ts):
  * una solicitud de moto nunca le llega a un mecánico que solo atiende autos.
+ * Nunca elige el perfil de mecánico del propio cliente (cuenta con los dos
+ * modos): sale de la solicitud o, al crearla, de customerId.
  */
 async function findAvailableMechanic(
   city: string,
   zone: string,
   requestId: number | null,
   coords: { latitude: number; longitude: number } | null,
-  vehicleType: VehicleType = "auto"
+  vehicleType: VehicleType = "auto",
+  customerId: number | null = null
 ): Promise<number | null> {
+  const ownerCustomerId =
+    customerId ??
+    (requestId
+      ? (await get<{ customerId: number }>("SELECT customer_id AS customerId FROM service_requests WHERE id = ?", [requestId]))?.customerId ?? null
+      : null);
+  const eligibleParams = [requestId, requestId, ownerCustomerId, ownerCustomerId];
   if (coords) {
     const candidates = await all<{ id: number; latitude: number; longitude: number; rating: number; serviceRadiusKm: number | null }>(
       `
@@ -999,7 +1013,7 @@ async function findAvailableMechanic(
         AND ${ELIGIBLE_MECHANIC_CONDITIONS}
         AND ${servesVehicleSql()}
       `,
-      [requestId, requestId, vehicleType]
+      [...eligibleParams, vehicleType]
     );
     const nearest = candidates
       .map((mechanic) => ({
@@ -1024,7 +1038,7 @@ async function findAvailableMechanic(
       ${coords ? "AND (latitude IS NULL OR longitude IS NULL)" : ""}
     ORDER BY rating DESC, jobs_completed DESC
     `,
-    [requestId, requestId, vehicleType]
+    [...eligibleParams, vehicleType]
   );
   // Primero los de esa zona, luego los que tienen su taller en esa ciudad y
   // al final los que la atienden desde otro municipio; entre iguales, el
@@ -1225,6 +1239,7 @@ export async function alertNearbyOfflineMechanics(requestId: number, now: Date =
   const request = await get<{
     status: string;
     mechanicId: number | null;
+    customerId: number;
     city: string;
     zone: string;
     latitude: number | null;
@@ -1234,7 +1249,7 @@ export async function alertNearbyOfflineMechanics(requestId: number, now: Date =
     model: string;
     year: number;
   }>(
-    `SELECT status, mechanic_id AS mechanicId, city, zone, latitude, longitude, vehicle_type AS vehicleType,
+    `SELECT status, mechanic_id AS mechanicId, customer_id AS customerId, city, zone, latitude, longitude, vehicle_type AS vehicleType,
             vehicle_make AS make, vehicle_model AS model, vehicle_year AS year
      FROM service_requests WHERE id = ?`,
     [requestId]
@@ -1265,8 +1280,10 @@ export async function alertNearbyOfflineMechanics(requestId: number, now: Date =
          SELECT 1 FROM nearby_alerts a
          WHERE a.mechanic_id = m.id AND a.created_at > datetime('now', '-${NEARBY_ALERT_COOLDOWN_MINUTES} minutes')
        )
-       AND NOT EXISTS (SELECT 1 FROM service_requests job WHERE job.mechanic_id = m.id AND job.status IN ${ACTIVE_JOB_STATUSES_SQL})`,
-    [vehicleType, requestId, requestId]
+       AND NOT EXISTS (SELECT 1 FROM service_requests job WHERE job.mechanic_id = m.id AND job.status IN ${ACTIVE_JOB_STATUSES_SQL})
+       -- Nunca el perfil de mecánico del mismo cliente (cuenta con los dos modos).
+       AND NOT EXISTS (SELECT 1 FROM users self WHERE self.mechanic_id = m.id AND self.customer_id = ?)`,
+    [vehicleType, requestId, requestId, request.customerId]
   );
   const coords = requestCoords(request);
   const ranked = candidates
@@ -3366,6 +3383,19 @@ app.post(
       }
     }
 
+    // Una cuenta con los dos modos no se puede pedir un servicio a sí misma
+    // (serían reseñas y servicios inventados).
+    if (requestedMechanicId) {
+      const ownMechanic = await get<{ id: number }>(
+        "SELECT id FROM users WHERE customer_id = ? AND mechanic_id = ?",
+        [customerId, requestedMechanicId]
+      );
+      if (ownMechanic) {
+        res.status(400).json({ error: "No puedes pedirte un servicio a ti mismo." });
+        return;
+      }
+    }
+
     // Se decide antes de auto-asignar: si el cliente eligió mecánico o turno,
     // la solicitud es 'direct' y no se reasigna sola a otro mecánico.
     const assignmentMode: "auto" | "direct" = requestedMechanicId || scheduleSlotId ? "direct" : "auto";
@@ -3375,7 +3405,7 @@ app.post(
         payload.latitude != null && payload.longitude != null
           ? { latitude: payload.latitude, longitude: payload.longitude }
           : null;
-      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null, coords, vehicleType)) ?? undefined;
+      requestedMechanicId = (await findAvailableMechanic(payload.city, payload.zone, null, coords, vehicleType, customerId)) ?? undefined;
     }
 
     const holdExpiresAt = requestedMechanicId
@@ -3626,7 +3656,14 @@ app.post(
     if (!mechanicId) {
       // Por ciudad y zona escritas, con la misma comparación tolerante que el reparto.
       mechanicId =
-        (await findAvailableMechanic(serviceRequest.city, serviceRequest.zone, null, null, normalizeVehicleType(serviceRequest.vehicleType))) ??
+        (await findAvailableMechanic(
+          serviceRequest.city,
+          serviceRequest.zone,
+          null,
+          null,
+          normalizeVehicleType(serviceRequest.vehicleType),
+          serviceRequest.customerId
+        )) ??
         undefined;
     }
 

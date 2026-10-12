@@ -796,6 +796,10 @@ siempre: conectarse después no la repartía.
   de las últimas 3 horas y las agendadas de las últimas 24.
 - El cliente ve «Buscando mecánico… En cuanto un mecánico se conecte, le llega
   tu solicitud y te avisamos».
+- **Cuentas con los dos modos**: el reparto (`findAvailableMechanic`) y el
+  aviso nunca eligen el perfil de mecánico del propio cliente, y pedirle un
+  servicio directo a tu propio perfil responde 400 «No puedes pedirte un
+  servicio a ti mismo» (serían servicios y reseñas inventados).
 
 ### Autos y motos (`src/vehicleTypes.ts`)
 

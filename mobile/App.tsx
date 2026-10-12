@@ -1404,7 +1404,15 @@ export default function App() {
 
       apiRequest<ServiceRequest>(`/service-requests/${selectedRequest.id}`, { token })
         .then((request) => setSelectedRequest(request))
-        .catch((error) => setMessage(`No se pudo refrescar solicitud: ${formatError(error)}`));
+        .catch((error) => {
+          // Ya no es suya (se la pasaron a otro mecánico, o es de otro modo de
+          // la cuenta): se suelta sin avisar cada 10 s.
+          if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+            forgetSelectedRequest();
+            return;
+          }
+          setMessage(`No se pudo refrescar solicitud: ${formatError(error)}`);
+        });
       // Silencioso a propósito: un fallo puntual no debe mostrar un aviso cada 10 s.
       loadRequestMessages(selectedRequest.id).catch(() => undefined);
 
@@ -1634,6 +1642,18 @@ export default function App() {
     }
   }
 
+  // La solicitud abierta pertenece a la cuenta y al modo de ese momento: al
+  // cambiar de modo, al cerrar sesión o si el servidor ya no la deja ver, se
+  // suelta (si no, se pedía cada 10 s y salía "Solo puedes ver solicitudes
+  // asignadas a ti").
+  function forgetSelectedRequest() {
+    setSelectedRequest(null);
+    setRequestMessages([]);
+    setMessageDraft('');
+    setRequestMechanicSlots([]);
+    setSelectedRequestScheduleDate('');
+  }
+
   async function clearSession() {
     paidFeeSession.current = null;
     tokenRef.current = '';
@@ -1641,15 +1661,11 @@ export default function App() {
     setToken('');
     setUser(null);
     setIncomingRequest(null);
-    setSelectedRequest(null);
-    setRequestMessages([]);
-    setMessageDraft('');
+    forgetSelectedRequest();
     setSelectedMechanicReviews([]);
     setSelectedMechanicReviewStats({ averageRating: null, reviewCount: 0 });
     setNotifications([]);
     setUnreadNotifications(0);
-    setRequestMechanicSlots([]);
-    setSelectedRequestScheduleDate('');
     setMechanicConnection('offline');
     setLocationAutoRequested(false);
     requestLocationPrefilled.current = false;
@@ -2959,6 +2975,10 @@ export default function App() {
         body: payload,
       });
       setUser(response.user);
+      // Lo abierto era del otro modo (una solicitud de cliente no la puede ver
+      // el mecánico, ni al revés).
+      forgetSelectedRequest();
+      setIncomingRequest(null);
       await persistSession(tokenRef.current || token, response.user);
       setCurrentScreen(response.user.role === 'mechanic' ? 'home' : 'mechanics');
       setMessage(response.user.role === 'mechanic' ? 'Ahora estás en modo profesional' : 'Ahora estás en modo cliente');

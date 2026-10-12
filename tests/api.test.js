@@ -2948,3 +2948,42 @@ test("cerca de ti: al conectarse, el mecánico recibe la solicitud que estaba es
   await offerWaitingRequests();
   assert.equal((await get("SELECT mechanic_id AS m FROM service_requests WHERE id = ?", [stale])).m, null);
 });
+
+test("cuenta con los dos modos: su propia solicitud nunca le llega como mecánico", async () => {
+  const { alertNearbyOfflineMechanics, offerWaitingRequests } = require("../src/server.ts");
+  const noon = new Date("2026-10-12T18:00:00Z");
+  const city = `Ciudad-${crypto.randomUUID()}`;
+  const base = { latitude: -30 - Math.random() * 20, longitude: 100 + Math.random() * 40 };
+  const requestId = await createPendingRequestWithExpiredHold(city, "Sur", null, "auto", base);
+  await run("UPDATE service_requests SET mechanic_id = NULL, hold_expires_at = NULL, vehicle_type = 'auto' WHERE id = ?", [requestId]);
+  const { customerId } = await get("SELECT customer_id AS customerId FROM service_requests WHERE id = ?", [requestId]);
+
+  // Su propio perfil de mecánico, a unos metros del auto, y otro mecánico cerca.
+  const own = await createOnlineMechanic(city, "Sur", { latitude: base.latitude + 0.001, longitude: base.longitude });
+  const other = await createOnlineMechanic(city, "Sur", { latitude: base.latitude + 0.01, longitude: base.longitude });
+  await run("UPDATE mechanics SET is_online = 0, is_available = 0 WHERE id IN (?, ?)", [own, other]);
+  const ownUser = await run(
+    "INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id, customer_id) VALUES ('customer', ?, ?, 'Dos modos', 'x', 'x', ?, ?)",
+    [`${crypto.randomUUID()}@example.test`, crypto.randomUUID(), own, customerId]
+  );
+  const otherUser = await run(
+    "INSERT INTO users (role, login, supabase_user_id, full_name, password_salt, password_hash, mechanic_id) VALUES ('mechanic', ?, ?, 'Otro', 'x', 'x', ?)",
+    [`${crypto.randomUUID()}@example.test`, crypto.randomUUID(), other]
+  );
+
+  try {
+    assert.equal(await alertNearbyOfflineMechanics(requestId, noon), 1, "solo el otro mecánico");
+    const noteFor = (userId) => get("SELECT title FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 1", [userId]);
+    assert.equal(await noteFor(ownUser.lastID), undefined, "a sí mismo no se avisa");
+    assert.ok(await noteFor(otherUser.lastID));
+
+    // Conectado y libre, tampoco se le reparte su propia solicitud.
+    await run("UPDATE mechanics SET is_online = 1, is_available = 1, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?", [own]);
+    await offerWaitingRequests();
+    const row = await get("SELECT mechanic_id AS m FROM service_requests WHERE id = ?", [requestId]);
+    assert.notEqual(row.m, own);
+  } finally {
+    // La limpieza general borra clientes antes que cuentas: se suelta el cliente.
+    await run("UPDATE users SET customer_id = NULL WHERE id = ?", [ownUser.lastID]);
+  }
+});
