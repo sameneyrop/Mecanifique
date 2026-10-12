@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<title>Capturas · Google Play</title>
+<!--
+  Capturas de la ficha de Google Play: 1080 × 1920 px (9:16), una por cada
+  ?n=1…6. Toman las pantallas reales de capturas-originales/ (emulador, 1080 ×
+  2400), les quitan la barra de estado y la de gestos, y les ponen el título.
+  Se exportan con Edge sin cabeza (ver README.md de esta carpeta).
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #08273a; font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif; }
+  .frame { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+  svg.map { position: absolute; inset: 0; }
+  .copy { position: absolute; top: 96px; left: 90px; right: 90px; text-align: center; color: #fff; }
+  h1 { margin: 0; font-size: 68px; line-height: 1.06; font-weight: 800; letter-spacing: -0.03em; text-wrap: balance; }
+  h1 em { font-style: normal; color: #6fb4f2; }
+  p { margin: 22px 0 0; font-size: 34px; line-height: 1.35; font-weight: 600; color: rgba(255, 255, 255, 0.74); text-wrap: balance; }
+  .phone { position: absolute; left: 50%; bottom: -40px; transform: translateX(-50%); width: 780px; border-radius: 64px; padding: 14px;
+    background: #031420; box-shadow: 0 40px 90px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(255, 255, 255, 0.08); }
+  .screen { width: 100%; aspect-ratio: 1080 / 2220; border-radius: 52px; overflow: hidden; background: #0b1f33; position: relative; }
+  .screen img { position: absolute; left: 0; width: 100%; top: calc(-120 / 2220 * 100%); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <svg class="map" id="map" viewBox="0 0 1080 1920" aria-hidden="true"></svg>
+  <div class="copy"><h1 id="title"></h1><p id="sub"></p></div>
+  <div class="phone"><div class="screen"><img id="shot" alt=""></div></div>
+</div>
+<script>
+const SHOTS = {
+  1: ["1-inicio.png", "Un mecánico que va <em>hasta tu auto</em>", "Sin grúa y sin llevarlo al taller."],
+  2: ["2-nueva-solicitud.png", "Cuenta <em>qué le pasa</em>", "Auto o moto, para ahora mismo o con cita."],
+  3: ["3-donde-esta.png", "Dinos <em>dónde está</em>", "En tu casa, tu trabajo o en la calle."],
+  4: ["4-buscando.png", "Te avisamos en cuanto <em>lo tome</em>", "Y durante el servicio tienes botón de emergencia."],
+  5: ["5-mecanico-conectado.png", "¿Eres mecánico? <em>Recibe solicitudes</em>", "Cerca de ti, aunque estés desconectado."],
+  6: ["6-mecanico-zona.png", "Tú decides <em>hasta dónde vas</em>", "Elige tus municipios y tu distancia."]
+};
+const n = Number(new URLSearchParams(location.search).get("n")) || 1;
+const [file, title, sub] = SHOTS[n] || SHOTS[1];
+document.getElementById("shot").src = "capturas-originales/" + file;
+document.getElementById("title").innerHTML = title;
+document.getElementById("sub").textContent = sub;
+
+// Calles de fondo, como en el gráfico destacado y los folletos.
+const gap = 72, angle = -0.24, cx = 540, cy = 980;
+const deg = angle * 180 / Math.PI;
+let streets = "";
+for (let i = -22; i <= 22; i++) {
+  streets += '<line x1="' + i * gap + '" y1="-1600" x2="' + i * gap + '" y2="1600" />';
+  streets += '<line x1="-1600" y1="' + i * gap + '" x2="1600" y2="' + i * gap + '" />';
+}
+const avenues = [-4, 3].map((i) => '<line x1="' + i * gap + '" y1="-1600" x2="' + i * gap + '" y2="1600" />').join("") +
+  '<line x1="-1600" y1="' + (-6 * gap) + '" x2="1600" y2="' + (-6 * gap) + '" />';
+document.getElementById("map").innerHTML =
+  '<g transform="translate(' + cx + ' ' + cy + ') rotate(' + deg.toFixed(2) + ')">' +
+  '<g stroke="rgba(255,255,255,0.05)" stroke-width="8">' + streets + '</g>' +
+  '<g stroke="rgba(255,255,255,0.09)" stroke-width="16">' + avenues + '</g></g>';
+</script>
+</body>
+</html>

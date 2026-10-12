@@ -12,7 +12,7 @@ de publicar hay que hacer una prueba cerrada con al menos 12 testers durante
 | Cuenta del revisor sin SMS | `PHONE_VERIFICATION_EXEMPT_EMAILS` en Render |
 | Ícono 512 × 512 | `icono-512.png` |
 | Gráfico destacado 1024 × 500 | `grafico-destacado-1024x500.png` (fuente: `grafico-destacado.html`) |
-| Capturas del teléfono | **Falta**: se toman en el emulador con cuentas de prueba |
+| Capturas del teléfono | `capturas/` (6, 1080 × 1920): salen de `capturas-originales/` con `capturas.html?n=1…6` |
 | Video del servicio en primer plano | **Falta**: se graba en el emulador |
 
 ## 1. Crear la app
@@ -67,7 +67,11 @@ Por ahora Mecanifique funciona en Aguascalientes.
 
 - Ícono: `icono-512.png`
 - Gráfico destacado: `grafico-destacado-1024x500.png`
-- Capturas del teléfono: de 2 a 8, verticales (1080 × 1920). Pendientes.
+- Capturas del teléfono: las 6 de `capturas/`, en este orden: inicio, nueva
+  solicitud, dónde está el auto, buscando mecánico, mecánico conectado y
+  zona del mecánico. Se tomaron en el emulador con cuentas de prueba y el GPS
+  en Querétaro (para no avisarle a mecánicos reales), por eso dos dicen
+  Querétaro. Pendiente mejorarlas con un servicio en camino y una cotización.
 
 **Categoría:** Aplicación → **Automóviles y vehículos**. Etiquetas: elige
 de la lista de Play las que hablen de servicios para autos.
