@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<title>Gráfico destacado · Google Play</title>
+<!--
+  Gráfico destacado de la ficha de Google Play: 1024 × 500 px. Se exporta con
+  Edge sin cabeza a una ventana de 1024 × 500 (ver marketing/google-play/README.md).
+  Lo importante va al centro y a la izquierda: Play puede recortar las orillas.
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1024px; height: 500px; overflow: hidden; background: #08273a; font-family: 'Plus Jakarta Sans', 'Segoe UI', sans-serif; }
+  .art { position: relative; width: 1024px; height: 500px; }
+  svg.map { position: absolute; inset: 0; }
+  .fade { position: absolute; inset: 0; background: linear-gradient(90deg, #08273a 0%, #08273a 34%, rgba(8,39,58,0.75) 52%, rgba(8,39,58,0) 70%); }
+  .copy { position: absolute; left: 84px; top: 0; bottom: 0; width: 470px; display: flex; flex-direction: column; justify-content: center; gap: 20px; color: #fff; }
+  .copy img { height: 40px; width: auto; align-self: flex-start; }
+  h1 { margin: 0; font-size: 50px; line-height: 1.04; font-weight: 800; letter-spacing: -0.035em; }
+  h1 em { font-style: normal; color: #6fb4f2; }
+  .pd-end { margin-left: -0.07em; }
+  p { margin: 0; font-size: 20px; line-height: 1.4; color: rgba(255,255,255,0.78); font-weight: 600; }
+  .onway { position: absolute; right: 48px; bottom: 30px; background: #fff; color: #08273a; border-radius: 16px; padding: 12px 18px 12px 14px;
+    display: flex; gap: 12px; align-items: center; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  .onway i { width: 14px; height: 14px; border-radius: 50%; background: #22a35a; box-shadow: 0 0 0 5px rgba(34,163,90,0.22); }
+  .onway b { display: block; font-size: 17px; font-weight: 800; }
+  .onway span { display: block; font-size: 14px; color: #5b7487; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="art">
+  <svg class="map" id="map" viewBox="0 0 1024 500" aria-hidden="true"></svg>
+  <div class="fade"></div>
+  <div class="copy">
+    <img src="data:image/png;base64,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" alt="Mecanifique">
+    <h1>Un mecánico que va<br><em>hasta tu auto<span class="pd-end">.</span></em></h1>
+    <p>Mecánicos verificados a domicilio en Aguascalientes.</p>
+  </div>
+  <div class="onway"><i></i><div><b>Tu mecánico va en camino</b><span>Lo sigues en el mapa</span></div></div>
+</div>
+<script>
+/** El auto del ícono de la app (cuadrícula de 1024). */
+const CAR = [[380,421],[568,421],[632,483],[766,483],[798,515],[798,549],[810,558],[820,568],[820,596],[812,602],[776,602],[737,563],[690,563],[652,601],[398,601],[360,563],[300,563],[260,602],[212,602],[205,595],[205,567],[215,557],[226,549],[226,513],[250,487],[313,487]];
+function carPath(cx, cy, width) {
+  const s = width / 615;
+  return 'M' + CAR.map(([x, y]) => (cx + (x - 512.5) * s).toFixed(2) + ' ' + (cy + (y - 511.5) * s).toFixed(2)).join('L') + 'Z';
+}
+// Calles giradas y la ruta del mecánico hasta el auto, como en el folleto.
+const gap = 58, angle = -0.24, cx = 760, cy = 222, r = 22;
+const cos = Math.cos(angle), sin = Math.sin(angle);
+const at = (gx, gy) => [cx + gap * (gx * cos - gy * sin), cy + gap * (gx * sin + gy * cos)];
+const deg = angle * 180 / Math.PI;
+let streets = '';
+for (let i = -16; i <= 16; i++) {
+  streets += '<line x1="' + i * gap + '" y1="-900" x2="' + i * gap + '" y2="900" />';
+  streets += '<line x1="-900" y1="' + i * gap + '" x2="900" y2="' + i * gap + '" />';
+}
+const avenues = [-3, 2].map((i) => '<line x1="' + i * gap + '" y1="-900" x2="' + i * gap + '" y2="900" />').join('') +
+  '<line x1="-900" y1="' + (-1 * gap) + '" x2="900" y2="' + (-1 * gap) + '" />';
+const parks = [[-4, -2], [1, -3], [-2, 1], [4, 1], [-6, 2]].map(([gx, gy]) =>
+  '<rect x="' + (gx * gap + 8) + '" y="' + (gy * gap + 8) + '" width="' + (gap - 16) + '" height="' + (gap - 16) + '" rx="8" />').join('');
+const route = [[-1, 2], [-1, 1], [1, 1], [1, 0], [2, 0]].map(([gx, gy]) => at(gx, gy));
+const points = route.map(([x, y]) => x.toFixed(1) + ',' + y.toFixed(1)).join(' ');
+const [mx, my] = route[0];
+const [ax, ay] = route[route.length - 1];
+const pinTop = ay - r * 2.55; // «top» choca con window.top
+const drop = 'M' + ax + ' ' + ay + ' C' + (ax - r * 0.35) + ' ' + (ay - r * 0.5) + ' ' + (ax - r) + ' ' + (ay - r) + ' ' + (ax - r) + ' ' + (ay - r * 1.55) +
+  ' A' + r + ' ' + r + ' 0 1 1 ' + (ax + r) + ' ' + (ay - r * 1.55) + ' C' + (ax + r) + ' ' + (ay - r) + ' ' + (ax + r * 0.35) + ' ' + (ay - r * 0.5) + ' ' + ax + ' ' + ay + 'Z';
+document.getElementById('map').innerHTML =
+  '<g transform="translate(' + cx + ' ' + cy + ') rotate(' + deg.toFixed(2) + ')">' +
+  '<g fill="rgba(47,143,234,0.16)">' + parks + '</g>' +
+  '<g stroke="rgba(255,255,255,0.08)" stroke-width="7">' + streets + '</g>' +
+  '<g stroke="rgba(255,255,255,0.15)" stroke-width="14">' + avenues + '</g></g>' +
+  '<polyline points="' + points + '" fill="none" stroke="rgba(47,143,234,0.3)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />' +
+  '<polyline points="' + points + '" fill="none" stroke="#2f8fea" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />' +
+  '<circle cx="' + mx + '" cy="' + my + '" r="16" fill="#fff" /><circle cx="' + mx + '" cy="' + my + '" r="13" fill="#2f8fea" />' +
+  '<path transform="translate(' + (mx - 8) + ' ' + (my - 8) + ') scale(0.67)" d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" />' +
+  '<path d="' + drop + '" fill="#f2b84b" />' +
+  '<path d="' + carPath(ax, pinTop + r, r * 1.3) + '" fill="#08273a" />';
+</script>
+</body>
+</html>
