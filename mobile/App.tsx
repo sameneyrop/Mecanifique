@@ -1006,11 +1006,12 @@ export default function App() {
     if (requestsView !== 'create' || user?.role !== 'customer') {
       return;
     }
-    // Si ya escogió mecánico, solo cuentan los vehículos del tipo de la
-    // solicitud (a un mecánico de motos no se le rellena el auto).
-    const candidates = requestForm.requestedMechanicId
-      ? vehicles.filter((vehicle) => (vehicle.vehicleType ?? 'auto') === requestForm.vehicleType)
-      : vehicles;
+    // Solo cuentan los vehículos del tipo elegido (si escogió «Motos» o a un
+    // mecánico de motos, no se le rellena el auto). Si no eligió nada (auto,
+    // el valor de siempre) y solo tiene motos guardadas, se usa su moto.
+    const ofType = vehicles.filter((vehicle) => (vehicle.vehicleType ?? 'auto') === requestForm.vehicleType);
+    const candidates =
+      ofType.length > 0 || requestForm.requestedMechanicId || requestForm.vehicleType === 'moto' ? ofType : vehicles;
     const primaryVehicle = candidates.find((vehicle) => vehicle.isPrimary) ?? candidates[0];
     if (primaryVehicle && !requestForm.vehicleMake.trim()) {
       setRequestForm((current) => ({
