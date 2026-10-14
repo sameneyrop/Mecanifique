@@ -2248,7 +2248,7 @@ app.post(
         customerId: result.customerId,
         email: result.email,
         message: result.requiresEmailConfirmation
-          ? "Cuenta creada. Revisa tu correo y confirma la cuenta antes de iniciar sesión."
+          ? "Cuenta creada. Revisa tu correo y confirma la cuenta antes de iniciar sesión. Si no lo ves, revisa tu correo no deseado."
           : "Cuenta creada exitosamente. Verifica tu correo electrónico."
       });
     } catch (error) {
@@ -2295,7 +2295,7 @@ app.post(
         mechanicId: result.mechanicId,
         email: result.email,
         message: result.requiresEmailConfirmation
-          ? "Cuenta creada. Revisa tu correo y confirma la cuenta antes de iniciar sesión."
+          ? "Cuenta creada. Revisa tu correo y confirma la cuenta antes de iniciar sesión. Si no lo ves, revisa tu correo no deseado."
           : "Cuenta creada exitosamente. Verifica tu correo electrónico."
       });
     } catch (error) {
@@ -2345,7 +2345,7 @@ app.post(
         return;
       }
       if (message.includes("email not confirmed")) {
-        res.status(401).json({ error: "Confirma tu correo con el enlace que te mandamos al registrarte y vuelve a intentar." });
+        res.status(401).json({ error: "Confirma tu correo con el enlace que te mandamos al registrarte y vuelve a intentar. Si no lo ves, revisa tu correo no deseado." });
         return;
       }
       if (error instanceof Error) {

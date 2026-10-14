@@ -21,7 +21,9 @@ pega el asunto y el HTML completo del archivo.
   las dos deben estar en Authentication → URL Configuration → Redirect URLs.
   Si alguna falta, Supabase manda a la página principal del sitio, que las
   redirige a su página (script al inicio de `web/index.html`).
-- Con el correo de prueba de Supabase (remitente `noreply@mail.app.supabase.io`)
-  los correos salen con la plantilla en inglés y **solo llegan a los miembros
-  del proyecto**. Para los usuarios reales hay que conectar un SMTP propio
-  (Authentication → Emails → SMTP Settings) y luego pegar estas plantillas.
+- Hoy salen por el SMTP de Gmail (Authentication → Emails → SMTP Settings),
+  desde ameneyro.design@gmail.com. Llegan a cualquier correo, pero Gmail
+  personal no es para correos automáticos y muchos caen en spam; por eso los
+  mensajes de la app piden revisar el correo no deseado. Para que lleguen a la
+  bandeja principal hace falta un dominio propio y un proveedor transaccional
+  (p. ej. Resend).
