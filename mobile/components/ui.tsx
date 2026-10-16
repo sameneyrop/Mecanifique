@@ -307,14 +307,18 @@ export function ServerWakingBanner({ visible }: { visible: boolean }) {
   );
 }
 
-const TOAST_AUTO_DISMISS_MS = 3500;
+// Tiempo para leerlo: 3.5 s para uno corto y más mientras más largo
+// (unas 14 letras por segundo, a ritmo cómodo), hasta 12 s. Tocarlo lo cierra.
+function toastDuration(message: string): number {
+  return Math.min(12000, Math.max(3500, 1500 + message.length * 70));
+}
 
 export function Toast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   useEffect(() => {
     if (!message) {
       return;
     }
-    const timeout = setTimeout(onDismiss, TOAST_AUTO_DISMISS_MS);
+    const timeout = setTimeout(onDismiss, toastDuration(message));
     return () => clearTimeout(timeout);
   }, [message]);
 
@@ -330,9 +334,9 @@ export function Toast({ message, onDismiss }: { message: string; onDismiss: () =
         exiting={FadeOutUp.duration(180)}
         style={styles.toastCard}
       >
-        <Text numberOfLines={3} style={styles.toastText}>
-          {message}
-        </Text>
+        <Pressable onPress={onDismiss} accessibilityRole="alert" accessibilityHint="Toca para cerrar">
+          <Text style={styles.toastText}>{message}</Text>
+        </Pressable>
       </Animated.View>
     </View>
   );

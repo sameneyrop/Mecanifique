@@ -8,7 +8,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
  * un ticket) y se devuelve en base64 para subirla. null si se canceló.
  */
 export async function takeEvidencePhoto(): Promise<string | null> {
-  return takeCameraPhoto({ allowsEditing: false, quality: 1 }, 1600);
+  return takeCameraPhoto({ allowsEditing: false, quality: 1 }, 1600, false);
 }
 
 /**
@@ -21,6 +21,7 @@ export async function takeProfilePhoto(): Promise<string | null> {
   return takeCameraPhoto(
     { allowsEditing: true, aspect: [1, 1], quality: 1, cameraType: ImagePicker.CameraType.front },
     800,
+    false,
   );
 }
 
@@ -30,18 +31,34 @@ export async function takeProfilePhoto(): Promise<string | null> {
  */
 export async function pickRequestPhoto(source: 'camera' | 'library'): Promise<string | null> {
   if (source === 'camera') {
-    return takeCameraPhoto({ allowsEditing: false, quality: 1 }, 1600);
+    return takeCameraPhoto({ allowsEditing: false, quality: 1 }, 1600, true);
   }
   const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
   return resizeToBase64(picked.canceled ? null : picked.assets[0], 1600);
 }
 
-async function takeCameraPhoto(options: ImagePicker.ImagePickerOptions, maxSide: number): Promise<string | null> {
+async function takeCameraPhoto(
+  options: ImagePicker.ImagePickerOptions,
+  maxSide: number,
+  galleryAllowed: boolean,
+): Promise<string | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
     throw new Error('Necesitamos permiso para usar la cámara. Puedes darlo en los ajustes del teléfono.');
   }
-  const picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], ...options });
+  let picked: ImagePicker.ImagePickerResult;
+  try {
+    picked = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], ...options });
+  } catch (error) {
+    // En Android 9 o anterior la cámara también pide permiso de almacenamiento,
+    // y algunos teléfonos no la abren: el error de Expo viene en inglés.
+    console.warn('No se pudo abrir la cámara:', error);
+    throw new Error(
+      galleryAllowed
+        ? 'No se pudo abrir la cámara en este teléfono. Toma la foto con la app de Cámara y luego elígela con «Elegir de la galería».'
+        : 'No se pudo abrir la cámara en este teléfono. Avísanos en Cuenta → Reportar un problema.',
+    );
+  }
   return resizeToBase64(picked.canceled ? null : picked.assets[0], maxSide);
 }
 

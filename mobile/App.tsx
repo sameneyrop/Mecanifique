@@ -1939,8 +1939,18 @@ export default function App() {
       }
     }
     const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 1 };
-    const picked =
-      source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+    let picked: ImagePicker.ImagePickerResult;
+    try {
+      picked =
+        source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+    } catch (error) {
+      if (source !== 'camera') throw error;
+      // En Android 9 o anterior la cámara también pide permiso de almacenamiento (photos.ts).
+      console.warn('No se pudo abrir la cámara:', error);
+      throw new Error(
+        'No se pudo abrir la cámara en este teléfono. Toma la foto con la app de Cámara y luego elígela con «Elegir de la galería».',
+      );
+    }
     const asset = picked.canceled ? null : picked.assets[0];
     if (!asset) {
       return null;
