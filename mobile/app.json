@@ -70,6 +70,15 @@
           "resizeMode": "contain"
         }
       ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
       "./plugins/withLegacyCameraStorage"
     ],
     "web": {
