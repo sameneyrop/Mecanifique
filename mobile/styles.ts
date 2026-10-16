@@ -2,6 +2,9 @@ import { Platform, StyleSheet } from 'react-native';
 import { getActiveScheme, palettes, type Palette } from './colors';
 import { fonts } from './fonts';
 
+// Ancho máximo de la app (contenido de 640 + el margen de 16 a cada lado).
+export const MAX_CONTENT_WIDTH = 672;
+
 // Una hoja por tema: se arma con la paleta de cada uno (colors.ts).
 function buildStyles(colors: Palette) {
   return StyleSheet.create({
@@ -18,8 +21,14 @@ function buildStyles(colors: Palette) {
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  // En tablets y plegables (Android 16 ya no respeta el vertical) la app queda
+  // en una columna del ancho de un teléfono grande, centrada, en vez de
+  // estirar botones e ilustraciones de orilla a orilla.
   content: {
     flex: 1,
+    width: '100%',
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: 'center',
     paddingHorizontal: 16,
     paddingTop: 24,
     paddingBottom: 10,
@@ -457,9 +466,15 @@ function buildStyles(colors: Palette) {
     fontSize: 19,
     letterSpacing: 0.3,
   },
-  incomingScreen: {
+  incomingBackdrop: {
     flex: 1,
     backgroundColor: colors.bgApp,
+  },
+  incomingScreen: {
+    flex: 1,
+    width: '100%',
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: 'center',
     paddingHorizontal: 16,
     paddingVertical: 20,
     justifyContent: 'space-between',
@@ -1723,13 +1738,16 @@ function buildStyles(colors: Palette) {
     fontSize: 12,
     fontFamily: fonts.bold,
   },
+  // La barra ocupa todo el ancho; sus botones, la misma columna que el contenido.
   bottomNavDock: {
-    backgroundColor: 'transparent',
-  },
-  bottomNav: {
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.primaryLighter,
+  },
+  bottomNav: {
+    width: '100%',
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: 'center',
     paddingTop: 8,
     paddingBottom: Platform.OS === 'android' ? 10 : 4,
     paddingHorizontal: 6,

@@ -124,7 +124,8 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={minimize} statusBarTranslucent>
       <SafeAreaProvider>
-        <SafeAreaView style={styles.incomingScreen}>
+        <SafeAreaView style={styles.incomingBackdrop}>
+        <View style={styles.incomingScreen}>
           <View style={styles.incomingHeader}>
             <View style={[styles.flex, styles.stack]}>
               <RingingBell>
@@ -199,6 +200,7 @@ export function IncomingRequestOverlay({ onRespond }: { onRespond: (action: 'acc
               <Text style={styles.incomingLaterText}>Ver después (sigue en Mapa hasta que venza)</Text>
             </Pressable>
           </View>
+        </View>
         </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
