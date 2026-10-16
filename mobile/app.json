@@ -8,7 +8,7 @@
     "name": "Mecanifique",
     "slug": "mecanifique",
     "scheme": "mecanifique",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -27,7 +27,6 @@
       "predictiveBackGestureEnabled": false,
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.RECORD_AUDIO"
       ]
@@ -70,7 +69,8 @@
           "imageWidth": 180,
           "resizeMode": "contain"
         }
-      ]
+      ],
+      "./plugins/withLegacyCameraStorage"
     ],
     "web": {
       "favicon": "./assets/favicon.png"

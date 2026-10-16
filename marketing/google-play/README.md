@@ -8,7 +8,7 @@ de publicar hay que hacer una prueba cerrada con al menos 12 testers durante
 |---|---|
 | AAB para Play (`eas build -p android --profile production`) | Compilado en EAS, `versionCode` 2, misma firma que los APK |
 | Canal de actualizaciones | `production` → rama `preview`: el mismo `eas update --channel preview` llega a los APK y a Play |
-| Permisos que no se usan | Bloqueados en `app.json` (almacenamiento, ventana flotante, micrófono) |
+| Permisos que no se usan | Bloqueados en `app.json` (lectura de almacenamiento, ventana flotante, micrófono). La escritura se declara solo hasta Android 9 (`plugins/withLegacyCameraStorage.js`): ahí la cámara la necesita |
 | Cuenta del revisor sin SMS | `PHONE_VERIFICATION_EXEMPT_EMAILS` en Render |
 | Ícono 512 × 512 | `icono-512.png` |
 | Gráfico destacado 1024 × 500 | `grafico-destacado-1024x500.png` (fuente: `grafico-destacado.html`) |
