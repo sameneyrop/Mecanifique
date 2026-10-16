@@ -6,7 +6,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { colors } from '../colors';
 import { styles } from '../styles';
 import { useAppContext } from '../context/AppContext';
-import { Card, ChoiceTile, Field, Illustration, Input, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
+import { Card, ChoiceTile, Field, Illustration, Input, PasswordInput, PrimaryButton, SecondaryButton, Segmented } from '../components/ui';
 import { ILLUSTRATIONS } from '../illustrations';
 import { PASSWORD_RULE_TEXT, isValidPassword, openPrivacyNotice, openTerms, WORKS_ON_LABEL, type WorksOn } from '../utils';
 
@@ -270,11 +270,9 @@ export function LoginScreen({
                 />
               </Field>
               <Field label="Contraseña">
-                <Input
+                <PasswordInput
                   value={loginForm.password}
                   onChangeText={(value) => setLoginForm({ ...loginForm, password: value })}
-                  secureTextEntry
-                  autoCapitalize="none"
                 />
               </Field>
               <PrimaryButton title="Entrar" onPress={onSubmit} busy={busy} />
@@ -361,11 +359,9 @@ export function LoginScreen({
                     />
                   </Field>
                   <Field label="Contraseña">
-                    <Input
+                    <PasswordInput
                       value={customerForm.password}
                       onChangeText={(value) => setCustomerForm({ ...customerForm, password: value })}
-                      secureTextEntry
-                      autoCapitalize="none"
                       placeholder={PASSWORD_RULE_TEXT}
                     />
                   </Field>
@@ -421,11 +417,9 @@ export function LoginScreen({
                         />
                       </Field>
                       <Field label="Contraseña">
-                        <Input
+                        <PasswordInput
                           value={mechanicForm.password}
                           onChangeText={(value) => setMechanicForm({ ...mechanicForm, password: value })}
-                          secureTextEntry
-                          autoCapitalize="none"
                           placeholder={PASSWORD_RULE_TEXT}
                         />
                       </Field>

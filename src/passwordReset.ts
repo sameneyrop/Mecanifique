@@ -65,6 +65,13 @@ ${LOGO}
 </html>`;
 }
 
+// El ojo para ver la contraseña mientras se escribe (íconos de trazo, como los
+// de la app).
+const PASSWORD_TOGGLE = `<button type="button" class="toggle" aria-label="Ver contraseña" aria-pressed="false">
+        <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.9 8.3 2 12 2 12s3.6 7 10 7a9.9 9.9 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+      </button>`;
+
 export function resetPasswordPage(): string {
   return `<!doctype html>
 <html lang="es">
@@ -82,6 +89,12 @@ export function resetPasswordPage(): string {
   input { width: 100%; box-sizing: border-box; font-size: 16px; padding: 12px; border: 1px solid #D6E4F5; border-radius: 12px; background: #EEF3FA; }
   button { width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; font-weight: 800; color: #fff; background: #2F8FEA; border: 0; border-radius: 999px; }
   button:disabled { opacity: .6; }
+  .field { position: relative; }
+  .field input { padding-right: 52px; }
+  .field .toggle { position: absolute; top: 0; right: 0; bottom: 0; width: 48px; margin: 0; padding: 0; background: none; border-radius: 12px; color: #4A5568; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .toggle svg { width: 22px; height: 22px; }
+  .toggle .eye-off, .toggle[aria-pressed="true"] .eye { display: none; }
+  .toggle[aria-pressed="true"] .eye-off { display: block; }
   .error { color: #b42318; font-weight: 600; }
   [hidden] { display: none !important; }
 </style>
@@ -92,9 +105,15 @@ ${LOGO}
 <div class="card" id="form-card">
   <form id="form">
     <label for="password">Nueva contraseña (mínimo 8 caracteres, con letras y números)</label>
-    <input id="password" type="password" minlength="8" autocomplete="new-password" required>
+    <div class="field">
+      <input id="password" type="password" minlength="8" autocomplete="new-password" required>
+      ${PASSWORD_TOGGLE}
+    </div>
     <label for="confirm">Escríbela otra vez</label>
-    <input id="confirm" type="password" minlength="8" autocomplete="new-password" required>
+    <div class="field">
+      <input id="confirm" type="password" minlength="8" autocomplete="new-password" required>
+      ${PASSWORD_TOGGLE}
+    </div>
     <p class="error" id="error" hidden></p>
     <button id="submit" type="submit">Guardar contraseña</button>
   </form>
@@ -114,6 +133,15 @@ ${LOGO}
     };
     if (!token || params.get("error")) { show("expired"); return; }
     history.replaceState(null, "", location.pathname);
+    document.querySelectorAll(".toggle").forEach(function (toggle) {
+      toggle.addEventListener("click", function () {
+        var input = toggle.parentElement.querySelector("input");
+        var visible = input.type === "password";
+        input.type = visible ? "text" : "password";
+        toggle.setAttribute("aria-pressed", String(visible));
+        toggle.setAttribute("aria-label", visible ? "Ocultar contraseña" : "Ver contraseña");
+      });
+    });
     var error = document.getElementById("error");
     document.getElementById("form").addEventListener("submit", function (event) {
       event.preventDefault();

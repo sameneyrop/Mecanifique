@@ -411,6 +411,32 @@ export function Input(props: ComponentProps<typeof TextInput>) {
   return <TextInput placeholderTextColor={colors.textSecondary} style={styles.input} {...props} />;
 }
 
+/** Contraseña con el ojo para verla mientras se escribe. */
+export function PasswordInput(props: Omit<ComponentProps<typeof TextInput>, 'secureTextEntry'>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={styles.passwordInputWrap}>
+      <TextInput
+        placeholderTextColor={colors.textSecondary}
+        autoCapitalize="none"
+        autoCorrect={false}
+        {...props}
+        secureTextEntry={!visible}
+        style={[styles.input, styles.passwordInput]}
+      />
+      <Pressable
+        onPress={() => setVisible((value) => !value)}
+        style={styles.passwordToggle}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={visible ? 'Ocultar contraseña' : 'Ver contraseña'}
+      >
+        <Ionicons name={visible ? 'eye-off-outline' : 'eye-outline'} size={22} color={colors.textSecondary} />
+      </Pressable>
+    </View>
+  );
+}
+
 export function CharCounter({ value, max }: { value: string; max: number }) {
   return (
     <Text style={styles.smallText}>

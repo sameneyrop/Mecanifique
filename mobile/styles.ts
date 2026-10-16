@@ -1224,6 +1224,20 @@ function buildStyles(colors: Palette) {
     backgroundColor: colors.primaryLighter,
     minHeight: 52,
   },
+  passwordInputWrap: {
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    paddingRight: 52,
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 4,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   segmented: {
     flexDirection: 'row',
     gap: 8,

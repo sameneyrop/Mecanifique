@@ -14,6 +14,7 @@ import {
   InfoRow,
   Input,
   MenuRow,
+  PasswordInput,
   PrimaryButton,
   SecondaryButton,
   IdentityVerificationCard,
@@ -138,19 +139,15 @@ function SecurityPanel({
     <View style={[styles.publicProfileBox, styles.menuPanel]}>
       <Text style={styles.publicProfileTitle}>Cambiar contraseña</Text>
       <Field label="Nueva contraseña">
-        <Input
+        <PasswordInput
           value={form.password}
-          secureTextEntry
-          autoCapitalize="none"
           placeholder={PASSWORD_RULE_TEXT}
           onChangeText={(value) => setForm({ ...form, password: value })}
         />
       </Field>
       <Field label="Escríbela otra vez">
-        <Input
+        <PasswordInput
           value={form.confirm}
-          secureTextEntry
-          autoCapitalize="none"
           onChangeText={(value) => setForm({ ...form, confirm: value })}
         />
       </Field>
